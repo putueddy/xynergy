@@ -1,7 +1,7 @@
 use leptos::*;
 use leptos_router::*;
 use crate::auth::use_auth;
-use crate::components::{Header, Footer, GanttChart};
+use crate::components::{Header, Footer, GanttChart, AllocationForm, AllocationFormData, ResourceOption, ProjectOption};
 use crate::gantt::GanttTask;
 use uuid::Uuid;
 use serde::Deserialize;
@@ -17,6 +17,20 @@ pub struct Allocation {
     pub allocation_percentage: f64,
     pub project_name: String,
     pub resource_name: String,
+}
+
+/// Resource data for dropdown
+#[derive(Debug, Clone, Deserialize)]
+pub struct Resource {
+    pub id: Uuid,
+    pub name: String,
+}
+
+/// Project data for dropdown
+#[derive(Debug, Clone, Deserialize)]
+pub struct Project {
+    pub id: Uuid,
+    pub name: String,
 }
 
 /// Allocations page component
@@ -35,26 +49,38 @@ pub fn Allocations() -> impl IntoView {
         });
     }
     
-    // Allocation data
+    // Data signals
     let (allocations, set_allocations) = create_signal(Vec::new());
+    let (resources, set_resources) = create_signal(Vec::new());
+    let (projects, set_projects) = create_signal(Vec::new());
     let (loading, set_loading) = create_signal(false);
     let (error, set_error) = create_signal(Option::<String>::None);
     let (view_mode, set_view_mode) = create_signal("Week");
+    let (show_form, set_show_form) = create_signal(false);
     
-    // Load allocations on mount
+    // Load data on mount
     create_effect(move |_| {
         set_loading.set(true);
         spawn_local(async move {
+            // Load allocations
             match fetch_allocations().await {
-                Ok(data) => {
-                    set_allocations.set(data);
-                    set_loading.set(false);
-                }
-                Err(e) => {
-                    set_error.set(Some(e));
-                    set_loading.set(false);
-                }
+                Ok(data) => set_allocations.set(data),
+                Err(e) => set_error.set(Some(e)),
             }
+            
+            // Load resources
+            match fetch_resources().await {
+                Ok(data) => set_resources.set(data),
+                Err(e) => set_error.set(Some(e)),
+            }
+            
+            // Load projects
+            match fetch_projects().await {
+                Ok(data) => set_projects.set(data),
+                Err(e) => set_error.set(Some(e)),
+            }
+            
+            set_loading.set(false);
         });
     });
     
@@ -76,6 +102,48 @@ pub fn Allocations() -> impl IntoView {
         _set_gantt_tasks.set(tasks);
     });
     
+    // Handle form submission
+    let handle_submit = move |form_data: AllocationFormData| {
+        spawn_local(async move {
+            set_loading.set(true);
+            set_error.set(None);
+            
+            match create_allocation(form_data).await {
+                Ok(_) => {
+                    // Reload allocations
+                    match fetch_allocations().await {
+                        Ok(data) => {
+                            set_allocations.set(data);
+                            set_show_form.set(false);
+                        }
+                        Err(e) => set_error.set(Some(e)),
+                    }
+                }
+                Err(e) => set_error.set(Some(e)),
+            }
+            set_loading.set(false);
+        });
+    };
+    
+    let handle_cancel = move |_| {
+        set_show_form.set(false);
+    };
+    
+    // Convert to option types for form
+    let resource_options = create_memo(move |_| {
+        resources.get().into_iter().map(|r| ResourceOption {
+            id: r.id,
+            name: r.name,
+        }).collect::<Vec<_>>()
+    });
+    
+    let project_options = create_memo(move |_| {
+        projects.get().into_iter().map(|p| ProjectOption {
+            id: p.id,
+            name: p.name,
+        }).collect::<Vec<_>>()
+    });
+    
     view! {
         <div class="min-h-screen flex flex-col bg-gray-50 dark:bg-gray-900">
             <Header/>
@@ -93,6 +161,13 @@ pub fn Allocations() -> impl IntoView {
                         </div>
                         
                         <div class="flex items-center space-x-3">
+                            <button
+                                class="btn-primary"
+                                on:click=move |_| set_show_form.set(true)
+                            >
+                                "Add Allocation"
+                            </button>
+                            
                             <label class="text-sm font-medium text-gray-700 dark:text-gray-300">"View:"</label>
                             <select
                                 class="rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
@@ -126,6 +201,26 @@ pub fn Allocations() -> impl IntoView {
                     })}
                     
                     {move || {
+                        if show_form.get() {
+                            view! {
+                                <div class="bg-white dark:bg-gray-800 shadow rounded-lg p-6">
+                                    <h2 class="text-xl font-semibold text-gray-900 dark:text-white mb-4">
+                                        "Create Allocation"
+                                    </h2>
+                                    <AllocationForm
+                                        resources=resource_options.into()
+                                        projects=project_options.into()
+                                        on_submit=Callback::new(handle_submit)
+                                        on_cancel=Callback::new(handle_cancel)
+                                    />
+                                </div>
+                            }.into_view()
+                        } else {
+                            view! { <div></div> }.into_view()
+                        }
+                    }}
+                    
+                    {move || {
                         if loading.get() {
                             view! {
                                 <div class="text-center py-12 bg-white dark:bg-gray-800 rounded-lg shadow">
@@ -137,7 +232,7 @@ pub fn Allocations() -> impl IntoView {
                             view! {
                                 <div class="text-center py-12 bg-white dark:bg-gray-800 rounded-lg shadow">
                                     <p class="text-gray-600 dark:text-gray-400">"No allocations found."</p>
-                                    <p class="text-sm text-gray-500 dark:text-gray-500 mt-2">"Create allocations to see them on the timeline."</p>
+                                    <p class="text-sm text-gray-500 dark:text-gray-500 mt-2">"Click 'Add Allocation' to create one."</p>
                                 </div>
                             }.into_view()
                         } else {
@@ -212,5 +307,92 @@ async fn fetch_allocations() -> Result<Vec<Allocation>, String> {
             .map_err(|e| format!("Failed to parse allocations: {}", e))
     } else {
         Err(format!("Failed to fetch allocations: {}", response.status()))
+    }
+}
+
+/// Fetch all resources from API
+async fn fetch_resources() -> Result<Vec<Resource>, String> {
+    let response = reqwest::get("http://localhost:3000/api/v1/resources")
+        .await
+        .map_err(|e| format!("Failed to fetch resources: {}", e))?;
+    
+    if response.status().is_success() {
+        // Parse as generic JSON and extract id and name
+        let json_data: Vec<serde_json::Value> = response.json()
+            .await
+            .map_err(|e| format!("Failed to parse resources: {}", e))?;
+        
+        let resources: Vec<Resource> = json_data
+            .into_iter()
+            .filter_map(|v| {
+                Some(Resource {
+                    id: v.get("id")?.as_str()?.parse().ok()?,
+                    name: v.get("name")?.as_str()?.to_string(),
+                })
+            })
+            .collect();
+        
+        Ok(resources)
+    } else {
+        Err(format!("Failed to fetch resources: {}", response.status()))
+    }
+}
+
+/// Fetch all projects from API
+async fn fetch_projects() -> Result<Vec<Project>, String> {
+    let response = reqwest::get("http://localhost:3000/api/v1/projects")
+        .await
+        .map_err(|e| format!("Failed to fetch projects: {}", e))?;
+    
+    if response.status().is_success() {
+        // Parse as generic JSON and extract id and name
+        let json_data: Vec<serde_json::Value> = response.json()
+            .await
+            .map_err(|e| format!("Failed to parse projects: {}", e))?;
+        
+        let projects: Vec<Project> = json_data
+            .into_iter()
+            .filter_map(|v| {
+                Some(Project {
+                    id: v.get("id")?.as_str()?.parse().ok()?,
+                    name: v.get("name")?.as_str()?.to_string(),
+                })
+            })
+            .collect();
+        
+        Ok(projects)
+    } else {
+        Err(format!("Failed to fetch projects: {}", response.status()))
+    }
+}
+
+/// Create a new allocation
+async fn create_allocation(form_data: AllocationFormData) -> Result<(), String> {
+    let resource_id = form_data.resource_id.parse::<Uuid>()
+        .map_err(|_| "Invalid resource ID")?;
+    let project_id = form_data.project_id.parse::<Uuid>()
+        .map_err(|_| "Invalid project ID")?;
+    let allocation_percentage = form_data.allocation_percentage.parse::<f64>()
+        .map_err(|_| "Invalid allocation percentage")?;
+    
+    let client = reqwest::Client::new();
+    let response = client
+        .post("http://localhost:3000/api/v1/allocations")
+        .json(&serde_json::json!({
+            "resource_id": resource_id,
+            "project_id": project_id,
+            "start_date": form_data.start_date,
+            "end_date": form_data.end_date,
+            "allocation_percentage": allocation_percentage,
+        }))
+        .send()
+        .await
+        .map_err(|e| format!("Failed to create allocation: {}", e))?;
+    
+    if response.status().is_success() {
+        Ok(())
+    } else {
+        let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+        Err(format!("Failed to create allocation: {}", error_text))
     }
 }

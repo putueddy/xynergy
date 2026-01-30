@@ -159,13 +159,106 @@ async fn get_allocations_by_resource(
     Ok(Json(response))
 }
 
+/// Check if resource has capacity for new allocation
+async fn check_resource_capacity(
+    pool: &PgPool,
+    resource_id: Uuid,
+    start_date: NaiveDate,
+    end_date: NaiveDate,
+    new_allocation_percentage: f64,
+    exclude_allocation_id: Option<Uuid>,
+) -> Result<(bool, f64, f64)> {
+    // Get resource capacity
+    let resource_capacity = sqlx::query_scalar!(
+        "SELECT capacity FROM resources WHERE id = $1",
+        resource_id
+    )
+    .fetch_one(pool)
+    .await
+    .map_err(|e| AppError::Database(e.to_string()))?;
+
+    let capacity = resource_capacity
+        .map(bigdecimal_to_f64)
+        .unwrap_or(8.0); // Default 8 hours/day if not set
+
+    // Calculate total allocated hours for the resource in the date range
+    // Use a single query with optional exclusion
+    let existing_allocations: Vec<sqlx::types::BigDecimal> = if let Some(exclude_id) = exclude_allocation_id {
+        sqlx::query_scalar!(
+            "SELECT allocation_percentage
+             FROM allocations 
+             WHERE resource_id = $1 
+             AND id != $2
+             AND (
+                 (start_date <= $3 AND end_date >= $3) OR
+                 (start_date <= $4 AND end_date >= $4) OR
+                 (start_date >= $3 AND end_date <= $4)
+             )",
+            resource_id,
+            exclude_id,
+            start_date,
+            end_date
+        )
+        .fetch_all(pool)
+        .await
+        .map_err(|e| AppError::Database(e.to_string()))?
+    } else {
+        sqlx::query_scalar!(
+            "SELECT allocation_percentage
+             FROM allocations 
+             WHERE resource_id = $1 
+             AND (
+                 (start_date <= $2 AND end_date >= $2) OR
+                 (start_date <= $3 AND end_date >= $3) OR
+                 (start_date >= $2 AND end_date <= $3)
+             )",
+            resource_id,
+            start_date,
+            end_date
+        )
+        .fetch_all(pool)
+        .await
+        .map_err(|e| AppError::Database(e.to_string()))?
+    };
+
+    // Calculate total allocation percentage (assuming percentage is % of capacity)
+    let total_existing_percentage: f64 = existing_allocations
+        .iter()
+        .map(|bd| bigdecimal_to_f64(bd.clone()))
+        .sum();
+
+    let total_percentage = total_existing_percentage + new_allocation_percentage;
+    let has_capacity = total_percentage <= 100.0;
+
+    Ok((has_capacity, total_percentage, capacity))
+}
+
 /// Create a new allocation
 async fn create_allocation(
     State(pool): State<PgPool>,
     Json(req): Json<CreateAllocationRequest>,
 ) -> Result<Json<AllocationResponse>> {
+    // Check if resource has capacity
+    let (has_capacity, total_percentage, capacity) = check_resource_capacity(
+        &pool,
+        req.resource_id,
+        req.start_date,
+        req.end_date,
+        req.allocation_percentage,
+        None,
+    )
+    .await?;
+
+    if !has_capacity {
+        return Err(AppError::Validation(format!(
+            "Resource over-allocated: total allocation would be {:.0}% (capacity: {:.0} hours/day). \
+             Please reduce allocation or choose different dates.",
+            total_percentage, capacity
+        )));
+    }
+
     let allocation_percentage_bd = f64_to_bigdecimal(req.allocation_percentage);
-    
+
     let allocation = sqlx::query!(
         "INSERT INTO allocations (project_id, resource_id, start_date, end_date, allocation_percentage)
          VALUES ($1, $2, $3, $4, $5)
@@ -217,20 +310,45 @@ async fn update_allocation(
 ) -> Result<Json<AllocationResponse>> {
     // Check if allocation exists
     let existing = sqlx::query!(
-        "SELECT id, project_id, resource_id FROM allocations WHERE id = $1",
+        "SELECT id, project_id, resource_id, start_date, end_date, allocation_percentage FROM allocations WHERE id = $1",
         id
     )
     .fetch_optional(&pool)
     .await
     .map_err(|e| AppError::Database(e.to_string()))?
     .ok_or_else(|| AppError::NotFound(format!("Allocation {} not found", id)))?;
-    
+
+    // Determine values for capacity check
+    let resource_id = req.resource_id.or(existing.resource_id).expect("resource_id is not null");
+    let start_date = req.start_date.or(Some(existing.start_date)).expect("start_date is not null");
+    let end_date = req.end_date.or(Some(existing.end_date)).expect("end_date is not null");
+    let new_percentage = req.allocation_percentage.unwrap_or_else(|| bigdecimal_to_f64(existing.allocation_percentage));
+
+    // Check if resource has capacity (excluding this allocation)
+    let (has_capacity, total_percentage, capacity) = check_resource_capacity(
+        &pool,
+        resource_id,
+        start_date,
+        end_date,
+        new_percentage,
+        Some(id),
+    )
+    .await?;
+
+    if !has_capacity {
+        return Err(AppError::Validation(format!(
+            "Resource over-allocated: total allocation would be {:.0}% (capacity: {:.0} hours/day). \
+             Please reduce allocation or choose different dates.",
+            total_percentage, capacity
+        )));
+    }
+
     // Convert percentage if provided
     let allocation_percentage_bd = req.allocation_percentage.map(f64_to_bigdecimal);
-    
+
     // Update with new values or keep existing
     let allocation = sqlx::query!(
-        "UPDATE allocations 
+        "UPDATE allocations
          SET project_id = COALESCE($1, project_id),
              resource_id = COALESCE($2, resource_id),
              start_date = COALESCE($3, start_date),

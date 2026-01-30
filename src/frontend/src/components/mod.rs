@@ -1,11 +1,13 @@
 use leptos::*;
 
+pub mod allocation_form;
 pub mod gantt_chart;
 pub mod project_form;
 pub mod project_list;
 pub mod resource_form;
 pub mod resource_list;
 
+pub use allocation_form::{AllocationForm, AllocationFormData, ProjectOption, ResourceOption};
 pub use gantt_chart::{GanttChart, GanttTaskItem};
 pub use project_form::ProjectForm;
 pub use project_list::ProjectList;
