@@ -1,8 +1,12 @@
 use leptos::*;
 
+pub mod project_form;
+pub mod project_list;
 pub mod resource_form;
 pub mod resource_list;
 
+pub use project_form::ProjectForm;
+pub use project_list::ProjectList;
 pub use resource_form::ResourceForm;
 pub use resource_list::ResourceList;
 

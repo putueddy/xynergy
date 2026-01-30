@@ -7,7 +7,7 @@ pub mod components;
 pub mod pages;
 pub mod auth;
 
-use pages::{home::Home, login::Login, dashboard::Dashboard, not_found::NotFound, resources::Resources};
+use pages::{home::Home, login::Login, dashboard::Dashboard, not_found::NotFound, resources::Resources, projects::Projects};
 use auth::{AuthContext, provide_auth_context};
 
 /// Main application component
@@ -39,6 +39,7 @@ pub fn App() -> impl IntoView {
                     <Route path="/login" view=Login/>
                     <Route path="/dashboard" view=Dashboard/>
                     <Route path="/resources" view=Resources/>
+                    <Route path="/projects" view=Projects/>
                     <Route path="/*any" view=NotFound/>
                 </Routes>
             </main>
