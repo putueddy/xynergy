@@ -34,7 +34,10 @@ pub fn provide_auth_context() {
         }
     }
     
-    let is_authenticated = create_memo(move |_| user.get().is_some());
+    let is_authenticated = create_memo(move |_| {
+        // Check both user and token - authenticated if either exists
+        user.get().is_some() || token.get().is_some()
+    });
     
     provide_context(AuthContext {
         user,
@@ -103,5 +106,25 @@ pub fn logout_user(auth: &AuthContext) {
         if let Some(storage) = storage {
             let _ = storage.remove_item("auth_token");
         }
+    }
+}
+
+/// Validate token and fetch user data
+pub async fn validate_token(token: String) -> Result<User, String> {
+    let response = reqwest::Client::new()
+        .get("http://localhost:3000/api/v1/auth/me")
+        .header("Authorization", format!("Bearer {}", token))
+        .send()
+        .await
+        .map_err(|e| format!("Request failed: {}", e))?;
+    
+    if response.status().is_success() {
+        let user: User = response
+            .json()
+            .await
+            .map_err(|e| format!("Failed to parse response: {}", e))?;
+        Ok(user)
+    } else {
+        Err("Invalid token".to_string())
     }
 }

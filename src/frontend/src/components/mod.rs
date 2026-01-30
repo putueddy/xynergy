@@ -1,5 +1,11 @@
 use leptos::*;
 
+pub mod resource_form;
+pub mod resource_list;
+
+pub use resource_form::ResourceForm;
+pub use resource_list::ResourceList;
+
 /// Header component
 #[component]
 pub fn Header() -> impl IntoView {

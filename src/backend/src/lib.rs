@@ -206,6 +206,8 @@ pub fn create_app(pool: PgPool) -> Router {
         .route("/output.css", get(serve_css))
         .nest("/api/v1", api_routes())
         .nest_service("/pkg", ServeDir::new("target/site/pkg"))
+        // Serve index.html for all other routes (SPA fallback)
+        .fallback(serve_index)
         .with_state(pool)
 }
 

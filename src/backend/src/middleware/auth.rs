@@ -2,7 +2,7 @@ use axum::{
     extract::{State, Request},
     middleware::Next,
     response::Response,
-    http::{StatusCode, header::AUTHORIZATION},
+    http::{header::AUTHORIZATION},
 };
 use jsonwebtoken::{decode, DecodingKey, Validation};
 use sqlx::PgPool;

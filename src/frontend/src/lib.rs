@@ -1,12 +1,13 @@
 use leptos::*;
 use leptos_meta::*;
 use leptos_router::*;
+use wasm_bindgen::JsCast;
 
 pub mod components;
 pub mod pages;
 pub mod auth;
 
-use pages::{home::Home, login::Login, dashboard::Dashboard, not_found::NotFound};
+use pages::{home::Home, login::Login, dashboard::Dashboard, not_found::NotFound, resources::Resources};
 use auth::{AuthContext, provide_auth_context};
 
 /// Main application component
@@ -37,6 +38,7 @@ pub fn App() -> impl IntoView {
                     <Route path="/" view=Home/>
                     <Route path="/login" view=Login/>
                     <Route path="/dashboard" view=Dashboard/>
+                    <Route path="/resources" view=Resources/>
                     <Route path="/*any" view=NotFound/>
                 </Routes>
             </main>

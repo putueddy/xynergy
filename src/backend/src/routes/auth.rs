@@ -1,6 +1,6 @@
 use axum::{
     extract::{State, Json},
-    routing::post,
+    routing::{get, post},
     Router,
 };
 use sqlx::PgPool;
@@ -20,7 +20,7 @@ use crate::error::{AppError, Result};
 use crate::models::User;
 
 /// JWT Claims
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Claims {
     pub sub: String,  // User ID
     pub email: String,
