@@ -1,0 +1,14 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: xynergy-db
+    environment:
+      POSTGRES_USER: xynergy
+      POSTGRES_PASSWORD: xynergy
+      POSTGRES_DB: xynergy
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./db_data:/var/lib/postgresql/data
+volumes:
+  db_data:

@@ -1,0 +1,17 @@
+{
+  "name": "xynergy-frontend",
+  "version": "0.1.0",
+  "description": "Xynergy frontend with Leptos and Tailwind CSS v4",
+  "scripts": {
+    "build": "npx @tailwindcss/cli -i ./style/tailwind.css -o ./public/output.css --minify",
+    "watch": "npx @tailwindcss/cli -i ./style/tailwind.css -o ./public/output.css --watch",
+    "dev": "npx @tailwindcss/cli -i ./style/tailwind.css -o ./public/output.css --watch"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.1.18",
+    "@tailwindcss/postcss": "^4.1.18",
+    "autoprefixer": "^10.4.16",
+    "postcss": "^8.4.32",
+    "tailwindcss": "^4.1.18"
+  }
+}

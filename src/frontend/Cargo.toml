@@ -1,0 +1,63 @@
+[package]
+name = "xynergy-frontend"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[lib]
+name = "xynergy_frontend"
+path = "src/lib.rs"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# Workspace dependencies
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true, features = ["v4", "serde", "js"] }
+tracing = { workspace = true }
+xynergy-shared = { workspace = true }
+
+# Leptos framework
+leptos = { version = "0.6" }
+leptos_router = { version = "0.6" }
+leptos_meta = { version = "0.6" }
+leptos_axum = { version = "0.6", optional = true }
+
+# HTTP client
+reqwest = { version = "0.11", features = ["json"] }
+
+# WebAssembly
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+web-sys = { version = "0.3", features = ["console", "Window", "Document", "Storage", "Location"] }
+
+# Utilities
+console_error_panic_hook = "0.1"
+
+[features]
+default = ["csr"]
+csr = ["leptos/csr", "leptos_router/csr", "leptos_meta/csr"]
+ssr = [
+    "leptos/ssr",
+    "leptos_router/ssr",
+    "leptos_meta/ssr",
+    "dep:leptos_axum",
+]
+hydrate = ["leptos/hydrate", "leptos_router/hydrate", "leptos_meta/hydrate"]
+
+[package.metadata.leptos]
+output-name = "xynergy"
+site-root = "target/site"
+site-pkg-dir = "pkg"
+style-file = "public/output.css"
+assets-dir = "public"
+site-addr = "127.0.0.1:3000"
+reload-port = 3001
+features = ["hydrate"]
+bin-features = ["ssr"]
+bin-default-features = false
+lib-features = ["hydrate"]
+lib-default-features = false

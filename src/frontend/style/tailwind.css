@@ -1,0 +1,96 @@
+@import "tailwindcss";
+
+@theme {
+  --color-primary-50: #eff6ff;
+  --color-primary-100: #dbeafe;
+  --color-primary-200: #bfdbfe;
+  --color-primary-300: #93c5fd;
+  --color-primary-400: #60a5fa;
+  --color-primary-500: #3b82f6;
+  --color-primary-600: #2563eb;
+  --color-primary-700: #1d4ed8;
+  --color-primary-800: #1e40af;
+  --color-primary-900: #1e3a8a;
+}
+
+@layer base {
+  html {
+    font-family: system-ui, sans-serif;
+  }
+  
+  body {
+    background-color: var(--color-gray-50);
+    color: var(--color-gray-900);
+  }
+  
+  @media (prefers-color-scheme: dark) {
+    body {
+      background-color: var(--color-gray-900);
+      color: var(--color-gray-100);
+    }
+  }
+}
+
+@utility btn {
+  padding-inline: 1rem;
+  padding-block: 0.5rem;
+  border-radius: 0.375rem;
+  font-weight: 500;
+  transition-property: color, background-color, border-color;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 150ms;
+}
+
+@utility btn-primary {
+  @apply btn;
+  background-color: var(--color-blue-600);
+  color: white;
+  
+  &:hover {
+    background-color: var(--color-blue-700);
+  }
+}
+
+@utility btn-secondary {
+  @apply btn;
+  background-color: var(--color-gray-200);
+  color: var(--color-gray-800);
+  
+  &:hover {
+    background-color: var(--color-gray-300);
+  }
+  
+  @media (prefers-color-scheme: dark) {
+    background-color: var(--color-gray-700);
+    color: var(--color-gray-200);
+  }
+}
+
+@utility card {
+  background-color: white;
+  border-radius: 0.5rem;
+  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+  padding: 1.5rem;
+  
+  @media (prefers-color-scheme: dark) {
+    background-color: var(--color-gray-800);
+  }
+}
+
+@utility input {
+  width: 100%;
+  padding-inline: 0.75rem;
+  padding-block: 0.5rem;
+  border: 1px solid var(--color-gray-300);
+  border-radius: 0.375rem;
+  
+  &:focus {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--color-blue-500);
+  }
+  
+  @media (prefers-color-scheme: dark) {
+    border-color: var(--color-gray-600);
+    background-color: var(--color-gray-700);
+  }
+}
