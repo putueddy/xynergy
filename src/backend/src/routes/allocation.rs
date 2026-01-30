@@ -98,15 +98,19 @@ async fn get_resource_working_hours(
     pool: &PgPool,
     resource_id: Uuid,
 ) -> Result<f64> {
-    let working_hours = sqlx::query_scalar!(
-        "SELECT COALESCE(working_hours, 8.0) FROM resources WHERE id = $1",
+    let working_hours: Option<sqlx::types::BigDecimal> = sqlx::query_scalar!(
+        "SELECT working_hours FROM resources WHERE id = $1",
         resource_id
     )
-    .fetch_one(pool)
+    .fetch_optional(pool)
     .await
     .map_err(|e| AppError::Database(e.to_string()))?;
     
-    Ok(working_hours.unwrap_or(8.0))
+    let hours = working_hours
+        .map(bigdecimal_to_f64)
+        .unwrap_or(8.0);
+    
+    Ok(hours)
 }
 
 /// Get existing allocations for resource in date range
@@ -117,7 +121,7 @@ async fn get_existing_allocations(
     end_date: NaiveDate,
     exclude_allocation_id: Option<Uuid>,
 ) -> Result<Vec<(Uuid, NaiveDate, NaiveDate, f64)>> {
-    let query = if let Some(exclude_id) = exclude_allocation_id {
+    let allocations: Vec<(Uuid, NaiveDate, NaiveDate, f64)> = if let Some(exclude_id) = exclude_allocation_id {
         sqlx::query!(
             "SELECT id, start_date, end_date, allocation_percentage
              FROM allocations 
@@ -136,6 +140,14 @@ async fn get_existing_allocations(
         .fetch_all(pool)
         .await
         .map_err(|e| AppError::Database(e.to_string()))?
+        .into_iter()
+        .map(|row| (
+            row.id,
+            row.start_date,
+            row.end_date,
+            bigdecimal_to_f64(row.allocation_percentage)
+        ))
+        .collect()
     } else {
         sqlx::query!(
             "SELECT id, start_date, end_date, allocation_percentage
@@ -153,9 +165,6 @@ async fn get_existing_allocations(
         .fetch_all(pool)
         .await
         .map_err(|e| AppError::Database(e.to_string()))?
-    };
-    
-    let allocations: Vec<(Uuid, NaiveDate, NaiveDate, f64)> = query
         .into_iter()
         .map(|row| (
             row.id,
@@ -163,7 +172,8 @@ async fn get_existing_allocations(
             row.end_date,
             bigdecimal_to_f64(row.allocation_percentage)
         ))
-        .collect();
+        .collect()
+    };
     
     Ok(allocations)
 }
@@ -189,7 +199,7 @@ async fn calculate_daily_allocations(
     // Get existing allocations
     let existing_allocations = get_existing_allocations(
         pool, resource_id, start_date, end_date, exclude_allocation_id
-    )..await?;
+    ).await?;
     
     // Initialize daily allocations map
     let mut daily_allocations: HashMap<NaiveDate, DailyAllocation> = HashMap::new();
