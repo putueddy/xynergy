@@ -44,6 +44,8 @@ async fn serve_index() -> Html<String> {
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Frappe Gantt CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/frappe-gantt@0.6.1/dist/frappe-gantt.css">
     <style>
         body {
             font-family: 'Inter', system-ui, sans-serif;
@@ -160,6 +162,9 @@ async fn serve_index() -> Html<String> {
                 `;
             });
     </script>
+    
+    <!-- Frappe Gantt JavaScript -->
+    <script src="https://unpkg.com/frappe-gantt@0.6.1/dist/frappe-gantt.min.js"></script>
 </body>
 </html>
 "#;
@@ -219,6 +224,7 @@ fn api_routes() -> Router<PgPool> {
         .merge(routes::user_routes())
         .merge(routes::resource_routes())
         .merge(routes::project_routes())
+        .merge(routes::allocation_routes())
 }
 
 /// Run the server

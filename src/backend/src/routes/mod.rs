@@ -10,3 +10,4 @@ pub use department::department_routes;
 pub use user::user_routes;
 pub use resource::resource_routes;
 pub use project::project_routes;
+pub use allocation::allocation_routes;

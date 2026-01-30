@@ -1,10 +1,12 @@
 use leptos::*;
 
+pub mod gantt_chart;
 pub mod project_form;
 pub mod project_list;
 pub mod resource_form;
 pub mod resource_list;
 
+pub use gantt_chart::{GanttChart, GanttTaskItem};
 pub use project_form::ProjectForm;
 pub use project_list::ProjectList;
 pub use resource_form::ResourceForm;
@@ -32,6 +34,9 @@ pub fn Header() -> impl IntoView {
                         </a>
                         <a href="/projects" class="text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400">
                             "Projects"
+                        </a>
+                        <a href="/allocations" class="text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400">
+                            "Allocations"
                         </a>
                     </nav>
                 </div>

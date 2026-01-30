@@ -6,8 +6,9 @@ use wasm_bindgen::JsCast;
 pub mod components;
 pub mod pages;
 pub mod auth;
+pub mod gantt;
 
-use pages::{home::Home, login::Login, dashboard::Dashboard, not_found::NotFound, resources::Resources, projects::Projects};
+use pages::{home::Home, login::Login, dashboard::Dashboard, not_found::NotFound, resources::Resources, projects::Projects, allocations::Allocations};
 use auth::{AuthContext, provide_auth_context};
 
 /// Main application component
@@ -40,6 +41,7 @@ pub fn App() -> impl IntoView {
                     <Route path="/dashboard" view=Dashboard/>
                     <Route path="/resources" view=Resources/>
                     <Route path="/projects" view=Projects/>
+                    <Route path="/allocations" view=Allocations/>
                     <Route path="/*any" view=NotFound/>
                 </Routes>
             </main>
