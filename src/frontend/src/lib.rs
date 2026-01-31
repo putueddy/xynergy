@@ -7,6 +7,7 @@ pub mod components;
 pub mod pages;
 pub mod auth;
 pub mod gantt;
+pub mod timeline;
 
 use pages::{home::Home, login::Login, dashboard::Dashboard, not_found::NotFound, resources::Resources, projects::Projects, allocations::Allocations};
 use auth::{AuthContext, provide_auth_context};
