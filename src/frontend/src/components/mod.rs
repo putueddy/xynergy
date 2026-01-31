@@ -6,6 +6,7 @@ pub mod project_form;
 pub mod project_list;
 pub mod resource_form;
 pub mod resource_list;
+pub mod timeline_chart;
 
 pub use allocation_form::{AllocationForm, AllocationFormData, ProjectOption, ResourceOption};
 pub use gantt_chart::{GanttChart, GanttTaskItem};
@@ -13,6 +14,7 @@ pub use project_form::ProjectForm;
 pub use project_list::ProjectList;
 pub use resource_form::ResourceForm;
 pub use resource_list::ResourceList;
+pub use timeline_chart::{AllocationItem, ResourceGroup, TimelineChart};
 
 /// Header component
 #[component]

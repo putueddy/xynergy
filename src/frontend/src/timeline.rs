@@ -3,6 +3,7 @@ use wasm_bindgen::prelude::*;
 
 /// Vis-timeline Timeline struct
 #[wasm_bindgen]
+#[derive(Clone)]
 extern "C" {
     #[wasm_bindgen(js_name = "vis.Timeline")]
     pub type Timeline;

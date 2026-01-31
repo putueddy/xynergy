@@ -114,6 +114,48 @@ async fn serve_index() -> Html<String> {
         .vis-group {
             border-bottom: 1px solid #e5e7eb;
         }
+        /* Timeline split view styles */
+        .timeline-container {
+            display: flex;
+            width: 100%;
+            height: 100%;
+        }
+        .vis-timeline-wrapper {
+            flex: 1;
+            overflow: hidden;
+        }
+        .resource-label {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 4px 8px;
+        }
+        .allocation-badge {
+            font-size: 11px;
+            padding: 2px 6px;
+            border-radius: 10px;
+            margin-left: 8px;
+        }
+        .allocation-full {
+            background-color: #ef4444;
+            color: white;
+        }
+        .allocation-high {
+            background-color: #eab308;
+            color: white;
+        }
+        .allocation-normal {
+            background-color: #22c55e;
+            color: white;
+        }
+        .allocation-item {
+            font-size: 12px;
+            padding: 2px 6px;
+            border-radius: 3px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
     </style>
 </head>
 <body>
