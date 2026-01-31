@@ -61,10 +61,10 @@ pub fn TimelineChart(
                                     }
                                     if value.is_instance_of::<js_sys::Date>() {
                                         let date = js_sys::Date::from(value);
-                                        if let Some(iso) = date.to_iso_string().as_string() {
-                                            // Keep only YYYY-MM-DD for API
-                                            return iso.chars().take(10).collect();
-                                        }
+                                        let year = date.get_full_year();
+                                        let month = date.get_month() + 1;
+                                        let day = date.get_date();
+                                        return format!("{:04}-{:02}-{:02}", year as i32, month, day);
                                     }
                                     String::new()
                                 };

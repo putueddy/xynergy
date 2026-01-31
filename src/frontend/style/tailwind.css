@@ -99,4 +99,13 @@
   .vis-delete {
     display: none !important;
   }
+
+  .vis-time-axis .vis-text.vis-major.vis-sunday,
+  .vis-time-axis .vis-text.vis-major.vis-saturday {
+    background: transparent !important;
+  }
+
+  .vis-time-axis .vis-text.vis-major {
+    background: transparent !important;
+  }
 }
