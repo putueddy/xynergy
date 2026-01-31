@@ -95,6 +95,7 @@ pub struct TimelineItem {
     pub end: Option<String>,
     pub class_name: Option<String>,
     pub style: Option<String>,
+    pub editable: Option<bool>,
 }
 
 impl TimelineItem {
@@ -116,6 +117,14 @@ impl TimelineItem {
         if let Some(style) = &self.style {
             Reflect::set(&obj, &"style".into(), &style.clone().into()).unwrap();
         }
+
+        // Set editable to true by default for drag support
+        Reflect::set(
+            &obj,
+            &"editable".into(),
+            &self.editable.unwrap_or(true).into(),
+        )
+        .unwrap();
 
         obj
     }
@@ -172,7 +181,9 @@ pub fn create_timeline_options(start: &str, end: &str, editable: bool, stack: bo
 
     Reflect::set(&options, &"start".into(), &start.into()).unwrap();
     Reflect::set(&options, &"end".into(), &end.into()).unwrap();
-    Reflect::set(&options, &"editable".into(), &editable.into()).unwrap();
+    // Enable editable - using simple boolean first to test
+    Reflect::set(&options, &"editable".into(), &true.into()).unwrap();
+
     Reflect::set(&options, &"stack".into(), &stack.into()).unwrap();
 
     // Set orientation to top
@@ -181,11 +192,42 @@ pub fn create_timeline_options(start: &str, end: &str, editable: bool, stack: bo
     Reflect::set(&orientation, &"item".into(), &"top".into()).unwrap();
     Reflect::set(&options, &"orientation".into(), &orientation).unwrap();
 
-    // Configure time axis
+    // Configure time axis for daily view
     let time_axis = Object::new();
     Reflect::set(&time_axis, &"scale".into(), &"day".into()).unwrap();
     Reflect::set(&time_axis, &"step".into(), &1.into()).unwrap();
     Reflect::set(&options, &"timeAxis".into(), &time_axis).unwrap();
+
+    // Format to show day and date
+    let format = Object::new();
+    let minor_labels = Object::new();
+    Reflect::set(&minor_labels, &"millisecond".into(), &"SSS".into()).unwrap();
+    Reflect::set(&minor_labels, &"second".into(), &"s".into()).unwrap();
+    Reflect::set(&minor_labels, &"minute".into(), &"HH:mm".into()).unwrap();
+    Reflect::set(&minor_labels, &"hour".into(), &"HH:mm".into()).unwrap();
+    Reflect::set(&minor_labels, &"weekday".into(), &"ddd D".into()).unwrap();
+    Reflect::set(&minor_labels, &"day".into(), &"D".into()).unwrap();
+    Reflect::set(&minor_labels, &"week".into(), &"w".into()).unwrap();
+    Reflect::set(&minor_labels, &"month".into(), &"MMM".into()).unwrap();
+    Reflect::set(&minor_labels, &"year".into(), &"YYYY".into()).unwrap();
+    Reflect::set(&format, &"minorLabels".into(), &minor_labels).unwrap();
+
+    let major_labels = Object::new();
+    Reflect::set(&major_labels, &"millisecond".into(), &"HH:mm:ss".into()).unwrap();
+    Reflect::set(&major_labels, &"second".into(), &"D MMMM HH:mm".into()).unwrap();
+    Reflect::set(&major_labels, &"minute".into(), &"ddd D MMMM".into()).unwrap();
+    Reflect::set(&major_labels, &"hour".into(), &"ddd D MMMM".into()).unwrap();
+    Reflect::set(&major_labels, &"weekday".into(), &"MMMM YYYY".into()).unwrap();
+    Reflect::set(&major_labels, &"day".into(), &"MMMM YYYY".into()).unwrap();
+    Reflect::set(&major_labels, &"week".into(), &"MMMM YYYY".into()).unwrap();
+    Reflect::set(&major_labels, &"month".into(), &"YYYY".into()).unwrap();
+    Reflect::set(&major_labels, &"year".into(), &"".into()).unwrap();
+    Reflect::set(&format, &"majorLabels".into(), &major_labels).unwrap();
+    Reflect::set(&options, &"format".into(), &format).unwrap();
+
+    // Add weekend and holiday highlighting using CSS classes
+    // Vis-timeline automatically adds vis-saturday and vis-sunday classes
+    // We style these in CSS with gray 40% background
 
     options
 }

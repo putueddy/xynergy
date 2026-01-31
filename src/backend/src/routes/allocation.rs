@@ -21,6 +21,7 @@ pub struct AllocationResponse {
     pub start_date: NaiveDate,
     pub end_date: NaiveDate,
     pub allocation_percentage: f64,
+    pub include_weekend: bool,
     pub project_name: String,
     pub resource_name: String,
 }
@@ -33,6 +34,7 @@ pub struct CreateAllocationRequest {
     pub start_date: NaiveDate,
     pub end_date: NaiveDate,
     pub allocation_percentage: f64,
+    pub include_weekend: bool,
 }
 
 /// Update allocation request
@@ -43,6 +45,7 @@ pub struct UpdateAllocationRequest {
     pub start_date: Option<NaiveDate>,
     pub end_date: Option<NaiveDate>,
     pub allocation_percentage: Option<f64>,
+    pub include_weekend: Option<bool>,
 }
 
 /// Daily allocation info for validation
@@ -120,10 +123,10 @@ async fn get_existing_allocations(
     start_date: NaiveDate,
     end_date: NaiveDate,
     exclude_allocation_id: Option<Uuid>,
-) -> Result<Vec<(Uuid, NaiveDate, NaiveDate, f64)>> {
-    let allocations: Vec<(Uuid, NaiveDate, NaiveDate, f64)> = if let Some(exclude_id) = exclude_allocation_id {
+) -> Result<Vec<(Uuid, NaiveDate, NaiveDate, f64, bool)>> {
+    let allocations: Vec<(Uuid, NaiveDate, NaiveDate, f64, bool)> = if let Some(exclude_id) = exclude_allocation_id {
         sqlx::query!(
-            "SELECT id, start_date, end_date, allocation_percentage
+            "SELECT id, start_date, end_date, allocation_percentage, include_weekend
              FROM allocations 
              WHERE resource_id = $1 
              AND id != $2
@@ -145,12 +148,13 @@ async fn get_existing_allocations(
             row.id,
             row.start_date,
             row.end_date,
-            bigdecimal_to_f64(row.allocation_percentage)
+            bigdecimal_to_f64(row.allocation_percentage),
+            row.include_weekend,
         ))
         .collect()
     } else {
         sqlx::query!(
-            "SELECT id, start_date, end_date, allocation_percentage
+            "SELECT id, start_date, end_date, allocation_percentage, include_weekend
              FROM allocations 
              WHERE resource_id = $1 
              AND (
@@ -170,7 +174,8 @@ async fn get_existing_allocations(
             row.id,
             row.start_date,
             row.end_date,
-            bigdecimal_to_f64(row.allocation_percentage)
+            bigdecimal_to_f64(row.allocation_percentage),
+            row.include_weekend,
         ))
         .collect()
     };
@@ -187,6 +192,7 @@ async fn calculate_daily_allocations(
     new_allocation_percentage: f64,
     new_start_date: NaiveDate,
     new_end_date: NaiveDate,
+    new_include_weekend: bool,
     exclude_allocation_id: Option<Uuid>,
 ) -> Result<(HashMap<NaiveDate, DailyAllocation>, f64)> {
     // Get working hours capacity
@@ -205,11 +211,11 @@ async fn calculate_daily_allocations(
     let mut daily_allocations: HashMap<NaiveDate, DailyAllocation> = HashMap::new();
     
     // Process existing allocations
-    for (alloc_id, alloc_start, alloc_end, percentage) in existing_allocations {
+    for (alloc_id, alloc_start, alloc_end, percentage, include_weekend) in existing_allocations {
         let mut current_date = alloc_start;
         while current_date <= alloc_end {
             // Skip weekends and holidays
-            if !is_weekend(current_date) && !holiday_set.contains(&current_date) {
+            if (include_weekend || !is_weekend(current_date)) && !holiday_set.contains(&current_date) {
                 let hours = daily_capacity * (percentage / 100.0);
                 
                 daily_allocations
@@ -238,7 +244,7 @@ async fn calculate_daily_allocations(
     // Add new allocation
     let mut current_date = new_start_date;
     while current_date <= new_end_date {
-        if !is_weekend(current_date) && !holiday_set.contains(&current_date) {
+        if (new_include_weekend || !is_weekend(current_date)) && !holiday_set.contains(&current_date) {
             let new_hours = daily_capacity * (new_allocation_percentage / 100.0);
             
             daily_allocations
@@ -263,6 +269,7 @@ async fn check_resource_capacity(
     new_start_date: NaiveDate,
     new_end_date: NaiveDate,
     new_allocation_percentage: f64,
+    new_include_weekend: bool,
     exclude_allocation_id: Option<Uuid>,
 ) -> Result<(bool, String, f64)> {
     // Calculate date range to check (union of all allocations)
@@ -311,6 +318,7 @@ async fn check_resource_capacity(
         new_allocation_percentage,
         new_start_date,
         new_end_date,
+        new_include_weekend,
         exclude_allocation_id,
     ).await?;
     
@@ -389,7 +397,7 @@ async fn get_allocations(
     State(pool): State<PgPool>,
 ) -> Result<Json<Vec<AllocationResponse>>> {
     let allocations = sqlx::query!(
-        "SELECT a.id, a.project_id, a.resource_id, a.start_date, a.end_date, a.allocation_percentage,
+        "SELECT a.id, a.project_id, a.resource_id, a.start_date, a.end_date, a.allocation_percentage, a.include_weekend,
                 p.name as project_name, r.name as resource_name
          FROM allocations a
          JOIN projects p ON a.project_id = p.id
@@ -409,6 +417,7 @@ async fn get_allocations(
             start_date: a.start_date,
             end_date: a.end_date,
             allocation_percentage: bigdecimal_to_f64(a.allocation_percentage),
+            include_weekend: a.include_weekend,
             project_name: a.project_name,
             resource_name: a.resource_name,
         })
@@ -423,7 +432,7 @@ async fn get_allocations_by_project(
     Path(project_id): Path<Uuid>,
 ) -> Result<Json<Vec<AllocationResponse>>> {
     let allocations = sqlx::query!(
-        "SELECT a.id, a.project_id, a.resource_id, a.start_date, a.end_date, a.allocation_percentage,
+        "SELECT a.id, a.project_id, a.resource_id, a.start_date, a.end_date, a.allocation_percentage, a.include_weekend,
                 p.name as project_name, r.name as resource_name
          FROM allocations a
          JOIN projects p ON a.project_id = p.id
@@ -445,6 +454,7 @@ async fn get_allocations_by_project(
             start_date: a.start_date,
             end_date: a.end_date,
             allocation_percentage: bigdecimal_to_f64(a.allocation_percentage),
+            include_weekend: a.include_weekend,
             project_name: a.project_name,
             resource_name: a.resource_name,
         })
@@ -459,7 +469,7 @@ async fn get_allocations_by_resource(
     Path(resource_id): Path<Uuid>,
 ) -> Result<Json<Vec<AllocationResponse>>> {
     let allocations = sqlx::query!(
-        "SELECT a.id, a.project_id, a.resource_id, a.start_date, a.end_date, a.allocation_percentage,
+        "SELECT a.id, a.project_id, a.resource_id, a.start_date, a.end_date, a.allocation_percentage, a.include_weekend,
                 p.name as project_name, r.name as resource_name
          FROM allocations a
          JOIN projects p ON a.project_id = p.id
@@ -481,6 +491,7 @@ async fn get_allocations_by_resource(
             start_date: a.start_date,
             end_date: a.end_date,
             allocation_percentage: bigdecimal_to_f64(a.allocation_percentage),
+            include_weekend: a.include_weekend,
             project_name: a.project_name,
             resource_name: a.resource_name,
         })
@@ -509,6 +520,7 @@ async fn create_allocation(
         req.start_date,
         req.end_date,
         req.allocation_percentage,
+        req.include_weekend,
         None,
     )
     .await?;
@@ -520,14 +532,15 @@ async fn create_allocation(
     let allocation_percentage_bd = f64_to_bigdecimal(req.allocation_percentage);
 
     let allocation = sqlx::query!(
-        "INSERT INTO allocations (project_id, resource_id, start_date, end_date, allocation_percentage)
-         VALUES ($1, $2, $3, $4, $5)
-         RETURNING id, project_id, resource_id, start_date, end_date, allocation_percentage",
+        "INSERT INTO allocations (project_id, resource_id, start_date, end_date, allocation_percentage, include_weekend)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         RETURNING id, project_id, resource_id, start_date, end_date, allocation_percentage, include_weekend",
         req.project_id,
         req.resource_id,
         req.start_date,
         req.end_date,
-        allocation_percentage_bd
+        allocation_percentage_bd,
+        req.include_weekend
     )
     .fetch_one(&pool)
     .await
@@ -557,6 +570,7 @@ async fn create_allocation(
         start_date: allocation.start_date,
         end_date: allocation.end_date,
         allocation_percentage: bigdecimal_to_f64(allocation.allocation_percentage),
+        include_weekend: allocation.include_weekend,
         project_name,
         resource_name,
     }))
@@ -570,7 +584,7 @@ async fn update_allocation(
 ) -> Result<Json<AllocationResponse>> {
     // Check if allocation exists
     let existing = sqlx::query!(
-        "SELECT id, project_id, resource_id, start_date, end_date, allocation_percentage FROM allocations WHERE id = $1",
+        "SELECT id, project_id, resource_id, start_date, end_date, allocation_percentage, include_weekend FROM allocations WHERE id = $1",
         id
     )
     .fetch_optional(&pool)
@@ -584,6 +598,7 @@ async fn update_allocation(
     let start_date = req.start_date.or(Some(existing.start_date)).expect("start_date is not null");
     let end_date = req.end_date.or(Some(existing.end_date)).expect("end_date is not null");
     let new_percentage = req.allocation_percentage.unwrap_or_else(|| bigdecimal_to_f64(existing.allocation_percentage));
+    let include_weekend = req.include_weekend.unwrap_or(existing.include_weekend);
 
     // Validate dates are within project dates
     validate_allocation_dates(
@@ -600,6 +615,7 @@ async fn update_allocation(
         start_date,
         end_date,
         new_percentage,
+        include_weekend,
         Some(id),
     )
     .await?;
@@ -618,14 +634,16 @@ async fn update_allocation(
              resource_id = COALESCE($2, resource_id),
              start_date = COALESCE($3, start_date),
              end_date = COALESCE($4, end_date),
-             allocation_percentage = COALESCE($5, allocation_percentage)
-         WHERE id = $6
-         RETURNING id, project_id, resource_id, start_date, end_date, allocation_percentage",
+             allocation_percentage = COALESCE($5, allocation_percentage),
+             include_weekend = COALESCE($6, include_weekend)
+         WHERE id = $7
+         RETURNING id, project_id, resource_id, start_date, end_date, allocation_percentage, include_weekend",
         req.project_id,
         req.resource_id,
         req.start_date,
         req.end_date,
         allocation_percentage_bd,
+        req.include_weekend,
         id
     )
     .fetch_one(&pool)
@@ -659,6 +677,7 @@ async fn update_allocation(
         start_date: allocation.start_date,
         end_date: allocation.end_date,
         allocation_percentage: bigdecimal_to_f64(allocation.allocation_percentage),
+        include_weekend: allocation.include_weekend,
         project_name,
         resource_name,
     }))

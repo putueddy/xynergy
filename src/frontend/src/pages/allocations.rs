@@ -1,10 +1,11 @@
 use leptos::*;
 use leptos_router::*;
 use crate::auth::use_auth;
-use crate::components::{Header, Footer, GanttChart, AllocationForm, AllocationFormData, ResourceOption, ProjectOption};
-use crate::gantt::GanttTask;
+use crate::components::{Header, Footer, TimelineChart, AllocationForm, AllocationFormData, AllocationEditData, ResourceOption, ProjectOption};
+use crate::timeline::{TimelineGroup, TimelineItem};
 use uuid::Uuid;
 use serde::Deserialize;
+use chrono::Datelike;
 
 /// Allocation data structure
 #[derive(Debug, Clone, Deserialize)]
@@ -17,6 +18,8 @@ pub struct Allocation {
     pub allocation_percentage: f64,
     pub project_name: String,
     pub resource_name: String,
+    #[serde(default)]
+    pub include_weekend: bool,
 }
 
 /// Resource data for dropdown
@@ -55,8 +58,9 @@ pub fn Allocations() -> impl IntoView {
     let (projects, set_projects) = create_signal(Vec::new());
     let (loading, set_loading) = create_signal(false);
     let (error, set_error) = create_signal(Option::<String>::None);
-    let (view_mode, set_view_mode) = create_signal("Week");
+
     let (show_form, set_show_form) = create_signal(false);
+    let (editing_allocation, set_editing_allocation) = create_signal(Option::<Allocation>::None);
     
     // Load data on mount
     create_effect(move |_| {
@@ -84,37 +88,207 @@ pub fn Allocations() -> impl IntoView {
         });
     });
     
-    // Convert allocations to Gantt tasks
-    let (gantt_tasks, _set_gantt_tasks) = create_signal(Vec::<GanttTask>::new());
+    // Convert allocations to timeline groups and items
+    let (timeline_groups, set_timeline_groups) = create_signal(Vec::<TimelineGroup>::new());
+    let (timeline_items, set_timeline_items) = create_signal(Vec::<TimelineItem>::new());
     
     create_effect(move |_| {
-        let tasks: Vec<GanttTask> = allocations.get()
+        let all_allocations = allocations.get();
+        
+        // Create groups from unique resources
+        let mut resource_map = std::collections::HashMap::new();
+        for allocation in &all_allocations {
+            resource_map.entry(allocation.resource_id.clone())
+                .or_insert_with(|| (allocation.resource_name.clone(), 0.0));
+        }
+        
+        // Calculate total allocation percentage per resource
+        for allocation in &all_allocations {
+            if let Some((_, total)) = resource_map.get_mut(&allocation.resource_id) {
+                *total += allocation.allocation_percentage;
+            }
+        }
+        
+        // Create timeline groups - no background color on rows
+        // Sort by resource name for stable ordering
+        let mut groups: Vec<TimelineGroup> = resource_map
             .into_iter()
-            .map(|a| GanttTask {
-                id: a.id.to_string(),
-                name: format!("{} - {}", a.resource_name, a.project_name),
-                start: a.start_date,
-                end: a.end_date,
-                progress: a.allocation_percentage,
-                custom_class: Some(format!("allocation-{}", a.resource_id)),
+            .map(|(resource_id, (resource_name, _total_percentage))| TimelineGroup {
+                id: resource_id.to_string(),
+                content: resource_name,
+                class_name: None, // No background class on group rows
+                style: None,
             })
             .collect();
-        _set_gantt_tasks.set(tasks);
+        groups.sort_by(|a, b| a.content.cmp(&b.content));
+        
+        // Create timeline items from allocations
+        // Assign consistent colors to projects
+        let mut project_colors: std::collections::HashMap<String, (String, String)> = std::collections::HashMap::new();
+        let color_palette: [(String, String); 25] = [
+            ("#3b82f6".to_string(), "bg-blue-500".to_string()),           // 1. Blue
+            ("#ef4444".to_string(), "bg-red-500".to_string()),            // 2. Red
+            ("#22c55e".to_string(), "bg-green-500".to_string()),          // 3. Green
+            ("#eab308".to_string(), "bg-yellow-500".to_string()),         // 4. Yellow
+            ("#a855f7".to_string(), "bg-purple-500".to_string()),         // 5. Purple
+            ("#f97316".to_string(), "bg-orange-500".to_string()),         // 6. Orange
+            ("#06b6d4".to_string(), "bg-cyan-500".to_string()),           // 7. Cyan
+            ("#ec4899".to_string(), "bg-pink-500".to_string()),           // 8. Pink
+            ("#6366f1".to_string(), "bg-indigo-500".to_string()),         // 9. Indigo
+            ("#14b8a6".to_string(), "bg-teal-500".to_string()),           // 10. Teal
+            ("#84cc16".to_string(), "bg-lime-500".to_string()),           // 11. Lime
+            ("#f43f5e".to_string(), "bg-rose-500".to_string()),           // 12. Rose
+            ("#8b5cf6".to_string(), "bg-violet-500".to_string()),         // 13. Violet
+            ("#0ea5e9".to_string(), "bg-sky-500".to_string()),            // 14. Sky
+            ("#10b981".to_string(), "bg-emerald-500".to_string()),        // 15. Emerald
+            ("#f59e0b".to_string(), "bg-amber-500".to_string()),          // 16. Amber
+            ("#d946ef".to_string(), "bg-fuchsia-500".to_string()),        // 17. Fuchsia
+            ("#64748b".to_string(), "bg-slate-500".to_string()),          // 18. Slate
+            ("#71717a".to_string(), "bg-zinc-500".to_string()),           // 19. Zinc
+            ("#dc2626".to_string(), "bg-red-600".to_string()),            // 20. Dark Red
+            ("#2563eb".to_string(), "bg-blue-600".to_string()),           // 21. Dark Blue
+            ("#16a34a".to_string(), "bg-green-600".to_string()),          // 22. Dark Green
+            ("#9333ea".to_string(), "bg-purple-600".to_string()),         // 23. Dark Purple
+            ("#c2410c".to_string(), "bg-orange-600".to_string()),         // 24. Dark Orange
+            ("#0891b2".to_string(), "bg-cyan-600".to_string()),           // 25. Dark Cyan
+        ];
+        let mut color_index = 0;
+        let mut items: Vec<TimelineItem> = Vec::new();
+        
+        for a in all_allocations {
+            // Get or assign color for this project
+            let (color, color_class) = project_colors
+                .entry(a.project_name.clone())
+                .or_insert_with(|| {
+                    let idx = color_index % color_palette.len();
+                    color_index += 1;
+                    color_palette[idx].clone()
+                })
+                .clone();
+            
+            if a.include_weekend {
+                // Continuous allocation from start to end
+                // Add one day to end date to make it inclusive
+                let end_date_inclusive = if let Ok(end_date) = chrono::NaiveDate::parse_from_str(&a.end_date, "%Y-%m-%d") {
+                    (end_date + chrono::Duration::days(1)).format("%Y-%m-%d").to_string()
+                } else {
+                    a.end_date.clone()
+                };
+                
+                items.push(TimelineItem {
+                    id: a.id.to_string(),
+                    group: a.resource_id.to_string(),
+                    content: format!(
+                        "<div class='allocation-item {}'>{} ({:.0}%)</div>",
+                        color_class, a.project_name, a.allocation_percentage
+                    ),
+                    start: a.start_date.clone(),
+                    end: Some(end_date_inclusive),
+                    class_name: Some(color_class.to_string()),
+                    style: Some(format!(
+                        "background-color: {}; border-color: {}",
+                        color, color
+                    )),
+                    editable: Some(true),
+                });
+            } else {
+                // Split allocation into working days only
+                if let (Ok(start_date), Ok(end_date)) = (
+                    chrono::NaiveDate::parse_from_str(&a.start_date, "%Y-%m-%d"),
+                    chrono::NaiveDate::parse_from_str(&a.end_date, "%Y-%m-%d")
+                ) {
+                    let mut current_start: Option<chrono::NaiveDate> = None;
+                    let mut current_end: Option<chrono::NaiveDate> = None;
+                    
+                    let mut current = start_date;
+                    while current <= end_date {
+                        let weekday = current.weekday();
+                        let is_working_day = weekday != chrono::Weekday::Sat && weekday != chrono::Weekday::Sun;
+                        
+                        if is_working_day {
+                            if current_start.is_none() {
+                                current_start = Some(current);
+                            }
+                            current_end = Some(current);
+                        } else {
+                            // End of a working period, create item
+                            if let (Some(start), Some(end)) = (current_start, current_end) {
+                                // Add one day to make end date inclusive
+                                let end_inclusive = (end + chrono::Duration::days(1)).format("%Y-%m-%d").to_string();
+                            items.push(TimelineItem {
+                                    id: format!("{}-{}", a.id, items.len()),
+                                    group: a.resource_id.to_string(),
+                                content: format!(
+                                    "<div class='allocation-item {}'>{} ({:.0}%)</div>",
+                                    color_class, a.project_name, a.allocation_percentage
+                                ),
+                                    start: start.format("%Y-%m-%d").to_string(),
+                                    end: Some(end_inclusive),
+                                    class_name: Some(color_class.to_string()),
+                                    style: Some(format!(
+                                        "background-color: {}; border-color: {}",
+                                        color, color
+                                    )),
+                                    editable: Some(true),
+                                });
+                            }
+                            current_start = None;
+                            current_end = None;
+                        }
+                        
+                        current = current + chrono::Duration::days(1);
+                    }
+                    
+                    // Create final item if there's an ongoing working period
+                    if let (Some(start), Some(end)) = (current_start, current_end) {
+                        // Add one day to make end date inclusive
+                        let end_inclusive = (end + chrono::Duration::days(1)).format("%Y-%m-%d").to_string();
+                        items.push(TimelineItem {
+                            id: format!("{}-{}", a.id, items.len()),
+                            group: a.resource_id.to_string(),
+                            content: format!(
+                                "<div class='allocation-item {}'>{} ({:.0}%)</div>",
+                                color_class, a.project_name, a.allocation_percentage
+                            ),
+                            start: start.format("%Y-%m-%d").to_string(),
+                            end: Some(end_inclusive),
+                            class_name: Some(color_class.to_string()),
+                            style: Some(format!(
+                                "background-color: {}; border-color: {}",
+                                color, color
+                            )),
+                            editable: Some(true),
+                        });
+                    }
+                }
+            }
+        }
+        
+        set_timeline_groups.set(groups);
+        set_timeline_items.set(items);
     });
     
     // Handle form submission
     let handle_submit = move |form_data: AllocationFormData| {
+        let editing_id = editing_allocation.get().map(|a| a.id);
         spawn_local(async move {
             set_loading.set(true);
             set_error.set(None);
             
-            match create_allocation(form_data).await {
+            let result = if let Some(allocation_id) = editing_id {
+                update_allocation_form(allocation_id.to_string(), form_data).await
+            } else {
+                create_allocation(form_data).await
+            };
+
+            match result {
                 Ok(_) => {
                     // Reload allocations
                     match fetch_allocations().await {
                         Ok(data) => {
                             set_allocations.set(data);
                             set_show_form.set(false);
+                            set_editing_allocation.set(None);
                         }
                         Err(e) => set_error.set(Some(e)),
                     }
@@ -127,6 +301,7 @@ pub fn Allocations() -> impl IntoView {
     
     let handle_cancel = move |_| {
         set_show_form.set(false);
+        set_editing_allocation.set(None);
     };
     
     // Convert to option types for form
@@ -142,6 +317,18 @@ pub fn Allocations() -> impl IntoView {
             id: p.id,
             name: p.name,
         }).collect::<Vec<_>>()
+    });
+
+    let editing_form_data = Signal::derive(move || {
+        editing_allocation.get().map(|a| AllocationEditData {
+            id: a.id.to_string(),
+            resource_id: a.resource_id.to_string(),
+            project_id: a.project_id.to_string(),
+            start_date: a.start_date.clone(),
+            end_date: a.end_date.clone(),
+            allocation_percentage: a.allocation_percentage,
+            include_weekend: a.include_weekend,
+        })
     });
     
     view! {
@@ -167,22 +354,6 @@ pub fn Allocations() -> impl IntoView {
                             >
                                 "Add Allocation"
                             </button>
-                            
-                            <label class="text-sm font-medium text-gray-700 dark:text-gray-300">"View:"</label>
-                            <select
-                                class="rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                                prop:value=view_mode
-                                on:change=move |ev| {
-                                    let value = event_target_value(&ev);
-                                    set_view_mode.set(Box::leak(value.into_boxed_str()));
-                                }
-                            >
-                                <option value="Quarter Day">"Quarter Day"</option>
-                                <option value="Half Day">"Half Day"</option>
-                                <option value="Day">"Day"</option>
-                                <option value="Week">"Week"</option>
-                                <option value="Month">"Month"</option>
-                            </select>
                         </div>
                     </div>
                     
@@ -202,14 +373,17 @@ pub fn Allocations() -> impl IntoView {
                     
                     {move || {
                         if show_form.get() {
+                            let is_edit = editing_allocation.get().is_some();
+                            let title = if is_edit { "Edit Allocation" } else { "Create Allocation" };
                             view! {
                                 <div class="bg-white dark:bg-gray-800 shadow rounded-lg p-6">
                                     <h2 class="text-xl font-semibold text-gray-900 dark:text-white mb-4">
-                                        "Create Allocation"
+                                        {title}
                                     </h2>
                                     <AllocationForm
                                         resources=resource_options.into()
                                         projects=project_options.into()
+                                        editing_allocation=editing_form_data
                                         on_submit=Callback::new(handle_submit)
                                         on_cancel=Callback::new(handle_cancel)
                                     />
@@ -220,29 +394,83 @@ pub fn Allocations() -> impl IntoView {
                         }
                     }}
                     
-                    {move || {
-                        if loading.get() {
-                            view! {
-                                <div class="text-center py-12 bg-white dark:bg-gray-800 rounded-lg shadow">
-                                    <div class="spinner mx-auto mb-4"></div>
-                                    <p class="text-gray-600 dark:text-gray-400">"Loading allocations..."</p>
-                                </div>
-                            }.into_view()
-                        } else if allocations.get().is_empty() {
-                            view! {
-                                <div class="text-center py-12 bg-white dark:bg-gray-800 rounded-lg shadow">
-                                    <p class="text-gray-600 dark:text-gray-400">"No allocations found."</p>
-                                    <p class="text-sm text-gray-500 dark:text-gray-500 mt-2">"Click 'Add Allocation' to create one."</p>
-                                </div>
-                            }.into_view()
-                        } else {
-                            view! {
-                                <div class="space-y-6">
-                                    <GanttChart
-                                        tasks=gantt_tasks.into()
-                                        view_mode=view_mode.get()
-                                    />
-                                    
+                    <div class="space-y-6">
+                        <div class="bg-white dark:bg-gray-800 shadow rounded-lg overflow-hidden">
+                            <div class="h-[500px] relative">
+                                <TimelineChart
+                                    groups=timeline_groups.into()
+                                    items=timeline_items.into()
+                                    days_before=15
+                                    days_after=15
+                                    on_item_move=Callback::new(move |(item_id, new_start, new_end): (String, String, String)| {
+                                        web_sys::console::log_1(&format!("Drag callback triggered: id={}, start={}, end={}", item_id, new_start, new_end).into());
+                                        let base_id = item_id.split('-').take(5).collect::<Vec<_>>().join("-");
+                                        let previous_allocations = allocations.get();
+
+                                        // Optimistically update allocations to avoid flicker
+                                        set_allocations.update(|allocs| {
+                                            for allocation in allocs.iter_mut() {
+                                                if allocation.id.to_string() == base_id {
+                                                    allocation.start_date = new_start.clone();
+                                                    allocation.end_date = new_end.clone();
+                                                }
+                                            }
+                                        });
+
+                                        spawn_local(async move {
+                                            set_error.set(None);
+                                            
+                                            web_sys::console::log_1(&"Calling update_allocation...".into());
+                                            match update_allocation(item_id, new_start, new_end).await {
+                                                Ok(_) => {
+                                                    web_sys::console::log_1(&"Update successful".into());
+                                                }
+                                                Err(e) => {
+                                                    web_sys::console::log_1(&format!("Update failed: {}", e).into());
+                                                    set_error.set(Some(e));
+                                                    // Revert optimistic update
+                                                    set_allocations.set(previous_allocations);
+                                                }
+                                            }
+                                        });
+                                    })
+                                />
+
+                                {move || {
+                                    if loading.get() {
+                                        view! {
+                                            <div class="absolute inset-0 flex items-center justify-center bg-white/70 dark:bg-gray-800/70">
+                                                <div class="text-center">
+                                                    <div class="spinner mx-auto mb-4"></div>
+                                                    <p class="text-gray-600 dark:text-gray-400">"Loading allocations..."</p>
+                                                </div>
+                                            </div>
+                                        }.into_view()
+                                    } else {
+                                        view! { <div></div> }.into_view()
+                                    }
+                                }}
+                            </div>
+                        </div>
+
+                        {move || {
+                            if allocations.get().is_empty() && !loading.get() {
+                                view! {
+                                    <div class="text-center py-6 bg-white dark:bg-gray-800 rounded-lg shadow">
+                                        <p class="text-gray-600 dark:text-gray-400">"No allocations found."</p>
+                                        <p class="text-sm text-gray-500 dark:text-gray-500 mt-2">"Click 'Add Allocation' to create one."</p>
+                                    </div>
+                                }.into_view()
+                            } else {
+                                view! { <div></div> }.into_view()
+                            }
+                        }}
+                        
+                        {move || {
+                            if allocations.get().is_empty() {
+                                view! { <div></div> }.into_view()
+                            } else {
+                                view! {
                                     <div class="bg-white dark:bg-gray-800 shadow rounded-lg p-6">
                                         <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">
                                             "Allocation Details"
@@ -256,25 +484,71 @@ pub fn Allocations() -> impl IntoView {
                                                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">"Start Date"</th>
                                                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">"End Date"</th>
                                                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">"Allocation"</th>
+                                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">"Actions"</th>
                                                     </tr>
                                                 </thead>
                                                 <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                                                     {move || allocations.get().into_iter().map(|allocation| {
+                                                        let allocation_id = allocation.id.to_string();
+                                                        let alloc_for_edit = allocation.clone();
                                                         view! {
                                                             <tr class="hover:bg-gray-50 dark:hover:bg-gray-700">
                                                                 <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">
-                                                                    {allocation.resource_name}
+                                                                    {allocation.resource_name.clone()}
                                                                 </td>
                                                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                                                                    {allocation.project_name}
+                                                                    {allocation.project_name.clone()}
                                                                 </td>
                                                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                                                                    {allocation.start_date}
+                                                                    {allocation.start_date.clone()}
                                                                 </td>
                                                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                                                                    {allocation.end_date}</td>
+                                                                    {allocation.end_date.clone()}</td>
                                                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                                                                     {format!("{:.0}%", allocation.allocation_percentage)}
+                                                                </td>
+                                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                                                                    <div class="flex items-center space-x-2">
+                                                                        <button
+                                                                            class="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+                                                                            on:click={
+                                                                                let alloc = alloc_for_edit.clone();
+                                                                                move |_| {
+                                                                                    set_editing_allocation.set(Some(alloc.clone()));
+                                                                                    set_show_form.set(true);
+                                                                                }
+                                                                            }
+                                                                        >
+                                                                            "Edit"
+                                                                        </button>
+                                                                        <button
+                                                                            class="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
+                                                                            on:click={
+                                                                                let id = allocation_id.clone();
+                                                                                move |_| {
+                                                                                    let id_clone = id.clone();
+                                                                                    spawn_local(async move {
+                                                                                        set_loading.set(true);
+                                                                                        set_error.set(None);
+                                                                                        
+                                                                                        match delete_allocation(id_clone).await {
+                                                                                            Ok(_) => {
+                                                                                                // Reload allocations
+                                                                                                match fetch_allocations().await {
+                                                                                                    Ok(data) => set_allocations.set(data),
+                                                                                                    Err(e) => set_error.set(Some(e)),
+                                                                                                }
+                                                                                            }
+                                                                                            Err(e) => set_error.set(Some(e)),
+                                                                                        }
+                                                                                        set_loading.set(false);
+                                                                                    });
+                                                                                }
+                                                                            }
+                                                                        >
+                                                                            "Delete"
+                                                                        </button>
+                                                                    </div>
                                                                 </td>
                                                             </tr>
                                                         }
@@ -283,10 +557,10 @@ pub fn Allocations() -> impl IntoView {
                                             </table>
                                         </div>
                                     </div>
-                                </div>
-                            }.into_view()
-                        }
-                    }}
+                                }.into_view()
+                            }
+                        }}
+                    </div>
                 </div>
             </main>
             
@@ -384,6 +658,7 @@ async fn create_allocation(form_data: AllocationFormData) -> Result<(), String> 
             "start_date": form_data.start_date,
             "end_date": form_data.end_date,
             "allocation_percentage": allocation_percentage,
+            "include_weekend": form_data.include_weekend,
         }))
         .send()
         .await
@@ -394,5 +669,90 @@ async fn create_allocation(form_data: AllocationFormData) -> Result<(), String> 
     } else {
         let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
         Err(format!("Failed to create allocation: {}", error_text))
+    }
+}
+
+/// Update an existing allocation (form edit)
+async fn update_allocation_form(
+    allocation_id: String,
+    form_data: AllocationFormData,
+) -> Result<(), String> {
+    let resource_id = form_data.resource_id.parse::<Uuid>()
+        .map_err(|_| "Invalid resource ID")?;
+    let project_id = form_data.project_id.parse::<Uuid>()
+        .map_err(|_| "Invalid project ID")?;
+    let allocation_percentage = form_data.allocation_percentage.parse::<f64>()
+        .map_err(|_| "Invalid allocation percentage")?;
+
+    let client = reqwest::Client::new();
+    let response = client
+        .put(&format!("http://localhost:3000/api/v1/allocations/{}", allocation_id))
+        .json(&serde_json::json!({
+            "resource_id": resource_id,
+            "project_id": project_id,
+            "start_date": form_data.start_date,
+            "end_date": form_data.end_date,
+            "allocation_percentage": allocation_percentage,
+            "include_weekend": form_data.include_weekend,
+        }))
+        .send()
+        .await
+        .map_err(|e| format!("Failed to update allocation: {}", e))?;
+
+    if response.status().is_success() {
+        Ok(())
+    } else {
+        let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+        Err(format!("Failed to update allocation: {}", error_text))
+    }
+}
+
+/// Update an allocation
+async fn update_allocation(
+    allocation_id: String,
+    start_date: String,
+    end_date: String,
+) -> Result<(), String> {
+    // Extract the base UUID from the item ID (handles "{uuid}-{index}" format)
+    let base_id = allocation_id.split('-').take(5).collect::<Vec<_>>().join("-");
+    let id = base_id.parse::<Uuid>()
+        .map_err(|_| "Invalid allocation ID")?;
+    
+    let client = reqwest::Client::new();
+    let response = client
+        .put(&format!("http://localhost:3000/api/v1/allocations/{}", id))
+        .json(&serde_json::json!({
+            "start_date": start_date,
+            "end_date": end_date,
+        }))
+        .send()
+        .await
+        .map_err(|e| format!("Failed to update allocation: {}", e))?;
+    
+    if response.status().is_success() {
+        Ok(())
+    } else {
+        let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+        Err(format!("Failed to update allocation: {}", error_text))
+    }
+}
+
+/// Delete an allocation
+async fn delete_allocation(allocation_id: String) -> Result<(), String> {
+    let id = allocation_id.parse::<Uuid>()
+        .map_err(|_| "Invalid allocation ID")?;
+    
+    let client = reqwest::Client::new();
+    let response = client
+        .delete(&format!("http://localhost:3000/api/v1/allocations/{}", id))
+        .send()
+        .await
+        .map_err(|e| format!("Failed to delete allocation: {}", e))?;
+    
+    if response.status().is_success() {
+        Ok(())
+    } else {
+        let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+        Err(format!("Failed to delete allocation: {}", error_text))
     }
 }

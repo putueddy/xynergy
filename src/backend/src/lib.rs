@@ -149,12 +149,32 @@ async fn serve_index() -> Html<String> {
             color: white;
         }
         .allocation-item {
-            font-size: 12px;
+            font-size: 7px;
             padding: 2px 6px;
             border-radius: 3px;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
+        }
+        /* Weekend and holiday background - Vis-timeline uses vis-saturday and vis-sunday on the grid cells */
+        .vis-timeline .vis-grid.vis-saturday,
+        .vis-timeline .vis-grid.vis-sunday {
+            background-color: rgba(156, 163, 175, 0.4) !important;
+        }
+        .vis-timeline .vis-grid.vis-holiday {
+            background-color: rgba(156, 163, 175, 0.4) !important;
+        }
+        .weekend-background {
+            background-color: rgba(156, 163, 175, 0.4) !important;
+        }
+        /* Alternative selectors for weekend highlighting */
+        .vis-timeline .vis-time-axis .vis-grid.saturday,
+        .vis-timeline .vis-time-axis .vis-grid.sunday {
+            background-color: rgba(156, 163, 175, 0.4) !important;
+        }
+        .vis-timeline .vis-grid.saturday,
+        .vis-timeline .vis-grid.sunday {
+            background-color: rgba(156, 163, 175, 0.4) !important;
         }
     </style>
 </head>

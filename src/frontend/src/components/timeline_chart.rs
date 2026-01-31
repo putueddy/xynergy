@@ -3,20 +3,34 @@ use crate::timeline::{
     TimelineItem,
 };
 use leptos::*;
+use wasm_bindgen::closure::Closure;
 use wasm_bindgen::JsCast;
 use wasm_bindgen::JsValue;
+use js_sys::{Function, Reflect};
 
 /// Timeline Chart component using Vis-timeline
 #[component]
 pub fn TimelineChart(
     groups: Signal<Vec<TimelineGroup>>,
     items: Signal<Vec<TimelineItem>>,
-    #[prop(default = "2026-01-01")] start_date: &'static str,
-    #[prop(default = "2026-03-31")] end_date: &'static str,
+    #[prop(default = 15)] days_before: i64,
+    #[prop(default = 15)] days_after: i64,
+    #[prop(optional)] on_item_move: Option<Callback<(String, String, String)>>, // (item_id, new_start, new_end)
 ) -> impl IntoView {
     let timeline_ref = create_node_ref::<leptos::html::Div>();
     // Use StoredValue instead of create_signal because Timeline doesn't implement Clone
     let timeline_instance = store_value::<Option<Timeline>>(None);
+
+    // Calculate date range centered around today
+    let (start_date, end_date) = {
+        let today = chrono::Local::now().date_naive();
+        let start = today - chrono::Duration::days(days_before);
+        let end = today + chrono::Duration::days(days_after);
+        (
+            start.format("%Y-%m-%d").to_string(),
+            end.format("%Y-%m-%d").to_string(),
+        )
+    };
 
     // Initialize timeline when component mounts
     create_effect(move |_| {
@@ -25,11 +39,85 @@ pub fn TimelineChart(
             let items_data = items.get();
 
             if !groups_data.is_empty() {
+                let should_create = timeline_instance.with_value(|timeline_opt| timeline_opt.is_none());
+                if !should_create {
+                    return;
+                }
+
                 let js_groups = groups_to_js_array(&groups_data);
                 let js_items = items_to_js_array(&items_data);
-                let options = create_timeline_options(start_date, end_date, false, true);
+                let options = create_timeline_options(&start_date, &end_date, true, false);
 
                 if let Some(html_element) = container.dyn_ref::<web_sys::HtmlElement>() {
+                    // Set up onMove handler in options for item drag events
+                    if let Some(callback) = on_item_move {
+                        let callback_clone = callback.clone();
+                        let move_handler = Closure::wrap(Box::new(move |item: JsValue, handler: Function| {
+                            web_sys::console::log_1(&"MOVE EVENT TRIGGERED!".into());
+                            if let Ok(props) = item.clone().dyn_into::<js_sys::Object>() {
+                                let js_value_to_date = |value: JsValue| -> String {
+                                    if let Some(text) = value.as_string() {
+                                        return text;
+                                    }
+                                    if value.is_instance_of::<js_sys::Date>() {
+                                        let date = js_sys::Date::from(value);
+                                        if let Some(iso) = date.to_iso_string().as_string() {
+                                            // Keep only YYYY-MM-DD for API
+                                            return iso.chars().take(10).collect();
+                                        }
+                                    }
+                                    String::new()
+                                };
+
+                                let id = Reflect::get(&props, &"id".into())
+                                    .ok()
+                                    .and_then(|v| v.as_string())
+                                    .unwrap_or_default();
+                                let start = Reflect::get(&props, &"start".into())
+                                    .ok()
+                                    .map(js_value_to_date)
+                                    .unwrap_or_default();
+                                let mut end = Reflect::get(&props, &"end".into())
+                                    .ok()
+                                    .map(js_value_to_date)
+                                    .unwrap_or_default();
+
+                                if end.is_empty() {
+                                    end = start.clone();
+                                }
+
+                                web_sys::console::log_1(
+                                    &format!("Item moved: {} from {} to {}", id, start, end).into(),
+                                );
+
+                                // Show alert for debugging
+                                web_sys::window()
+                                    .unwrap()
+                                    .alert_with_message(&format!(
+                                        "Dragged: {} to {} - {}",
+                                        id, start, end
+                                    ))
+                                    .unwrap();
+
+                                callback_clone.call((id, start, end));
+                            } else {
+                                web_sys::console::log_1(
+                                    &"Failed to convert item to object".into(),
+                                );
+                            }
+
+                            // Confirm the move with vis-timeline
+                            let _ = handler.call1(&JsValue::NULL, &item);
+                        }) as Box<dyn FnMut(JsValue, Function)>);
+
+                        Reflect::set(&options, &"onMove".into(), move_handler.as_ref().unchecked_ref())
+                            .unwrap();
+                        web_sys::console::log_1(&"onMove handler registered".into());
+                        move_handler.forget(); // Keep the closure alive
+                    } else {
+                        web_sys::console::log_1(&"No on_item_move callback provided".into());
+                    }
+
                     let timeline = Timeline::new(
                         html_element,
                         &JsValue::from(js_items),
@@ -38,7 +126,9 @@ pub fn TimelineChart(
                     );
 
                     timeline_instance.set_value(Some(timeline));
-                    web_sys::console::log_1(&"Timeline initialized with Vis-timeline".into());
+                    web_sys::console::log_1(
+                        &"Timeline initialized with Vis-timeline (editable)".into(),
+                    );
                 }
             }
         }
@@ -148,6 +238,7 @@ impl AllocationItem {
                 self.get_color(),
                 self.get_color()
             )),
+            editable: Some(true),
         }
     }
 
