@@ -15,7 +15,8 @@ pub fn TimelineChart(
     #[prop(default = "2026-03-31")] end_date: &'static str,
 ) -> impl IntoView {
     let timeline_ref = create_node_ref::<leptos::html::Div>();
-    let (timeline_instance, set_timeline_instance) = create_signal(Option::<Timeline>::None);
+    // Use StoredValue instead of create_signal because Timeline doesn't implement Clone
+    let timeline_instance = store_value::<Option<Timeline>>(None);
 
     // Initialize timeline when component mounts
     create_effect(move |_| {
@@ -36,7 +37,7 @@ pub fn TimelineChart(
                         &JsValue::from(options),
                     );
 
-                    set_timeline_instance.set(Some(timeline));
+                    timeline_instance.set_value(Some(timeline));
                     web_sys::console::log_1(&"Timeline initialized with Vis-timeline".into());
                 }
             }
@@ -48,16 +49,18 @@ pub fn TimelineChart(
         let items_data = items.get();
         let groups_data = groups.get();
 
-        if let Some(timeline) = timeline_instance.get() {
-            if !groups_data.is_empty() {
-                let js_items = items_to_js_array(&items_data);
-                let js_groups = groups_to_js_array(&groups_data);
+        timeline_instance.with_value(|timeline_opt| {
+            if let Some(timeline) = timeline_opt {
+                if !groups_data.is_empty() {
+                    let js_items = items_to_js_array(&items_data);
+                    let js_groups = groups_to_js_array(&groups_data);
 
-                timeline.set_items(&JsValue::from(js_items));
-                timeline.set_groups(&JsValue::from(js_groups));
-                timeline.redraw();
+                    timeline.set_items(&JsValue::from(js_items));
+                    timeline.set_groups(&JsValue::from(js_groups));
+                    timeline.redraw();
+                }
             }
-        }
+        });
     });
 
     view! {
