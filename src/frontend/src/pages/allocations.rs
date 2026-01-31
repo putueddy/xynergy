@@ -61,6 +61,8 @@ pub fn Allocations() -> impl IntoView {
 
     let (show_form, set_show_form) = create_signal(false);
     let (editing_allocation, set_editing_allocation) = create_signal(Option::<Allocation>::None);
+    let (form_submitting, set_form_submitting) = create_signal(false);
+    let (deleting_id, set_deleting_id) = create_signal(Option::<String>::None);
     
     // Load data on mount
     create_effect(move |_| {
@@ -124,40 +126,40 @@ pub fn Allocations() -> impl IntoView {
         
         // Create timeline items from allocations
         // Assign consistent colors to projects
-        let mut project_colors: std::collections::HashMap<String, (String, String)> = std::collections::HashMap::new();
-        let color_palette: [(String, String); 25] = [
-            ("#3b82f6".to_string(), "bg-blue-500".to_string()),           // 1. Blue
-            ("#ef4444".to_string(), "bg-red-500".to_string()),            // 2. Red
-            ("#22c55e".to_string(), "bg-green-500".to_string()),          // 3. Green
-            ("#eab308".to_string(), "bg-yellow-500".to_string()),         // 4. Yellow
-            ("#a855f7".to_string(), "bg-purple-500".to_string()),         // 5. Purple
-            ("#f97316".to_string(), "bg-orange-500".to_string()),         // 6. Orange
-            ("#06b6d4".to_string(), "bg-cyan-500".to_string()),           // 7. Cyan
-            ("#ec4899".to_string(), "bg-pink-500".to_string()),           // 8. Pink
-            ("#6366f1".to_string(), "bg-indigo-500".to_string()),         // 9. Indigo
-            ("#14b8a6".to_string(), "bg-teal-500".to_string()),           // 10. Teal
-            ("#84cc16".to_string(), "bg-lime-500".to_string()),           // 11. Lime
-            ("#f43f5e".to_string(), "bg-rose-500".to_string()),           // 12. Rose
-            ("#8b5cf6".to_string(), "bg-violet-500".to_string()),         // 13. Violet
-            ("#0ea5e9".to_string(), "bg-sky-500".to_string()),            // 14. Sky
-            ("#10b981".to_string(), "bg-emerald-500".to_string()),        // 15. Emerald
-            ("#f59e0b".to_string(), "bg-amber-500".to_string()),          // 16. Amber
-            ("#d946ef".to_string(), "bg-fuchsia-500".to_string()),        // 17. Fuchsia
-            ("#64748b".to_string(), "bg-slate-500".to_string()),          // 18. Slate
-            ("#71717a".to_string(), "bg-zinc-500".to_string()),           // 19. Zinc
-            ("#dc2626".to_string(), "bg-red-600".to_string()),            // 20. Dark Red
-            ("#2563eb".to_string(), "bg-blue-600".to_string()),           // 21. Dark Blue
-            ("#16a34a".to_string(), "bg-green-600".to_string()),          // 22. Dark Green
-            ("#9333ea".to_string(), "bg-purple-600".to_string()),         // 23. Dark Purple
-            ("#c2410c".to_string(), "bg-orange-600".to_string()),         // 24. Dark Orange
-            ("#0891b2".to_string(), "bg-cyan-600".to_string()),           // 25. Dark Cyan
+        let mut project_colors: std::collections::HashMap<String, (String, String, String, String)> = std::collections::HashMap::new();
+        let color_palette: [(String, String, String, String); 25] = [
+            ("#3b82f6".to_string(), "bg-blue-500".to_string(), "text-white".to_string(), "#ffffff".to_string()),        // 1. Blue
+            ("#ef4444".to_string(), "bg-red-500".to_string(), "text-white".to_string(), "#ffffff".to_string()),         // 2. Red
+            ("#22c55e".to_string(), "bg-green-500".to_string(), "text-white".to_string(), "#ffffff".to_string()),       // 3. Green
+            ("#eab308".to_string(), "bg-yellow-500".to_string(), "text-slate-900".to_string(), "#0f172a".to_string()),  // 4. Yellow
+            ("#a855f7".to_string(), "bg-purple-500".to_string(), "text-white".to_string(), "#ffffff".to_string()),      // 5. Purple
+            ("#f97316".to_string(), "bg-orange-500".to_string(), "text-white".to_string(), "#ffffff".to_string()),      // 6. Orange
+            ("#06b6d4".to_string(), "bg-cyan-500".to_string(), "text-slate-900".to_string(), "#0f172a".to_string()),     // 7. Cyan
+            ("#ec4899".to_string(), "bg-pink-500".to_string(), "text-white".to_string(), "#ffffff".to_string()),        // 8. Pink
+            ("#6366f1".to_string(), "bg-indigo-500".to_string(), "text-white".to_string(), "#ffffff".to_string()),      // 9. Indigo
+            ("#14b8a6".to_string(), "bg-teal-500".to_string(), "text-white".to_string(), "#ffffff".to_string()),        // 10. Teal
+            ("#84cc16".to_string(), "bg-lime-500".to_string(), "text-slate-900".to_string(), "#0f172a".to_string()),    // 11. Lime
+            ("#f43f5e".to_string(), "bg-rose-500".to_string(), "text-white".to_string(), "#ffffff".to_string()),        // 12. Rose
+            ("#8b5cf6".to_string(), "bg-violet-500".to_string(), "text-white".to_string(), "#ffffff".to_string()),      // 13. Violet
+            ("#0ea5e9".to_string(), "bg-sky-500".to_string(), "text-slate-900".to_string(), "#0f172a".to_string()),     // 14. Sky
+            ("#10b981".to_string(), "bg-emerald-500".to_string(), "text-white".to_string(), "#ffffff".to_string()),     // 15. Emerald
+            ("#f59e0b".to_string(), "bg-amber-500".to_string(), "text-slate-900".to_string(), "#0f172a".to_string()),   // 16. Amber
+            ("#d946ef".to_string(), "bg-fuchsia-500".to_string(), "text-white".to_string(), "#ffffff".to_string()),     // 17. Fuchsia
+            ("#64748b".to_string(), "bg-slate-500".to_string(), "text-white".to_string(), "#ffffff".to_string()),       // 18. Slate
+            ("#71717a".to_string(), "bg-zinc-500".to_string(), "text-white".to_string(), "#ffffff".to_string()),        // 19. Zinc
+            ("#dc2626".to_string(), "bg-red-600".to_string(), "text-white".to_string(), "#ffffff".to_string()),         // 20. Dark Red
+            ("#2563eb".to_string(), "bg-blue-600".to_string(), "text-white".to_string(), "#ffffff".to_string()),        // 21. Dark Blue
+            ("#16a34a".to_string(), "bg-green-600".to_string(), "text-white".to_string(), "#ffffff".to_string()),       // 22. Dark Green
+            ("#9333ea".to_string(), "bg-purple-600".to_string(), "text-white".to_string(), "#ffffff".to_string()),      // 23. Dark Purple
+            ("#c2410c".to_string(), "bg-orange-600".to_string(), "text-white".to_string(), "#ffffff".to_string()),      // 24. Dark Orange
+            ("#0891b2".to_string(), "bg-cyan-600".to_string(), "text-white".to_string(), "#ffffff".to_string()),        // 25. Dark Cyan
         ];
         let mut color_index = 0;
         let mut items: Vec<TimelineItem> = Vec::new();
         
         for a in all_allocations {
             // Get or assign color for this project
-            let (color, color_class) = project_colors
+            let (color, bg_class, text_class, text_color) = project_colors
                 .entry(a.project_name.clone())
                 .or_insert_with(|| {
                     let idx = color_index % color_palette.len();
@@ -165,6 +167,12 @@ pub fn Allocations() -> impl IntoView {
                     color_palette[idx].clone()
                 })
                 .clone();
+            let color_class = format!("{} {}", bg_class, text_class);
+            let weekend_badge = if a.include_weekend {
+                " <span class='ml-2 inline-flex items-center rounded bg-white/80 px-1.5 py-0.5 text-[10px] font-semibold text-slate-900'>Weekend</span>"
+            } else {
+                ""
+            };
             
             if a.include_weekend {
                 // Continuous allocation from start to end
@@ -179,15 +187,15 @@ pub fn Allocations() -> impl IntoView {
                     id: a.id.to_string(),
                     group: a.resource_id.to_string(),
                     content: format!(
-                        "<div class='allocation-item {}'>{} ({:.0}%)</div>",
-                        color_class, a.project_name, a.allocation_percentage
+                        "<div class='allocation-item {}'>{} ({:.0}%){} </div>",
+                        color_class, a.project_name, a.allocation_percentage, weekend_badge
                     ),
                     start: a.start_date.clone(),
                     end: Some(end_date_inclusive),
-                    class_name: Some(color_class.to_string()),
+                    class_name: Some(color_class.clone()),
                     style: Some(format!(
-                        "background-color: {}; border-color: {}",
-                        color, color
+                        "background-color: {}; border-color: {}; color: {}",
+                        color, color, text_color
                     )),
                     editable: Some(true),
                 });
@@ -219,15 +227,15 @@ pub fn Allocations() -> impl IntoView {
                                     id: format!("{}-{}", a.id, items.len()),
                                     group: a.resource_id.to_string(),
                                 content: format!(
-                                    "<div class='allocation-item {}'>{} ({:.0}%)</div>",
-                                    color_class, a.project_name, a.allocation_percentage
+                                        "<div class='allocation-item {}'>{} ({:.0}%){} </div>",
+                                        color_class, a.project_name, a.allocation_percentage, weekend_badge
                                 ),
                                     start: start.format("%Y-%m-%d").to_string(),
                                     end: Some(end_inclusive),
-                                    class_name: Some(color_class.to_string()),
+                                    class_name: Some(color_class.clone()),
                                     style: Some(format!(
-                                        "background-color: {}; border-color: {}",
-                                        color, color
+                                        "background-color: {}; border-color: {}; color: {}",
+                                        color, color, text_color
                                     )),
                                     editable: Some(true),
                                 });
@@ -247,15 +255,15 @@ pub fn Allocations() -> impl IntoView {
                             id: format!("{}-{}", a.id, items.len()),
                             group: a.resource_id.to_string(),
                             content: format!(
-                                "<div class='allocation-item {}'>{} ({:.0}%)</div>",
-                                color_class, a.project_name, a.allocation_percentage
+                                "<div class='allocation-item {}'>{} ({:.0}%){} </div>",
+                                color_class, a.project_name, a.allocation_percentage, weekend_badge
                             ),
                             start: start.format("%Y-%m-%d").to_string(),
                             end: Some(end_inclusive),
-                            class_name: Some(color_class.to_string()),
+                            class_name: Some(color_class.clone()),
                             style: Some(format!(
-                                "background-color: {}; border-color: {}",
-                                color, color
+                                "background-color: {}; border-color: {}; color: {}",
+                                color, color, text_color
                             )),
                             editable: Some(true),
                         });
@@ -272,7 +280,7 @@ pub fn Allocations() -> impl IntoView {
     let handle_submit = move |form_data: AllocationFormData| {
         let editing_id = editing_allocation.get().map(|a| a.id);
         spawn_local(async move {
-            set_loading.set(true);
+            set_form_submitting.set(true);
             set_error.set(None);
             
             let result = if let Some(allocation_id) = editing_id {
@@ -295,7 +303,7 @@ pub fn Allocations() -> impl IntoView {
                 }
                 Err(e) => set_error.set(Some(e)),
             }
-            set_loading.set(false);
+            set_form_submitting.set(false);
         });
     };
     
@@ -376,7 +384,7 @@ pub fn Allocations() -> impl IntoView {
                             let is_edit = editing_allocation.get().is_some();
                             let title = if is_edit { "Edit Allocation" } else { "Create Allocation" };
                             view! {
-                                <div class="bg-white dark:bg-gray-800 shadow rounded-lg p-6">
+                                <div class="bg-white dark:bg-gray-800 shadow rounded-lg p-6 relative">
                                     <h2 class="text-xl font-semibold text-gray-900 dark:text-white mb-4">
                                         {title}
                                     </h2>
@@ -386,7 +394,22 @@ pub fn Allocations() -> impl IntoView {
                                         editing_allocation=editing_form_data
                                         on_submit=Callback::new(handle_submit)
                                         on_cancel=Callback::new(handle_cancel)
+                                        is_submitting=form_submitting.get()
                                     />
+                                    {move || {
+                                        if form_submitting.get() {
+                                            view! {
+                                                <div class="absolute inset-0 flex items-center justify-center bg-white/70 dark:bg-gray-800/70 rounded-lg">
+                                                    <div class="text-center">
+                                                        <div class="spinner mx-auto mb-2"></div>
+                                                        <p class="text-sm text-gray-600 dark:text-gray-400">"Saving..."</p>
+                                                    </div>
+                                                </div>
+                                            }.into_view()
+                                        } else {
+                                            view! { <div></div> }.into_view()
+                                        }
+                                    }}
                                 </div>
                             }.into_view()
                         } else {
@@ -521,33 +544,39 @@ pub fn Allocations() -> impl IntoView {
                                                                         >
                                                                             "Edit"
                                                                         </button>
-                                                                        <button
-                                                                            class="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
-                                                                            on:click={
-                                                                                let id = allocation_id.clone();
-                                                                                move |_| {
-                                                                                    let id_clone = id.clone();
-                                                                                    spawn_local(async move {
-                                                                                        set_loading.set(true);
-                                                                                        set_error.set(None);
-                                                                                        
-                                                                                        match delete_allocation(id_clone).await {
-                                                                                            Ok(_) => {
-                                                                                                // Reload allocations
-                                                                                                match fetch_allocations().await {
-                                                                                                    Ok(data) => set_allocations.set(data),
+                                                                        {move || {
+                                                                            let is_deleting = deleting_id.get() == Some(allocation_id.clone());
+                                                                            view! {
+                                                                                <button
+                                                                                    class="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                                                    disabled=is_deleting
+                                                                                    on:click={
+                                                                                        let id = allocation_id.clone();
+                                                                                        move |_| {
+                                                                                            let id_clone = id.clone();
+                                                                                            set_deleting_id.set(Some(id_clone.clone()));
+                                                                                            spawn_local(async move {
+                                                                                                set_error.set(None);
+                                                                                                
+                                                                                                match delete_allocation(id_clone).await {
+                                                                                                    Ok(_) => {
+                                                                                                        // Reload allocations
+                                                                                                        match fetch_allocations().await {
+                                                                                                            Ok(data) => set_allocations.set(data),
+                                                                                                            Err(e) => set_error.set(Some(e)),
+                                                                                                        }
+                                                                                                    }
                                                                                                     Err(e) => set_error.set(Some(e)),
                                                                                                 }
-                                                                                            }
-                                                                                            Err(e) => set_error.set(Some(e)),
+                                                                                                set_deleting_id.set(None);
+                                                                                            });
                                                                                         }
-                                                                                        set_loading.set(false);
-                                                                                    });
-                                                                                }
+                                                                                    }
+                                                                                >
+                                                                                    {if is_deleting { "Deleting..." } else { "Delete" }}
+                                                                                </button>
                                                                             }
-                                                                        >
-                                                                            "Delete"
-                                                                        </button>
+                                                                        }}
                                                                     </div>
                                                                 </td>
                                                             </tr>

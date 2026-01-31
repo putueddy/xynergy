@@ -46,7 +46,7 @@ pub fn TimelineChart(
 
                 let js_groups = groups_to_js_array(&groups_data);
                 let js_items = items_to_js_array(&items_data);
-                let options = create_timeline_options(&start_date, &end_date, true, false);
+                let options = create_timeline_options(&start_date, &end_date, true, true);
 
                 if let Some(html_element) = container.dyn_ref::<web_sys::HtmlElement>() {
                     // Set up onMove handler in options for item drag events

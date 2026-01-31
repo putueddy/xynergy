@@ -94,3 +94,9 @@
     background-color: var(--color-gray-700);
   }
 }
+
+@layer components {
+  .vis-delete {
+    display: none !important;
+  }
+}

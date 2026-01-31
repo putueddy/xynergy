@@ -45,6 +45,7 @@ pub fn AllocationForm(
     resources: Signal<Vec<ResourceOption>>,
     projects: Signal<Vec<ProjectOption>>,
     editing_allocation: Signal<Option<AllocationEditData>>,
+    #[prop(default = false)] is_submitting: bool,
     on_submit: Callback<AllocationFormData>,
     on_cancel: Callback<()>,
 ) -> impl IntoView {
@@ -251,6 +252,7 @@ pub fn AllocationForm(
                 <button
                     type="button"
                     class="btn-secondary"
+                    disabled=is_submitting
                     on:click=move |_| on_cancel.call(())
                 >
                     "Cancel"
@@ -258,8 +260,16 @@ pub fn AllocationForm(
                 <button
                     type="submit"
                     class="btn-primary"
+                    disabled=is_submitting
                 >
-                    {move || if editing_allocation.get().is_some() { "Update Allocation" } else { "Create Allocation" }}
+                    {move || {
+                        let is_edit = editing_allocation.get().is_some();
+                        if is_submitting {
+                            if is_edit { "Updating..." } else { "Creating..." }
+                        } else {
+                            if is_edit { "Update Allocation" } else { "Create Allocation" }
+                        }
+                    }}
                 </button>
             </div>
         </form>

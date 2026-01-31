@@ -181,8 +181,8 @@ pub fn create_timeline_options(start: &str, end: &str, editable: bool, stack: bo
 
     Reflect::set(&options, &"start".into(), &start.into()).unwrap();
     Reflect::set(&options, &"end".into(), &end.into()).unwrap();
-    // Enable editable - using simple boolean first to test
-    Reflect::set(&options, &"editable".into(), &true.into()).unwrap();
+    // Enable editable; deletion is hidden via CSS
+    Reflect::set(&options, &"editable".into(), &editable.into()).unwrap();
 
     Reflect::set(&options, &"stack".into(), &stack.into()).unwrap();
 
