@@ -44,8 +44,8 @@ async fn serve_index() -> Html<String> {
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <!-- Frappe Gantt CSS -->
-    <link rel="stylesheet" href="https://unpkg.com/frappe-gantt@0.6.1/dist/frappe-gantt.css">
+    <!-- Vis-timeline CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/vis-timeline@7.7.2/styles/vis-timeline-graph2d.min.css">
     <style>
         body {
             font-family: 'Inter', system-ui, sans-serif;
@@ -87,6 +87,32 @@ async fn serve_index() -> Html<String> {
             text-align: center;
             max-width: 400px;
             padding: 20px;
+        }
+        /* Vis-timeline custom styles */
+        .vis-timeline {
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            font-family: 'Inter', system-ui, sans-serif;
+        }
+        .vis-item {
+            border-color: #3b82f6;
+            background-color: #3b82f6;
+            color: white;
+            border-radius: 4px;
+        }
+        .vis-item.vis-selected {
+            border-color: #1d4ed8;
+            background-color: #1d4ed8;
+        }
+        .vis-time-axis .vis-text {
+            color: #6b7280;
+        }
+        .vis-label {
+            color: #374151;
+            font-weight: 500;
+        }
+        .vis-group {
+            border-bottom: 1px solid #e5e7eb;
         }
     </style>
 </head>
@@ -163,8 +189,8 @@ async fn serve_index() -> Html<String> {
             });
     </script>
     
-    <!-- Frappe Gantt JavaScript -->
-    <script src="https://unpkg.com/frappe-gantt@0.6.1/dist/frappe-gantt.min.js"></script>
+    <!-- Vis-timeline JavaScript -->
+    <script src="https://unpkg.com/vis-timeline@7.7.2/standalone/umd/vis-timeline-graph2d.min.js"></script>
 </body>
 </html>
 "#;
