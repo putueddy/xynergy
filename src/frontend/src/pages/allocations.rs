@@ -29,6 +29,15 @@ pub struct Resource {
     pub name: String,
 }
 
+/// Holiday data structure
+#[derive(Debug, Clone, Deserialize)]
+pub struct Holiday {
+    pub id: Uuid,
+    pub name: String,
+    pub date: String,
+    pub description: Option<String>,
+}
+
 /// Project data for dropdown
 #[derive(Debug, Clone, Deserialize)]
 pub struct Project {
@@ -56,6 +65,7 @@ pub fn Allocations() -> impl IntoView {
     let (allocations, set_allocations) = create_signal(Vec::new());
     let (resources, set_resources) = create_signal(Vec::new());
     let (projects, set_projects) = create_signal(Vec::new());
+    let (holidays, set_holidays) = create_signal(Vec::new());
     let (loading, set_loading) = create_signal(false);
     let (error, set_error) = create_signal(Option::<String>::None);
 
@@ -83,6 +93,12 @@ pub fn Allocations() -> impl IntoView {
             // Load projects
             match fetch_projects().await {
                 Ok(data) => set_projects.set(data),
+                Err(e) => set_error.set(Some(e)),
+            }
+            
+            // Load holidays
+            match fetch_holidays().await {
+                Ok(data) => set_holidays.set(data),
                 Err(e) => set_error.set(Some(e)),
             }
             
@@ -200,18 +216,27 @@ pub fn Allocations() -> impl IntoView {
                     editable: Some(true),
                 });
             } else {
-                // Split allocation into working days only
+                // Split allocation into working days only (excluding weekends and holidays)
                 if let (Ok(start_date), Ok(end_date)) = (
                     chrono::NaiveDate::parse_from_str(&a.start_date, "%Y-%m-%d"),
                     chrono::NaiveDate::parse_from_str(&a.end_date, "%Y-%m-%d")
                 ) {
+                    // Get holiday dates as a set for O(1) lookup
+                    let holiday_dates: std::collections::HashSet<String> = holidays.get()
+                        .iter()
+                        .map(|h| h.date.clone())
+                        .collect();
+                    
                     let mut current_start: Option<chrono::NaiveDate> = None;
                     let mut current_end: Option<chrono::NaiveDate> = None;
                     
                     let mut current = start_date;
                     while current <= end_date {
                         let weekday = current.weekday();
-                        let is_working_day = weekday != chrono::Weekday::Sat && weekday != chrono::Weekday::Sun;
+                        let is_weekend = weekday == chrono::Weekday::Sat || weekday == chrono::Weekday::Sun;
+                        let current_date_str = current.format("%Y-%m-%d").to_string();
+                        let is_holiday = holiday_dates.contains(&current_date_str);
+                        let is_working_day = !is_weekend && !is_holiday;
                         
                         if is_working_day {
                             if current_start.is_none() {
@@ -425,6 +450,7 @@ pub fn Allocations() -> impl IntoView {
                                     items=timeline_items.into()
                                     days_before=15
                                     days_after=15
+                                    holidays={holidays.get().iter().map(|h| h.date.clone()).collect::<Vec<_>>()}
                                     on_item_move=Callback::new(move |(item_id, new_start, new_end): (String, String, String)| {
                                         web_sys::console::log_1(&format!("Drag callback triggered: id={}, start={}, end={}", item_id, new_start, new_end).into());
                                         let base_id = item_id.split('-').take(5).collect::<Vec<_>>().join("-");
@@ -783,5 +809,20 @@ async fn delete_allocation(allocation_id: String) -> Result<(), String> {
     } else {
         let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
         Err(format!("Failed to delete allocation: {}", error_text))
+    }
+}
+
+/// Fetch all holidays from API
+async fn fetch_holidays() -> Result<Vec<Holiday>, String> {
+    let response = reqwest::get("http://localhost:3000/api/v1/holidays")
+        .await
+        .map_err(|e| format!("Failed to fetch holidays: {}", e))?;
+    
+    if response.status().is_success() {
+        response.json::<Vec<Holiday>>()
+            .await
+            .map_err(|e| format!("Failed to parse holidays: {}", e))
+    } else {
+        Err(format!("Failed to fetch holidays: {}", response.status()))
     }
 }
