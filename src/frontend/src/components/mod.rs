@@ -2,21 +2,25 @@ use leptos::*;
 
 pub mod allocation_form;
 pub mod gantt_chart;
+pub mod holiday_form;
 pub mod project_form;
 pub mod project_list;
 pub mod resource_form;
 pub mod resource_list;
 pub mod timeline_chart;
+pub mod user_form;
 
 pub use allocation_form::{
     AllocationEditData, AllocationForm, AllocationFormData, ProjectOption, ResourceOption,
 };
 pub use gantt_chart::{GanttChart, GanttTaskItem};
+pub use holiday_form::{HolidayForm, HolidayFormData};
 pub use project_form::ProjectForm;
 pub use project_list::ProjectList;
 pub use resource_form::ResourceForm;
 pub use resource_list::ResourceList;
 pub use timeline_chart::{AllocationItem, ResourceGroup, TimelineChart};
+pub use user_form::{DepartmentOption, UserEditData, UserForm, UserFormData};
 
 /// Header component
 #[component]
@@ -43,6 +47,12 @@ pub fn Header() -> impl IntoView {
                         </a>
                         <a href="/allocations" class="text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400">
                             "Allocations"
+                        </a>
+                        <a href="/holidays" class="text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400">
+                            "Holidays"
+                        </a>
+                        <a href="/users" class="text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400">
+                            "Users"
                         </a>
                     </nav>
                 </div>
