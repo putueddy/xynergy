@@ -1,6 +1,4 @@
-use crate::auth::{logout_user, use_auth};
 use leptos::*;
-use leptos_router::*;
 
 pub mod allocation_form;
 pub mod department_form;
@@ -31,9 +29,6 @@ pub use user_form::{DepartmentOption, UserEditData, UserForm, UserFormData};
 /// Header component
 #[component]
 pub fn Header() -> impl IntoView {
-    let auth = use_auth();
-    let navigate = use_navigate();
-
     view! {
         <header class="bg-white dark:bg-gray-800 shadow-sm">
             <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
@@ -44,47 +39,23 @@ pub fn Header() -> impl IntoView {
                         </h1>
                     </div>
 
-                    <div class="flex items-center space-x-8">
-                        <nav class="hidden md:flex space-x-8">
-                            <a href="/" class="text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400">
-                                "Dashboard"
-                            </a>
-                            <a href="/resources" class="text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400">
-                                "Resources"
-                            </a>
-                            <a href="/projects" class="text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400">
-                                "Projects"
-                            </a>
-                            <a href="/allocations" class="text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400">
-                                "Allocations"
-                            </a>
-                            <a href="/settings" class="text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400">
-                                "Settings"
-                            </a>
-                        </nav>
-
-                        {move || {
-                            if auth.is_authenticated.get() {
-                                view! {
-                                    <button
-                                        class="text-gray-600 dark:text-gray-300 hover:text-red-600 dark:hover:text-red-400 text-sm font-medium"
-                                        on:click={
-                                            let auth = auth;
-                                            let navigate = navigate.clone();
-                                            move |_| {
-                                                logout_user(&auth);
-                                                navigate("/login", Default::default());
-                                            }
-                                        }
-                                    >
-                                        "Logout"
-                                    </button>
-                                }.into_view()
-                            } else {
-                                view! { <div></div> }.into_view()
-                            }
-                        }}
-                    </div>
+                    <nav class="hidden md:flex space-x-8">
+                        <a href="/" class="text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400">
+                            "Dashboard"
+                        </a>
+                        <a href="/resources" class="text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400">
+                            "Resources"
+                        </a>
+                        <a href="/projects" class="text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400">
+                            "Projects"
+                        </a>
+                        <a href="/allocations" class="text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400">
+                            "Allocations"
+                        </a>
+                        <a href="/settings" class="text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400">
+                            "Settings"
+                        </a>
+                    </nav>
                 </div>
             </div>
         </header>
