@@ -15,11 +15,7 @@ pub fn SettingsPage() -> impl IntoView {
 
                 <main class="flex-1 p-8">
                     <div class="max-w-6xl mx-auto">
-                        <Routes>
-                            <Route path="/holidays" view=HolidaysContent/>
-                            <Route path="/users" view=UsersContent/>
-                            <Route path="" view=SettingsRedirect/>
-                        </Routes>
+                        <Outlet/>
                     </div>
                 </main>
             </div>
@@ -29,14 +25,18 @@ pub fn SettingsPage() -> impl IntoView {
     }
 }
 
-/// Redirect to holidays as default settings page
+/// Settings holidays page
 #[component]
-fn SettingsRedirect() -> impl IntoView {
+pub fn SettingsHolidaysPage() -> impl IntoView {
     view! {
-        <div class="flex items-center justify-center h-64">
-            <p class="text-gray-500 dark:text-gray-400">
-                "Select a settings category from the sidebar"
-            </p>
-        </div>
+        <HolidaysContent/>
+    }
+}
+
+/// Settings users page
+#[component]
+pub fn SettingsUsersPage() -> impl IntoView {
+    view! {
+        <UsersContent/>
     }
 }

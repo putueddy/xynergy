@@ -71,26 +71,28 @@ pub fn HolidaysContent() -> impl IntoView {
     };
 
     view! {
-        <div>
-            <div class="mb-8">
-                <h1 class="text-3xl font-bold text-gray-900 dark:text-white mb-2">
-                    "Holiday Management"
-                </h1>
-                <p class="text-gray-600 dark:text-gray-400">
-                    "Manage company holidays and days off"
-                </p>
-            </div>
-
-            <div class="mb-6 flex justify-between items-center">
-                <button
-                    class="btn-primary"
-                    on:click=move |_| {
-                        set_editing_holiday.set(None);
-                        set_show_form.set(true);
-                    }
-                >
-                    "Add Holiday"
-                </button>
+        <div class="space-y-6">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h1 class="text-3xl font-bold text-gray-900 dark:text-white">
+                        "Holiday Management"
+                    </h1>
+                    <p class="text-gray-600 dark:text-gray-400 mt-1">
+                        "Manage company holidays and days off"
+                    </p>
+                </div>
+                
+                <div class="flex items-center space-x-3">
+                    <button
+                        class="btn-primary"
+                        on:click=move |_| {
+                            set_editing_holiday.set(None);
+                            set_show_form.set(true);
+                        }
+                    >
+                        "Add Holiday"
+                    </button>
+                </div>
             </div>
 
             {move || error.get().map(|err| {
