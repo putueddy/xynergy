@@ -7,6 +7,7 @@ pub mod projects;
 pub mod allocations;
 pub mod holidays;
 pub mod users;
+pub mod departments;
 pub mod settings;
 
 pub use home::Home;
@@ -19,3 +20,4 @@ pub use allocations::Allocations;
 pub use settings::SettingsPage;
 pub use holidays::HolidaysContent;
 pub use users::UsersContent;
+pub use departments::DepartmentsContent;

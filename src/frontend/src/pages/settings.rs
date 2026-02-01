@@ -1,5 +1,5 @@
 use crate::components::{Footer, Header, SettingsSidebar};
-use crate::pages::{HolidaysContent, UsersContent};
+use crate::pages::{DepartmentsContent, HolidaysContent, UsersContent};
 use leptos::*;
 use leptos_router::*;
 
@@ -38,5 +38,13 @@ pub fn SettingsHolidaysPage() -> impl IntoView {
 pub fn SettingsUsersPage() -> impl IntoView {
     view! {
         <UsersContent/>
+    }
+}
+
+/// Settings departments page
+#[component]
+pub fn SettingsDepartmentsPage() -> impl IntoView {
+    view! {
+        <DepartmentsContent/>
     }
 }
