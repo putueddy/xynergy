@@ -41,38 +41,33 @@ pub fn UserForm(
 ) -> impl IntoView {
     let is_edit = editing_user.is_some();
 
-    // Form fields
-    let (email, set_email) = create_signal(
-        editing_user
-            .as_ref()
-            .map(|u| u.email.clone())
-            .unwrap_or_default(),
-    );
+    // Form fields - initialize with empty values
+    let (email, set_email) = create_signal(String::new());
     let (password, set_password) = create_signal(String::new());
-    let (first_name, set_first_name) = create_signal(
-        editing_user
-            .as_ref()
-            .map(|u| u.first_name.clone())
-            .unwrap_or_default(),
-    );
-    let (last_name, set_last_name) = create_signal(
-        editing_user
-            .as_ref()
-            .map(|u| u.last_name.clone())
-            .unwrap_or_default(),
-    );
-    let (role, set_role) = create_signal(
-        editing_user
-            .as_ref()
-            .map(|u| u.role.clone())
-            .unwrap_or_else(|| "team_member".to_string()),
-    );
-    let (department_id, set_department_id) = create_signal(
-        editing_user
-            .as_ref()
-            .map(|u| u.department_id.clone())
-            .unwrap_or_default(),
-    );
+    let (first_name, set_first_name) = create_signal(String::new());
+    let (last_name, set_last_name) = create_signal(String::new());
+    let (role, set_role) = create_signal("team_member".to_string());
+    let (department_id, set_department_id) = create_signal(String::new());
+
+    // Update form fields when editing_user changes
+    create_effect(move |_| {
+        if let Some(user) = &editing_user {
+            set_email.set(user.email.clone());
+            set_first_name.set(user.first_name.clone());
+            set_last_name.set(user.last_name.clone());
+            set_role.set(user.role.clone());
+            set_department_id.set(user.department_id.clone());
+            set_password.set(String::new()); // Clear password field on edit
+        } else {
+            // Reset form for new user
+            set_email.set(String::new());
+            set_first_name.set(String::new());
+            set_last_name.set(String::new());
+            set_role.set("team_member".to_string());
+            set_department_id.set(String::new());
+            set_password.set(String::new());
+        }
+    });
 
     let handle_submit = move |ev: leptos::ev::SubmitEvent| {
         ev.prevent_default();
