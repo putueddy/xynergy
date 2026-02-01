@@ -1,20 +1,20 @@
+use crate::auth::{login_user, use_auth};
+use crate::components::{Footer, Header};
 use leptos::*;
 use leptos_router::*;
-use crate::auth::{use_auth, login_user};
-use crate::components::{Header, Footer};
 
 /// Login page component
 #[component]
 pub fn Login() -> impl IntoView {
     let auth = use_auth();
     let navigate = use_navigate();
-    
+
     // Form state
     let (email, set_email) = create_signal("".to_string());
     let (password, set_password) = create_signal("".to_string());
     let (error, set_error) = create_signal(Option::<String>::None);
     let (loading, set_loading) = create_signal(false);
-    
+
     // Redirect if already logged in
     {
         let navigate = navigate.clone();
@@ -24,20 +24,20 @@ pub fn Login() -> impl IntoView {
             }
         });
     }
-    
+
     // Handle form submission
     let handle_submit = {
         let navigate = navigate.clone();
         move |ev: leptos::ev::SubmitEvent| {
             ev.prevent_default();
-            
+
             set_loading.set(true);
             set_error.set(None);
-            
+
             let email_val = email.get();
             let password_val = password.get();
             let navigate = navigate.clone();
-            
+
             spawn_local(async move {
                 match login_user(email_val, password_val).await {
                     Ok(response) => {
@@ -53,11 +53,11 @@ pub fn Login() -> impl IntoView {
             });
         }
     };
-    
+
     view! {
         <div class="min-h-screen flex flex-col bg-gray-50 dark:bg-gray-900">
             <Header/>
-            
+
             <main class="flex-grow flex items-center justify-center px-4 sm:px-6 lg:px-8">
                 <div class="max-w-md w-full space-y-8">
                     <div>
@@ -68,7 +68,7 @@ pub fn Login() -> impl IntoView {
                             "Xynergy Resource Management"
                         </p>
                     </div>
-                    
+
                     <form class="mt-8 space-y-6" on:submit=handle_submit>
                         <div class="rounded-md shadow-sm -space-y-px">
                             <div>
@@ -126,7 +126,7 @@ pub fn Login() -> impl IntoView {
                                 }}
                             </button>
                         </div>
-                        
+
                         <div class="text-center text-sm text-gray-600 dark:text-gray-400">
                             <p>"Default credentials:"</p>
                             <p>"Email: admin@xynergy.com"</p>
@@ -135,7 +135,7 @@ pub fn Login() -> impl IntoView {
                     </form>
                 </div>
             </main>
-            
+
             <Footer/>
         </div>
     }

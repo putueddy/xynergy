@@ -1,8 +1,10 @@
+use crate::auth::use_auth;
+use crate::components::resource_list::Resource;
+use crate::components::{
+    resource_form::ResourceFormData, Footer, Header, ResourceForm, ResourceList,
+};
 use leptos::*;
 use leptos_router::*;
-use crate::auth::use_auth;
-use crate::components::{Header, Footer, ResourceList, ResourceForm, resource_form::ResourceFormData};
-use crate::components::resource_list::Resource;
 use uuid::Uuid;
 
 /// Resources page component
@@ -10,7 +12,7 @@ use uuid::Uuid;
 pub fn Resources() -> impl IntoView {
     let auth = use_auth();
     let navigate = use_navigate();
-    
+
     // Redirect if not logged in
     {
         let navigate = navigate.clone();
@@ -20,14 +22,14 @@ pub fn Resources() -> impl IntoView {
             }
         });
     }
-    
+
     // Resource data
     let (resources, set_resources) = create_signal(Vec::new());
     let (loading, set_loading) = create_signal(false);
     let (error, set_error) = create_signal(Option::<String>::None);
     let (show_form, set_show_form) = create_signal(false);
     let (editing_resource, set_editing_resource) = create_signal(Option::<Resource>::None);
-    
+
     // Load resources on mount
     create_effect(move |_| {
         set_loading.set(true);
@@ -44,20 +46,20 @@ pub fn Resources() -> impl IntoView {
             }
         });
     });
-    
+
     // Handle create/edit resource
     let handle_submit = move |form_data: ResourceFormData| {
         let editing = editing_resource.get();
         spawn_local(async move {
             set_loading.set(true);
             set_error.set(None);
-            
+
             let result = if let Some(resource) = editing {
                 update_resource(resource.id, form_data).await
             } else {
                 create_resource(form_data).await
             };
-            
+
             match result {
                 Ok(_) => {
                     // Reload resources
@@ -75,13 +77,13 @@ pub fn Resources() -> impl IntoView {
             set_loading.set(false);
         });
     };
-    
+
     // Handle delete resource
     let handle_delete = move |id: Uuid| {
         spawn_local(async move {
             set_loading.set(true);
             set_error.set(None);
-            
+
             match delete_resource(id).await {
                 Ok(_) => {
                     // Reload resources
@@ -95,7 +97,7 @@ pub fn Resources() -> impl IntoView {
             set_loading.set(false);
         });
     };
-    
+
     // Handle edit click
     let handle_edit = move |id: Uuid| {
         if let Some(resource) = resources.get().iter().find(|r| r.id == id).cloned() {
@@ -103,17 +105,17 @@ pub fn Resources() -> impl IntoView {
             set_show_form.set(true);
         }
     };
-    
+
     // Handle cancel
     let handle_cancel = move |_| {
         set_show_form.set(false);
         set_editing_resource.set(None);
     };
-    
+
     view! {
         <div class="min-h-screen flex flex-col bg-gray-50 dark:bg-gray-900">
             <Header/>
-            
+
             <main class="flex-grow max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 w-full">
                 <div class="space-y-6">
                     <div class="flex items-center justify-between">
@@ -130,7 +132,7 @@ pub fn Resources() -> impl IntoView {
                             "Add Resource"
                         </button>
                     </div>
-                    
+
                     {move || error.get().map(|err| {
                         view! {
                             <div class="rounded-md bg-red-50 p-4 dark:bg-red-900/20">
@@ -144,23 +146,25 @@ pub fn Resources() -> impl IntoView {
                             </div>
                         }
                     })}
-                    
+
                     {move || {
                         if show_form.get() {
-                            let initial_data = editing_resource.get().map(|r| ResourceFormData {
-                                name: r.name,
-                                resource_type: r.resource_type,
-                                capacity: r.capacity,
-                                department_id: r.department_id,
+                            let initial_data = Signal::derive(move || {
+                                editing_resource.get().map(|r| ResourceFormData {
+                                    name: r.name,
+                                    resource_type: r.resource_type,
+                                    capacity: r.capacity,
+                                    department_id: r.department_id,
+                                })
                             });
-                            
+
                             view! {
                                 <div class="bg-white dark:bg-gray-800 shadow rounded-lg p-6">
                                     <h2 class="text-xl font-semibold text-gray-900 dark:text-white mb-4">
                                         {if editing_resource.get().is_some() { "Edit Resource" } else { "Add Resource" }}
                                     </h2>
                                     <ResourceForm
-                                        initial_data=initial_data.unwrap_or_default()
+                                        initial_data=initial_data
                                         on_submit=Callback::new(handle_submit)
                                         on_cancel=Callback::new(handle_cancel)
                                     />
@@ -198,7 +202,7 @@ pub fn Resources() -> impl IntoView {
                     }}
                 </div>
             </main>
-            
+
             <Footer/>
         </div>
     }
@@ -209,9 +213,10 @@ async fn fetch_resources() -> Result<Vec<Resource>, String> {
     let response = reqwest::get("http://localhost:3000/api/v1/resources")
         .await
         .map_err(|e| format!("Failed to fetch resources: {}", e))?;
-    
+
     if response.status().is_success() {
-        response.json::<Vec<Resource>>()
+        response
+            .json::<Vec<Resource>>()
             .await
             .map_err(|e| format!("Failed to parse resources: {}", e))
     } else {
@@ -234,11 +239,14 @@ async fn create_resource(form_data: ResourceFormData) -> Result<(), String> {
         .send()
         .await
         .map_err(|e| format!("Failed to create resource: {}", e))?;
-    
+
     if response.status().is_success() {
         Ok(())
     } else {
-        let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+        let error_text = response
+            .text()
+            .await
+            .unwrap_or_else(|_| "Unknown error".to_string());
         Err(format!("Failed to create resource: {}", error_text))
     }
 }
@@ -258,11 +266,14 @@ async fn update_resource(id: Uuid, form_data: ResourceFormData) -> Result<(), St
         .send()
         .await
         .map_err(|e| format!("Failed to update resource: {}", e))?;
-    
+
     if response.status().is_success() {
         Ok(())
     } else {
-        let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+        let error_text = response
+            .text()
+            .await
+            .unwrap_or_else(|_| "Unknown error".to_string());
         Err(format!("Failed to update resource: {}", error_text))
     }
 }
@@ -275,7 +286,7 @@ async fn delete_resource(id: Uuid) -> Result<(), String> {
         .send()
         .await
         .map_err(|e| format!("Failed to delete resource: {}", e))?;
-    
+
     if response.status().is_success() {
         Ok(())
     } else {

@@ -1,17 +1,17 @@
+use crate::auth::use_auth;
+use crate::components::project_list::Project;
+use crate::components::{project_form::ProjectFormData, Footer, Header, ProjectForm, ProjectList};
+use chrono::NaiveDate;
 use leptos::*;
 use leptos_router::*;
-use crate::auth::use_auth;
-use crate::components::{Header, Footer, ProjectList, ProjectForm, project_form::ProjectFormData};
-use crate::components::project_list::Project;
 use uuid::Uuid;
-use chrono::NaiveDate;
 
 /// Projects page component
 #[component]
 pub fn Projects() -> impl IntoView {
     let auth = use_auth();
     let navigate = use_navigate();
-    
+
     // Redirect if not logged in
     {
         let navigate = navigate.clone();
@@ -21,14 +21,14 @@ pub fn Projects() -> impl IntoView {
             }
         });
     }
-    
+
     // Project data
     let (projects, set_projects) = create_signal(Vec::new());
     let (loading, set_loading) = create_signal(false);
     let (error, set_error) = create_signal(Option::<String>::None);
     let (show_form, set_show_form) = create_signal(false);
     let (editing_project, set_editing_project) = create_signal(Option::<Project>::None);
-    
+
     // Load projects on mount
     create_effect(move |_| {
         set_loading.set(true);
@@ -45,20 +45,20 @@ pub fn Projects() -> impl IntoView {
             }
         });
     });
-    
+
     // Handle create/edit project
     let handle_submit = move |form_data: ProjectFormData| {
         let editing = editing_project.get();
         spawn_local(async move {
             set_loading.set(true);
             set_error.set(None);
-            
+
             let result = if let Some(project) = editing {
                 update_project(project.id, form_data).await
             } else {
                 create_project(form_data).await
             };
-            
+
             match result {
                 Ok(_) => {
                     // Reload projects
@@ -76,13 +76,13 @@ pub fn Projects() -> impl IntoView {
             set_loading.set(false);
         });
     };
-    
+
     // Handle delete project
     let handle_delete = move |id: Uuid| {
         spawn_local(async move {
             set_loading.set(true);
             set_error.set(None);
-            
+
             match delete_project(id).await {
                 Ok(_) => {
                     // Reload projects
@@ -96,7 +96,7 @@ pub fn Projects() -> impl IntoView {
             set_loading.set(false);
         });
     };
-    
+
     // Handle edit click
     let handle_edit = move |id: Uuid| {
         if let Some(project) = projects.get().iter().find(|p| p.id == id).cloned() {
@@ -104,17 +104,17 @@ pub fn Projects() -> impl IntoView {
             set_show_form.set(true);
         }
     };
-    
+
     // Handle cancel
     let handle_cancel = move |_| {
         set_show_form.set(false);
         set_editing_project.set(None);
     };
-    
+
     view! {
         <div class="min-h-screen flex flex-col bg-gray-50 dark:bg-gray-900">
             <Header/>
-            
+
             <main class="flex-grow max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 w-full">
                 <div class="space-y-6">
                     <div class="flex items-center justify-between">
@@ -131,7 +131,7 @@ pub fn Projects() -> impl IntoView {
                             "Add Project"
                         </button>
                     </div>
-                    
+
                     {move || error.get().map(|err| {
                         view! {
                             <div class="rounded-md bg-red-50 p-4 dark:bg-red-900/20">
@@ -145,7 +145,7 @@ pub fn Projects() -> impl IntoView {
                             </div>
                         }
                     })}
-                    
+
                     {move || {
                         if show_form.get() {
                             let initial_data = editing_project.get().map(|p| ProjectFormData {
@@ -155,7 +155,7 @@ pub fn Projects() -> impl IntoView {
                                 end_date: p.end_date.to_string(),
                                 status: p.status,
                             });
-                            
+
                             view! {
                                 <div class="bg-white dark:bg-gray-800 shadow rounded-lg p-6">
                                     <h2 class="text-xl font-semibold text-gray-900 dark:text-white mb-4">
@@ -200,7 +200,7 @@ pub fn Projects() -> impl IntoView {
                     }}
                 </div>
             </main>
-            
+
             <Footer/>
         </div>
     }
@@ -211,9 +211,10 @@ async fn fetch_projects() -> Result<Vec<Project>, String> {
     let response = reqwest::get("http://localhost:3000/api/v1/projects")
         .await
         .map_err(|e| format!("Failed to fetch projects: {}", e))?;
-    
+
     if response.status().is_success() {
-        response.json::<Vec<Project>>()
+        response
+            .json::<Vec<Project>>()
             .await
             .map_err(|e| format!("Failed to parse projects: {}", e))
     } else {
@@ -227,7 +228,7 @@ async fn create_project(form_data: ProjectFormData) -> Result<(), String> {
         .map_err(|_| "Invalid start date".to_string())?;
     let end_date = NaiveDate::parse_from_str(&form_data.end_date, "%Y-%m-%d")
         .map_err(|_| "Invalid end date".to_string())?;
-    
+
     let client = reqwest::Client::new();
     let response = client
         .post("http://localhost:3000/api/v1/projects")
@@ -242,11 +243,14 @@ async fn create_project(form_data: ProjectFormData) -> Result<(), String> {
         .send()
         .await
         .map_err(|e| format!("Failed to create project: {}", e))?;
-    
+
     if response.status().is_success() {
         Ok(())
     } else {
-        let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+        let error_text = response
+            .text()
+            .await
+            .unwrap_or_else(|_| "Unknown error".to_string());
         Err(format!("Failed to create project: {}", error_text))
     }
 }
@@ -257,7 +261,7 @@ async fn update_project(id: Uuid, form_data: ProjectFormData) -> Result<(), Stri
         .map_err(|_| "Invalid start date".to_string())?;
     let end_date = NaiveDate::parse_from_str(&form_data.end_date, "%Y-%m-%d")
         .map_err(|_| "Invalid end date".to_string())?;
-    
+
     let client = reqwest::Client::new();
     let response = client
         .put(format!("http://localhost:3000/api/v1/projects/{}", id))
@@ -272,11 +276,14 @@ async fn update_project(id: Uuid, form_data: ProjectFormData) -> Result<(), Stri
         .send()
         .await
         .map_err(|e| format!("Failed to update project: {}", e))?;
-    
+
     if response.status().is_success() {
         Ok(())
     } else {
-        let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+        let error_text = response
+            .text()
+            .await
+            .unwrap_or_else(|_| "Unknown error".to_string());
         Err(format!("Failed to update project: {}", error_text))
     }
 }
@@ -289,11 +296,14 @@ async fn delete_project(id: Uuid) -> Result<(), String> {
         .send()
         .await
         .map_err(|e| format!("Failed to delete project: {}", e))?;
-    
+
     if response.status().is_success() {
         Ok(())
     } else {
-        let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+        let error_text = response
+            .text()
+            .await
+            .unwrap_or_else(|_| "Unknown error".to_string());
         Err(format!("Failed to delete project: {}", error_text))
     }
 }

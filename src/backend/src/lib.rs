@@ -1,8 +1,8 @@
 use axum::{
+    body::Body,
+    response::{Html, Response},
     routing::get,
     Router,
-    response::{Html, Response},
-    body::Body,
 };
 use sqlx::PgPool;
 use std::net::SocketAddr;
@@ -27,9 +27,8 @@ pub fn init_logging() {
     let subscriber = FmtSubscriber::builder()
         .with_max_level(Level::INFO)
         .finish();
-    
-    tracing::subscriber::set_global_default(subscriber)
-        .expect("Failed to set subscriber");
+
+    tracing::subscriber::set_global_default(subscriber).expect("Failed to set subscriber");
 }
 
 /// Serve the index.html file with Leptos
@@ -264,24 +263,21 @@ async fn serve_index() -> Html<String> {
 </body>
 </html>
 "#;
-    
+
     Html(html.to_string())
 }
 
 /// Serve static CSS file
 async fn serve_css() -> Result<Response> {
-    let project_root = std::env::current_dir()
-        .map_err(|e| AppError::Internal(e.to_string()))?;
-    
+    let project_root = std::env::current_dir().map_err(|e| AppError::Internal(e.to_string()))?;
+
     let css_path = project_root.join("src/frontend/public/output.css");
-    
-    let css_content = tokio::fs::read_to_string(&css_path)
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to read CSS file: {}", e);
-            AppError::NotFound("CSS file not found".to_string())
-        })?;
-    
+
+    let css_content = tokio::fs::read_to_string(&css_path).await.map_err(|e| {
+        tracing::error!("Failed to read CSS file: {}", e);
+        AppError::NotFound("CSS file not found".to_string())
+    })?;
+
     Ok(Response::builder()
         .header("content-type", "text/css")
         .body(Body::from(css_content))
@@ -322,25 +318,26 @@ fn api_routes() -> Router<PgPool> {
         .merge(routes::project_routes())
         .merge(routes::allocation_routes())
         .merge(routes::holiday_routes())
+        .merge(routes::audit_log_routes())
 }
 
 /// Run the server
 pub async fn run_server(addr: SocketAddr) -> Result<()> {
     init_logging();
-    
+
     // Initialize database
     let db = Database::new().await?;
     info!("Database connected successfully");
-    
+
     let app = create_app(db.pool().clone());
-    
+
     info!("Starting server on {}", addr);
     info!("Visit http://{} to see your app", addr);
     info!("API endpoints available at http://{}/api/v1/", addr);
-    
+
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app).await?;
-    
+
     Ok(())
 }
 

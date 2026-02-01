@@ -24,7 +24,7 @@ pub struct AuthContext {
 pub fn provide_auth_context() {
     let user = create_rw_signal(None);
     let token = create_rw_signal(None);
-    
+
     // Check localStorage on mount
     if let Ok(storage) = web_sys::window().unwrap().local_storage() {
         if let Some(storage) = storage {
@@ -33,12 +33,12 @@ pub fn provide_auth_context() {
             }
         }
     }
-    
+
     let is_authenticated = create_memo(move |_| {
         // Check both user and token - authenticated if either exists
         user.get().is_some() || token.get().is_some()
     });
-    
+
     provide_context(AuthContext {
         user,
         token,
@@ -68,27 +68,27 @@ pub struct LoginRequest {
 /// Perform login
 pub async fn login_user(email: String, password: String) -> Result<LoginResponse, String> {
     let request = LoginRequest { email, password };
-    
+
     let response = reqwest::Client::new()
         .post("http://localhost:3000/api/v1/auth/login")
         .json(&request)
         .send()
         .await
         .map_err(|e| format!("Request failed: {}", e))?;
-    
+
     if response.status().is_success() {
         let login_response: LoginResponse = response
             .json()
             .await
             .map_err(|e| format!("Failed to parse response: {}", e))?;
-        
+
         // Save token to localStorage
         if let Ok(storage) = web_sys::window().unwrap().local_storage() {
             if let Some(storage) = storage {
                 let _ = storage.set_item("auth_token", &login_response.token);
             }
         }
-        
+
         Ok(login_response)
     } else {
         let error_text = response.text().await.unwrap_or_default();
@@ -100,7 +100,7 @@ pub async fn login_user(email: String, password: String) -> Result<LoginResponse
 pub fn logout_user(auth: &AuthContext) {
     auth.user.set(None);
     auth.token.set(None);
-    
+
     // Remove token from localStorage
     if let Ok(storage) = web_sys::window().unwrap().local_storage() {
         if let Some(storage) = storage {
@@ -117,7 +117,7 @@ pub async fn validate_token(token: String) -> Result<User, String> {
         .send()
         .await
         .map_err(|e| format!("Request failed: {}", e))?;
-    
+
     if response.status().is_success() {
         let user: User = response
             .json()

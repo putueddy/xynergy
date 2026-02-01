@@ -1,15 +1,16 @@
 use axum::{
-    extract::{State, Path},
-    routing::{get, post, put, delete},
-    Router,
-    Json,
+    extract::{Path, State},
+    http::HeaderMap,
+    routing::get,
+    Json, Router,
 };
+use chrono::NaiveDate;
+use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use uuid::Uuid;
-use serde::{Deserialize, Serialize};
-use chrono::NaiveDate;
 
 use crate::error::{AppError, Result};
+use crate::services::{audit_payload, log_audit, user_id_from_headers};
 
 /// Project response structure
 #[derive(Debug, Serialize)]
@@ -46,9 +47,7 @@ pub struct UpdateProjectRequest {
 }
 
 /// Get all projects
-async fn get_projects(
-    State(pool): State<PgPool>,
-) -> Result<Json<Vec<ProjectResponse>>> {
+async fn get_projects(State(pool): State<PgPool>) -> Result<Json<Vec<ProjectResponse>>> {
     let projects = sqlx::query_as!(
         ProjectResponse,
         "SELECT id, name, description, start_date, end_date, status, project_manager_id 
@@ -57,7 +56,7 @@ async fn get_projects(
     .fetch_all(&pool)
     .await
     .map_err(|e| AppError::Database(e.to_string()))?;
-    
+
     Ok(Json(projects))
 }
 
@@ -76,15 +75,26 @@ async fn get_project(
     .await
     .map_err(|e| AppError::Database(e.to_string()))?
     .ok_or_else(|| AppError::NotFound(format!("Project {} not found", id)))?;
-    
+
     Ok(Json(project))
 }
 
 /// Create a new project
 async fn create_project(
     State(pool): State<PgPool>,
+    headers: HeaderMap,
     Json(req): Json<CreateProjectRequest>,
 ) -> Result<Json<ProjectResponse>> {
+    let audit_changes = audit_payload(None, Some(serde_json::json!({
+        "name": req.name.clone(),
+        "description": req.description.clone(),
+        "start_date": req.start_date,
+        "end_date": req.end_date,
+        "status": req.status.clone(),
+        "project_manager_id": req.project_manager_id,
+    })));
+    let user_id = user_id_from_headers(&headers)?;
+
     let project = sqlx::query_as!(
         ProjectResponse,
         "INSERT INTO projects (name, description, start_date, end_date, status, project_manager_id)
@@ -100,26 +110,69 @@ async fn create_project(
     .fetch_one(&pool)
     .await
     .map_err(|e| AppError::Database(e.to_string()))?;
-    
+
+    log_audit(
+        &pool,
+        user_id,
+        "create",
+        "project",
+        project.id,
+        audit_changes,
+    )
+    .await?;
+
     Ok(Json(project))
 }
 
 /// Update a project
 async fn update_project(
     State(pool): State<PgPool>,
+    headers: HeaderMap,
     Path(id): Path<Uuid>,
     Json(req): Json<UpdateProjectRequest>,
 ) -> Result<Json<ProjectResponse>> {
     // Check if project exists
-    let _ = sqlx::query!(
-        "SELECT id FROM projects WHERE id = $1",
+    let existing = sqlx::query!(
+        "SELECT id, name, description, start_date, end_date, status, project_manager_id FROM projects WHERE id = $1",
         id
     )
     .fetch_optional(&pool)
     .await
     .map_err(|e| AppError::Database(e.to_string()))?
     .ok_or_else(|| AppError::NotFound(format!("Project {} not found", id)))?;
-    
+
+    let before_name = existing.name.clone();
+    let before_description = existing.description.clone();
+    let before_status = existing.status.clone();
+    let before_start_date = existing.start_date;
+    let before_end_date = existing.end_date;
+    let before_manager_id = existing.project_manager_id;
+    let after_name_default = existing.name;
+    let after_description_default = existing.description;
+    let after_status_default = existing.status;
+    let after_start_default = existing.start_date;
+    let after_end_default = existing.end_date;
+    let after_manager_default = existing.project_manager_id;
+    let audit_changes = audit_payload(
+        Some(serde_json::json!({
+            "name": before_name,
+            "description": before_description,
+            "start_date": before_start_date,
+            "end_date": before_end_date,
+            "status": before_status,
+            "project_manager_id": before_manager_id,
+        })),
+        Some(serde_json::json!({
+            "name": req.name.clone().unwrap_or_else(|| after_name_default),
+            "description": req.description.clone().or(after_description_default),
+            "start_date": req.start_date.unwrap_or(after_start_default),
+            "end_date": req.end_date.unwrap_or(after_end_default),
+            "status": req.status.clone().unwrap_or_else(|| after_status_default),
+            "project_manager_id": req.project_manager_id.or(after_manager_default),
+        })),
+    );
+    let user_id = user_id_from_headers(&headers)?;
+
     // Update with new values or keep existing
     let project = sqlx::query_as!(
         ProjectResponse,
@@ -143,37 +196,64 @@ async fn update_project(
     .fetch_one(&pool)
     .await
     .map_err(|e| AppError::Database(e.to_string()))?;
-    
+
+    log_audit(
+        &pool,
+        user_id,
+        "update",
+        "project",
+        project.id,
+        audit_changes,
+    )
+    .await?;
+
     Ok(Json(project))
 }
 
 /// Delete a project
 async fn delete_project(
     State(pool): State<PgPool>,
+    headers: HeaderMap,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>> {
     // Check if project exists
-    let _ = sqlx::query!(
-        "SELECT id FROM projects WHERE id = $1",
+    let existing = sqlx::query!(
+        "SELECT id, name, description, start_date, end_date, status, project_manager_id FROM projects WHERE id = $1",
         id
     )
     .fetch_optional(&pool)
     .await
     .map_err(|e| AppError::Database(e.to_string()))?
     .ok_or_else(|| AppError::NotFound(format!("Project {} not found", id)))?;
-    
+
     // Delete the project
     sqlx::query!("DELETE FROM projects WHERE id = $1", id)
         .execute(&pool)
         .await
         .map_err(|e| AppError::Database(e.to_string()))?;
-    
-    Ok(Json(serde_json::json!({"message": "Project deleted successfully"})))
+
+    let user_id = user_id_from_headers(&headers)?;
+    let audit_changes = audit_payload(Some(serde_json::json!({
+        "name": existing.name,
+        "description": existing.description,
+        "start_date": existing.start_date,
+        "end_date": existing.end_date,
+        "status": existing.status,
+        "project_manager_id": existing.project_manager_id,
+    })), None);
+    log_audit(&pool, user_id, "delete", "project", id, audit_changes).await?;
+
+    Ok(Json(
+        serde_json::json!({"message": "Project deleted successfully"}),
+    ))
 }
 
 /// Create project routes
 pub fn project_routes() -> Router<PgPool> {
     Router::new()
         .route("/projects", get(get_projects).post(create_project))
-        .route("/projects/:id", get(get_project).put(update_project).delete(delete_project))
+        .route(
+            "/projects/:id",
+            get(get_project).put(update_project).delete(delete_project),
+        )
 }

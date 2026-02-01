@@ -1,7 +1,7 @@
+use crate::components::{DepartmentEditData, DepartmentForm, DepartmentFormData, HeadCandidate};
 use leptos::*;
 use serde::Deserialize;
 use uuid::Uuid;
-use crate::components::{DepartmentForm, DepartmentFormData, DepartmentEditData, HeadCandidate};
 
 /// Department data structure
 #[derive(Debug, Clone, Deserialize)]
@@ -33,13 +33,13 @@ pub fn DepartmentsContent() -> impl IntoView {
                 Ok(data) => set_departments.set(data),
                 Err(e) => set_error.set(Some(e)),
             }
-            
+
             // Load head candidates
             match fetch_head_candidates().await {
                 Ok(data) => set_head_candidates.set(data),
                 Err(e) => set_error.set(Some(e)),
             }
-            
+
             set_loading.set(false);
         });
     });
@@ -58,16 +58,14 @@ pub fn DepartmentsContent() -> impl IntoView {
             };
 
             match result {
-                Ok(_) => {
-                    match fetch_departments().await {
-                        Ok(data) => {
-                            set_departments.set(data);
-                            set_show_form.set(false);
-                            set_editing_department.set(None);
-                        }
-                        Err(e) => set_error.set(Some(e)),
+                Ok(_) => match fetch_departments().await {
+                    Ok(data) => {
+                        set_departments.set(data);
+                        set_show_form.set(false);
+                        set_editing_department.set(None);
                     }
-                }
+                    Err(e) => set_error.set(Some(e)),
+                },
                 Err(e) => set_error.set(Some(e)),
             }
             set_form_submitting.set(false);
@@ -80,9 +78,7 @@ pub fn DepartmentsContent() -> impl IntoView {
     };
 
     // Convert head candidates for form
-    let head_candidate_options = create_memo(move |_| {
-        head_candidates.get()
-    });
+    let head_candidate_options = create_memo(move |_| head_candidates.get());
 
     let editing_form_data = Signal::derive(move || {
         editing_department.get().map(|d| DepartmentEditData {
@@ -103,7 +99,7 @@ pub fn DepartmentsContent() -> impl IntoView {
                         "Manage departments and assign department heads"
                     </p>
                 </div>
-                
+
                 <div class="flex items-center space-x-3">
                     <button
                         class="btn-primary"
@@ -209,7 +205,7 @@ pub fn DepartmentsContent() -> impl IntoView {
                                         let dept_id = dept.id.to_string();
                                         let dept_for_edit = dept.clone();
                                         let head_display = dept.head_name.clone().unwrap_or_else(|| "Unassigned".to_string());
-                                        
+
                                         view! {
                                             <tr class="hover:bg-gray-50 dark:hover:bg-gray-700">
                                                 <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">
@@ -245,7 +241,7 @@ pub fn DepartmentsContent() -> impl IntoView {
                                                                             set_deleting_id.set(Some(id_clone.clone()));
                                                                             spawn_local(async move {
                                                                                 set_error.set(None);
-                                                                                
+
                                                                                 match delete_department(id_clone).await {
                                                                                     Ok(_) => {
                                                                                         match fetch_departments().await {
@@ -284,13 +280,17 @@ async fn fetch_departments() -> Result<Vec<Department>, String> {
     let response = reqwest::get("http://localhost:3000/api/v1/departments")
         .await
         .map_err(|e| format!("Failed to fetch departments: {}", e))?;
-    
+
     if response.status().is_success() {
-        response.json::<Vec<Department>>()
+        response
+            .json::<Vec<Department>>()
             .await
             .map_err(|e| format!("Failed to parse departments: {}", e))
     } else {
-        Err(format!("Failed to fetch departments: {}", response.status()))
+        Err(format!(
+            "Failed to fetch departments: {}",
+            response.status()
+        ))
     }
 }
 
@@ -299,13 +299,17 @@ async fn fetch_head_candidates() -> Result<Vec<HeadCandidate>, String> {
     let response = reqwest::get("http://localhost:3000/api/v1/departments/head-candidates")
         .await
         .map_err(|e| format!("Failed to fetch head candidates: {}", e))?;
-    
+
     if response.status().is_success() {
-        response.json::<Vec<HeadCandidate>>()
+        response
+            .json::<Vec<HeadCandidate>>()
             .await
             .map_err(|e| format!("Failed to parse head candidates: {}", e))
     } else {
-        Err(format!("Failed to fetch head candidates: {}", response.status()))
+        Err(format!(
+            "Failed to fetch head candidates: {}",
+            response.status()
+        ))
     }
 }
 
@@ -314,10 +318,14 @@ async fn create_department(form_data: DepartmentFormData) -> Result<(), String> 
     let head_id = if form_data.head_id.is_empty() {
         None
     } else {
-        Some(form_data.head_id.parse::<Uuid>()
-            .map_err(|_| "Invalid head ID")?)
+        Some(
+            form_data
+                .head_id
+                .parse::<Uuid>()
+                .map_err(|_| "Invalid head ID")?,
+        )
     };
-    
+
     let client = reqwest::Client::new();
     let response = client
         .post("http://localhost:3000/api/v1/departments")
@@ -328,27 +336,35 @@ async fn create_department(form_data: DepartmentFormData) -> Result<(), String> 
         .send()
         .await
         .map_err(|e| format!("Failed to create department: {}", e))?;
-    
+
     if response.status().is_success() {
         Ok(())
     } else {
-        let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+        let error_text = response
+            .text()
+            .await
+            .unwrap_or_else(|_| "Unknown error".to_string());
         Err(format!("Failed to create department: {}", error_text))
     }
 }
 
 /// Update an existing department
 async fn update_department(dept_id: String, form_data: DepartmentFormData) -> Result<(), String> {
-    let id = dept_id.parse::<Uuid>()
+    let id = dept_id
+        .parse::<Uuid>()
         .map_err(|_| "Invalid department ID")?;
-    
+
     let head_id = if form_data.head_id.is_empty() {
         None
     } else {
-        Some(form_data.head_id.parse::<Uuid>()
-            .map_err(|_| "Invalid head ID")?)
+        Some(
+            form_data
+                .head_id
+                .parse::<Uuid>()
+                .map_err(|_| "Invalid head ID")?,
+        )
     };
-    
+
     let client = reqwest::Client::new();
     let response = client
         .put(&format!("http://localhost:3000/api/v1/departments/{}", id))
@@ -359,31 +375,38 @@ async fn update_department(dept_id: String, form_data: DepartmentFormData) -> Re
         .send()
         .await
         .map_err(|e| format!("Failed to update department: {}", e))?;
-    
+
     if response.status().is_success() {
         Ok(())
     } else {
-        let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+        let error_text = response
+            .text()
+            .await
+            .unwrap_or_else(|_| "Unknown error".to_string());
         Err(format!("Failed to update department: {}", error_text))
     }
 }
 
 /// Delete a department
 async fn delete_department(dept_id: String) -> Result<(), String> {
-    let id = dept_id.parse::<Uuid>()
+    let id = dept_id
+        .parse::<Uuid>()
         .map_err(|_| "Invalid department ID")?;
-    
+
     let client = reqwest::Client::new();
     let response = client
         .delete(&format!("http://localhost:3000/api/v1/departments/{}", id))
         .send()
         .await
         .map_err(|e| format!("Failed to delete department: {}", e))?;
-    
+
     if response.status().is_success() {
         Ok(())
     } else {
-        let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+        let error_text = response
+            .text()
+            .await
+            .unwrap_or_else(|_| "Unknown error".to_string());
         Err(format!("Failed to delete department: {}", error_text))
     }
 }

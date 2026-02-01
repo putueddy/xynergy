@@ -1,7 +1,7 @@
+use crate::components::{DepartmentOption, UserEditData, UserForm, UserFormData};
 use leptos::*;
 use serde::Deserialize;
 use uuid::Uuid;
-use crate::components::{UserForm, UserFormData, UserEditData, DepartmentOption};
 
 /// User data structure
 #[derive(Debug, Clone, Deserialize)]
@@ -29,12 +29,12 @@ pub fn UsersContent() -> impl IntoView {
     let (departments, set_departments) = create_signal(Vec::new());
     let (loading, set_loading) = create_signal(false);
     let (error, set_error) = create_signal(Option::<String>::None);
-    
+
     let (show_form, set_show_form) = create_signal(false);
     let (editing_user, set_editing_user) = create_signal(Option::<User>::None);
     let (form_submitting, set_form_submitting) = create_signal(false);
     let (deleting_id, set_deleting_id) = create_signal(Option::<String>::None);
-    
+
     // Load data on mount
     create_effect(move |_| {
         set_loading.set(true);
@@ -44,24 +44,24 @@ pub fn UsersContent() -> impl IntoView {
                 Ok(data) => set_users.set(data),
                 Err(e) => set_error.set(Some(e)),
             }
-            
+
             // Load departments
             match fetch_departments().await {
                 Ok(data) => set_departments.set(data),
                 Err(e) => set_error.set(Some(e)),
             }
-            
+
             set_loading.set(false);
         });
     });
-    
+
     // Handle form submission
     let handle_submit = move |form_data: UserFormData| {
         let editing_id = editing_user.get().map(|u| u.id);
         spawn_local(async move {
             set_form_submitting.set(true);
             set_error.set(None);
-            
+
             let result = if let Some(user_id) = editing_id {
                 update_user_form(user_id.to_string(), form_data).await
             } else {
@@ -85,20 +85,24 @@ pub fn UsersContent() -> impl IntoView {
             set_form_submitting.set(false);
         });
     };
-    
+
     let handle_cancel = move |_| {
         set_show_form.set(false);
         set_editing_user.set(None);
     };
-    
+
     // Convert departments to options for form
     let department_options = create_memo(move |_| {
-        departments.get().into_iter().map(|d| DepartmentOption {
-            id: d.id,
-            name: d.name,
-        }).collect::<Vec<_>>()
+        departments
+            .get()
+            .into_iter()
+            .map(|d| DepartmentOption {
+                id: d.id,
+                name: d.name,
+            })
+            .collect::<Vec<_>>()
     });
-    
+
     let editing_form_data = Signal::derive(move || {
         editing_user.get().map(|u| UserEditData {
             id: u.id.to_string(),
@@ -109,11 +113,13 @@ pub fn UsersContent() -> impl IntoView {
             department_id: u.department_id.map(|id| id.to_string()).unwrap_or_default(),
         })
     });
-    
+
     // Helper function to get department name
     let get_department_name = move |dept_id: Option<Uuid>| -> String {
         if let Some(id) = dept_id {
-            departments.get().iter()
+            departments
+                .get()
+                .iter()
                 .find(|d| d.id == id)
                 .map(|d| d.name.clone())
                 .unwrap_or_else(|| "Unknown".to_string())
@@ -121,7 +127,7 @@ pub fn UsersContent() -> impl IntoView {
             "Unassigned".to_string()
         }
     };
-    
+
     // Helper function to get role badge class
     let get_role_badge_class = |role: &str| -> &str {
         match role {
@@ -130,7 +136,7 @@ pub fn UsersContent() -> impl IntoView {
             _ => "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
         }
     };
-    
+
     view! {
         <div class="space-y-6">
             <div class="flex items-center justify-between">
@@ -142,7 +148,7 @@ pub fn UsersContent() -> impl IntoView {
                         "Manage system users and their roles"
                     </p>
                 </div>
-                
+
                 <div class="flex items-center space-x-3">
                     <button
                         class="btn-primary"
@@ -152,7 +158,7 @@ pub fn UsersContent() -> impl IntoView {
                     </button>
                 </div>
             </div>
-            
+
             {move || error.get().map(|err| {
                 view! {
                     <div class="rounded-md bg-red-50 p-4 dark:bg-red-900/20">
@@ -166,7 +172,7 @@ pub fn UsersContent() -> impl IntoView {
                     </div>
                 }
             })}
-            
+
             {move || {
                 if show_form.get() {
                     let is_edit = editing_user.get().is_some();
@@ -208,7 +214,7 @@ pub fn UsersContent() -> impl IntoView {
                     view! { <div></div> }.into_view()
                 }
             }}
-            
+
             <div class="bg-white dark:bg-gray-800 shadow rounded-lg overflow-hidden">
                 <div class="overflow-x-auto">
                     <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
@@ -249,13 +255,13 @@ pub fn UsersContent() -> impl IntoView {
                                         let dept_name = get_department_name(user.department_id);
                                         let role_class = get_role_badge_class(&user.role);
                                         let role_display = user.role.replace("_", " ");
-                                        
+
                                         view! {
                                             <tr class="hover:bg-gray-50 dark:hover:bg-gray-700">
                                                 <td class="px-6 py-4 whitespace-nowrap">
                                                     <div class="flex items-center">
                                                         <div class="flex-shrink-0 h-10 w-10 rounded-full bg-blue-500 flex items-center justify-center text-white font-semibold">
-                                                            {format!("{}{}", 
+                                                            {format!("{}{}",
                                                                 user.first_name.chars().next().unwrap_or('U'),
                                                                 user.last_name.chars().next().unwrap_or('N')
                                                             )}
@@ -305,7 +311,7 @@ pub fn UsersContent() -> impl IntoView {
                                                                             set_deleting_id.set(Some(id_clone.clone()));
                                                                             spawn_local(async move {
                                                                                 set_error.set(None);
-                                                                                
+
                                                                                 match delete_user(id_clone).await {
                                                                                     Ok(_) => {
                                                                                         // Reload users
@@ -345,9 +351,10 @@ async fn fetch_users() -> Result<Vec<User>, String> {
     let response = reqwest::get("http://localhost:3000/api/v1/users")
         .await
         .map_err(|e| format!("Failed to fetch users: {}", e))?;
-    
+
     if response.status().is_success() {
-        response.json::<Vec<User>>()
+        response
+            .json::<Vec<User>>()
             .await
             .map_err(|e| format!("Failed to parse users: {}", e))
     } else {
@@ -360,13 +367,17 @@ async fn fetch_departments() -> Result<Vec<Department>, String> {
     let response = reqwest::get("http://localhost:3000/api/v1/departments")
         .await
         .map_err(|e| format!("Failed to fetch departments: {}", e))?;
-    
+
     if response.status().is_success() {
-        response.json::<Vec<Department>>()
+        response
+            .json::<Vec<Department>>()
             .await
             .map_err(|e| format!("Failed to parse departments: {}", e))
     } else {
-        Err(format!("Failed to fetch departments: {}", response.status()))
+        Err(format!(
+            "Failed to fetch departments: {}",
+            response.status()
+        ))
     }
 }
 
@@ -375,10 +386,14 @@ async fn create_user(form_data: UserFormData) -> Result<(), String> {
     let department_id = if form_data.department_id.is_empty() {
         None
     } else {
-        Some(form_data.department_id.parse::<Uuid>()
-            .map_err(|_| "Invalid department ID")?)
+        Some(
+            form_data
+                .department_id
+                .parse::<Uuid>()
+                .map_err(|_| "Invalid department ID")?,
+        )
     };
-    
+
     let client = reqwest::Client::new();
     let response = client
         .post("http://localhost:3000/api/v1/users")
@@ -393,27 +408,33 @@ async fn create_user(form_data: UserFormData) -> Result<(), String> {
         .send()
         .await
         .map_err(|e| format!("Failed to create user: {}", e))?;
-    
+
     if response.status().is_success() {
         Ok(())
     } else {
-        let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+        let error_text = response
+            .text()
+            .await
+            .unwrap_or_else(|_| "Unknown error".to_string());
         Err(format!("Failed to create user: {}", error_text))
     }
 }
 
 /// Update an existing user
 async fn update_user_form(user_id: String, form_data: UserFormData) -> Result<(), String> {
-    let id = user_id.parse::<Uuid>()
-        .map_err(|_| "Invalid user ID")?;
-    
+    let id = user_id.parse::<Uuid>().map_err(|_| "Invalid user ID")?;
+
     let department_id = if form_data.department_id.is_empty() {
         None
     } else {
-        Some(form_data.department_id.parse::<Uuid>()
-            .map_err(|_| "Invalid department ID")?)
+        Some(
+            form_data
+                .department_id
+                .parse::<Uuid>()
+                .map_err(|_| "Invalid department ID")?,
+        )
     };
-    
+
     let client = reqwest::Client::new();
     let response = client
         .put(&format!("http://localhost:3000/api/v1/users/{}", id))
@@ -427,31 +448,36 @@ async fn update_user_form(user_id: String, form_data: UserFormData) -> Result<()
         .send()
         .await
         .map_err(|e| format!("Failed to update user: {}", e))?;
-    
+
     if response.status().is_success() {
         Ok(())
     } else {
-        let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+        let error_text = response
+            .text()
+            .await
+            .unwrap_or_else(|_| "Unknown error".to_string());
         Err(format!("Failed to update user: {}", error_text))
     }
 }
 
 /// Delete a user
 async fn delete_user(user_id: String) -> Result<(), String> {
-    let id = user_id.parse::<Uuid>()
-        .map_err(|_| "Invalid user ID")?;
-    
+    let id = user_id.parse::<Uuid>().map_err(|_| "Invalid user ID")?;
+
     let client = reqwest::Client::new();
     let response = client
         .delete(&format!("http://localhost:3000/api/v1/users/{}", id))
         .send()
         .await
         .map_err(|e| format!("Failed to delete user: {}", e))?;
-    
+
     if response.status().is_success() {
         Ok(())
     } else {
-        let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+        let error_text = response
+            .text()
+            .await
+            .unwrap_or_else(|_| "Unknown error".to_string());
         Err(format!("Failed to delete user: {}", error_text))
     }
 }

@@ -1,16 +1,18 @@
 use axum::{
-    extract::{State, Path},
-    routing::{get, post, put, delete},
-    Router,
-    Json,
+    extract::{Path, State},
+    http::HeaderMap,
+    routing::{get, put},
+    Json, Router,
 };
-use sqlx::PgPool;
-use uuid::Uuid;
+use chrono::{Datelike, NaiveDate, Weekday};
 use serde::{Deserialize, Serialize};
-use chrono::{NaiveDate, Datelike, Weekday};
+use serde_json::json;
+use sqlx::PgPool;
 use std::collections::HashMap;
+use uuid::Uuid;
 
 use crate::error::{AppError, Result};
+use crate::services::{audit_payload, log_audit, user_id_from_headers};
 
 /// Allocation response structure
 #[derive(Debug, Serialize)]
@@ -50,6 +52,7 @@ pub struct UpdateAllocationRequest {
 
 /// Daily allocation info for validation
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct DailyAllocation {
     date: NaiveDate,
     allocated_hours: f64,
@@ -57,6 +60,7 @@ struct DailyAllocation {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct AssignmentInfo {
     allocation_id: Uuid,
     project_id: Uuid,
@@ -92,15 +96,12 @@ async fn get_holidays_in_range(
     .fetch_all(pool)
     .await
     .map_err(|e| AppError::Database(e.to_string()))?;
-    
+
     Ok(holidays)
 }
 
 /// Get resource working hours configuration
-async fn get_resource_working_hours(
-    pool: &PgPool,
-    resource_id: Uuid,
-) -> Result<f64> {
+async fn get_resource_working_hours(pool: &PgPool, resource_id: Uuid) -> Result<f64> {
     let working_hours: Option<sqlx::types::BigDecimal> = sqlx::query_scalar!(
         "SELECT working_hours FROM resources WHERE id = $1",
         resource_id
@@ -108,11 +109,9 @@ async fn get_resource_working_hours(
     .fetch_optional(pool)
     .await
     .map_err(|e| AppError::Database(e.to_string()))?;
-    
-    let hours = working_hours
-        .map(bigdecimal_to_f64)
-        .unwrap_or(8.0);
-    
+
+    let hours = working_hours.map(bigdecimal_to_f64).unwrap_or(8.0);
+
     Ok(hours)
 }
 
@@ -124,9 +123,10 @@ async fn get_existing_allocations(
     end_date: NaiveDate,
     exclude_allocation_id: Option<Uuid>,
 ) -> Result<Vec<(Uuid, NaiveDate, NaiveDate, f64, bool)>> {
-    let allocations: Vec<(Uuid, NaiveDate, NaiveDate, f64, bool)> = if let Some(exclude_id) = exclude_allocation_id {
-        sqlx::query!(
-            "SELECT id, start_date, end_date, allocation_percentage, include_weekend
+    let allocations: Vec<(Uuid, NaiveDate, NaiveDate, f64, bool)> =
+        if let Some(exclude_id) = exclude_allocation_id {
+            sqlx::query!(
+                "SELECT id, start_date, end_date, allocation_percentage, include_weekend
              FROM allocations 
              WHERE resource_id = $1 
              AND id != $2
@@ -135,26 +135,28 @@ async fn get_existing_allocations(
                  (start_date <= $4 AND end_date >= $4) OR
                  (start_date >= $3 AND end_date <= $4)
              )",
-            resource_id,
-            exclude_id,
-            start_date,
-            end_date
-        )
-        .fetch_all(pool)
-        .await
-        .map_err(|e| AppError::Database(e.to_string()))?
-        .into_iter()
-        .map(|row| (
-            row.id,
-            row.start_date,
-            row.end_date,
-            bigdecimal_to_f64(row.allocation_percentage),
-            row.include_weekend,
-        ))
-        .collect()
-    } else {
-        sqlx::query!(
-            "SELECT id, start_date, end_date, allocation_percentage, include_weekend
+                resource_id,
+                exclude_id,
+                start_date,
+                end_date
+            )
+            .fetch_all(pool)
+            .await
+            .map_err(|e| AppError::Database(e.to_string()))?
+            .into_iter()
+            .map(|row| {
+                (
+                    row.id,
+                    row.start_date,
+                    row.end_date,
+                    bigdecimal_to_f64(row.allocation_percentage),
+                    row.include_weekend,
+                )
+            })
+            .collect()
+        } else {
+            sqlx::query!(
+                "SELECT id, start_date, end_date, allocation_percentage, include_weekend
              FROM allocations 
              WHERE resource_id = $1 
              AND (
@@ -162,24 +164,26 @@ async fn get_existing_allocations(
                  (start_date <= $3 AND end_date >= $3) OR
                  (start_date >= $2 AND end_date <= $3)
              )",
-            resource_id,
-            start_date,
-            end_date
-        )
-        .fetch_all(pool)
-        .await
-        .map_err(|e| AppError::Database(e.to_string()))?
-        .into_iter()
-        .map(|row| (
-            row.id,
-            row.start_date,
-            row.end_date,
-            bigdecimal_to_f64(row.allocation_percentage),
-            row.include_weekend,
-        ))
-        .collect()
-    };
-    
+                resource_id,
+                start_date,
+                end_date
+            )
+            .fetch_all(pool)
+            .await
+            .map_err(|e| AppError::Database(e.to_string()))?
+            .into_iter()
+            .map(|row| {
+                (
+                    row.id,
+                    row.start_date,
+                    row.end_date,
+                    bigdecimal_to_f64(row.allocation_percentage),
+                    row.include_weekend,
+                )
+            })
+            .collect()
+        };
+
     Ok(allocations)
 }
 
@@ -197,27 +201,34 @@ async fn calculate_daily_allocations(
 ) -> Result<(HashMap<NaiveDate, DailyAllocation>, f64)> {
     // Get working hours capacity
     let daily_capacity = get_resource_working_hours(pool, resource_id).await?;
-    
+
     // Get holidays in range
     let holidays = get_holidays_in_range(pool, start_date, end_date).await?;
     let holiday_set: std::collections::HashSet<_> = holidays.into_iter().collect();
-    
+
     // Get existing allocations
     let existing_allocations = get_existing_allocations(
-        pool, resource_id, start_date, end_date, exclude_allocation_id
-    ).await?;
-    
+        pool,
+        resource_id,
+        start_date,
+        end_date,
+        exclude_allocation_id,
+    )
+    .await?;
+
     // Initialize daily allocations map
     let mut daily_allocations: HashMap<NaiveDate, DailyAllocation> = HashMap::new();
-    
+
     // Process existing allocations
     for (alloc_id, alloc_start, alloc_end, percentage, include_weekend) in existing_allocations {
         let mut current_date = alloc_start;
         while current_date <= alloc_end {
             // Skip weekends and holidays
-            if (include_weekend || !is_weekend(current_date)) && !holiday_set.contains(&current_date) {
+            if (include_weekend || !is_weekend(current_date))
+                && !holiday_set.contains(&current_date)
+            {
                 let hours = daily_capacity * (percentage / 100.0);
-                
+
                 daily_allocations
                     .entry(current_date)
                     .or_insert_with(|| DailyAllocation {
@@ -226,7 +237,7 @@ async fn calculate_daily_allocations(
                         assignments: Vec::new(),
                     })
                     .allocated_hours += hours;
-                    
+
                 daily_allocations
                     .get_mut(&current_date)
                     .unwrap()
@@ -240,13 +251,15 @@ async fn calculate_daily_allocations(
             current_date = current_date.succ_opt().unwrap_or(current_date);
         }
     }
-    
+
     // Add new allocation
     let mut current_date = new_start_date;
     while current_date <= new_end_date {
-        if (new_include_weekend || !is_weekend(current_date)) && !holiday_set.contains(&current_date) {
+        if (new_include_weekend || !is_weekend(current_date))
+            && !holiday_set.contains(&current_date)
+        {
             let new_hours = daily_capacity * (new_allocation_percentage / 100.0);
-            
+
             daily_allocations
                 .entry(current_date)
                 .or_insert_with(|| DailyAllocation {
@@ -258,7 +271,7 @@ async fn calculate_daily_allocations(
         }
         current_date = current_date.succ_opt().unwrap_or(current_date);
     }
-    
+
     Ok((daily_allocations, daily_capacity))
 }
 
@@ -284,9 +297,11 @@ async fn check_resource_capacity(
         .fetch_optional(pool)
         .await
         .map_err(|e| AppError::Database(e.to_string()))?;
-        
+
         (
-            row.as_ref().and_then(|r| r.min_start).unwrap_or(new_start_date),
+            row.as_ref()
+                .and_then(|r| r.min_start)
+                .unwrap_or(new_start_date),
             row.as_ref().and_then(|r| r.max_end).unwrap_or(new_end_date),
         )
     } else {
@@ -299,16 +314,18 @@ async fn check_resource_capacity(
         .fetch_optional(pool)
         .await
         .map_err(|e| AppError::Database(e.to_string()))?;
-        
+
         (
-            row.as_ref().and_then(|r| r.min_start).unwrap_or(new_start_date),
+            row.as_ref()
+                .and_then(|r| r.min_start)
+                .unwrap_or(new_start_date),
             row.as_ref().and_then(|r| r.max_end).unwrap_or(new_end_date),
         )
     };
-    
+
     let check_start = std::cmp::min(existing_start, new_start_date);
     let check_end = std::cmp::max(existing_end, new_end_date);
-    
+
     // Calculate daily allocations
     let (daily_allocations, daily_capacity) = calculate_daily_allocations(
         pool,
@@ -320,22 +337,23 @@ async fn check_resource_capacity(
         new_end_date,
         new_include_weekend,
         exclude_allocation_id,
-    ).await?;
-    
+    )
+    .await?;
+
     // Check for over-allocation
     let mut over_allocated_days: Vec<(NaiveDate, f64)> = Vec::new();
-    
+
     for (date, allocation) in &daily_allocations {
         if allocation.allocated_hours > daily_capacity {
             over_allocated_days.push((*date, allocation.allocated_hours));
         }
     }
-    
+
     // Sort by date
     over_allocated_days.sort_by(|a, b| a.0.cmp(&b.0));
-    
+
     let has_capacity = over_allocated_days.is_empty();
-    
+
     let message = if has_capacity {
         format!(
             "Resource has sufficient capacity. Daily capacity: {:.1} hours",
@@ -344,18 +362,16 @@ async fn check_resource_capacity(
     } else {
         let days_str = over_allocated_days
             .iter()
-            .map(|(date, hours)| {
-                format!("{} ({:.1}h allocated)", date, hours)
-            })
+            .map(|(date, hours)| format!("{} ({:.1}h allocated)", date, hours))
             .collect::<Vec<_>>()
             .join(", ");
-        
+
         format!(
             "Resource over-allocated on: {}. Daily capacity: {:.1} hours",
             days_str, daily_capacity
         )
     };
-    
+
     Ok((has_capacity, message, daily_capacity))
 }
 
@@ -374,28 +390,26 @@ async fn validate_allocation_dates(
     .await
     .map_err(|e| AppError::Database(e.to_string()))?
     .ok_or_else(|| AppError::NotFound(format!("Project {} not found", project_id)))?;
-    
+
     if start_date < project.start_date {
         return Err(AppError::Validation(format!(
             "Allocation start date ({}) cannot be before project start date ({})",
             start_date, project.start_date
         )));
     }
-    
+
     if end_date > project.end_date {
         return Err(AppError::Validation(format!(
             "Allocation end date ({}) cannot be after project end date ({})",
             end_date, project.end_date
         )));
     }
-    
+
     Ok(())
 }
 
 /// Get all allocations with project and resource names
-async fn get_allocations(
-    State(pool): State<PgPool>,
-) -> Result<Json<Vec<AllocationResponse>>> {
+async fn get_allocations(State(pool): State<PgPool>) -> Result<Json<Vec<AllocationResponse>>> {
     let allocations = sqlx::query!(
         "SELECT a.id, a.project_id, a.resource_id, a.start_date, a.end_date, a.allocation_percentage, a.include_weekend,
                 p.name as project_name, r.name as resource_name
@@ -407,7 +421,7 @@ async fn get_allocations(
     .fetch_all(&pool)
     .await
     .map_err(|e| AppError::Database(e.to_string()))?;
-    
+
     let response: Vec<AllocationResponse> = allocations
         .into_iter()
         .map(|a| AllocationResponse {
@@ -422,7 +436,7 @@ async fn get_allocations(
             resource_name: a.resource_name,
         })
         .collect();
-    
+
     Ok(Json(response))
 }
 
@@ -444,7 +458,7 @@ async fn get_allocations_by_project(
     .fetch_all(&pool)
     .await
     .map_err(|e| AppError::Database(e.to_string()))?;
-    
+
     let response: Vec<AllocationResponse> = allocations
         .into_iter()
         .map(|a| AllocationResponse {
@@ -459,7 +473,7 @@ async fn get_allocations_by_project(
             resource_name: a.resource_name,
         })
         .collect();
-    
+
     Ok(Json(response))
 }
 
@@ -481,7 +495,7 @@ async fn get_allocations_by_resource(
     .fetch_all(&pool)
     .await
     .map_err(|e| AppError::Database(e.to_string()))?;
-    
+
     let response: Vec<AllocationResponse> = allocations
         .into_iter()
         .map(|a| AllocationResponse {
@@ -496,23 +510,28 @@ async fn get_allocations_by_resource(
             resource_name: a.resource_name,
         })
         .collect();
-    
+
     Ok(Json(response))
 }
 
 /// Create a new allocation
 async fn create_allocation(
     State(pool): State<PgPool>,
+    headers: HeaderMap,
     Json(req): Json<CreateAllocationRequest>,
 ) -> Result<Json<AllocationResponse>> {
+    let audit_changes = audit_payload(None, Some(json!({
+        "project_id": req.project_id,
+        "resource_id": req.resource_id,
+        "start_date": req.start_date,
+        "end_date": req.end_date,
+        "allocation_percentage": req.allocation_percentage,
+        "include_weekend": req.include_weekend,
+    })));
+    let user_id = user_id_from_headers(&headers)?;
     // Validate dates are within project dates
-    validate_allocation_dates(
-        &pool,
-        req.project_id,
-        req.start_date,
-        req.end_date,
-    ).await?;
-    
+    validate_allocation_dates(&pool, req.project_id, req.start_date, req.end_date).await?;
+
     // Check if resource has capacity
     let (has_capacity, message, _daily_capacity) = check_resource_capacity(
         &pool,
@@ -545,24 +564,30 @@ async fn create_allocation(
     .fetch_one(&pool)
     .await
     .map_err(|e| AppError::Database(e.to_string()))?;
-    
+
+    log_audit(
+        &pool,
+        user_id,
+        "create",
+        "allocation",
+        allocation.id,
+        audit_changes,
+    )
+    .await?;
+
     // Get project and resource names
-    let project_name = sqlx::query_scalar!(
-        "SELECT name FROM projects WHERE id = $1",
-        req.project_id
-    )
-    .fetch_one(&pool)
-    .await
-    .map_err(|e| AppError::Database(e.to_string()))?;
-    
-    let resource_name = sqlx::query_scalar!(
-        "SELECT name FROM resources WHERE id = $1",
-        req.resource_id
-    )
-    .fetch_one(&pool)
-    .await
-    .map_err(|e| AppError::Database(e.to_string()))?;
-    
+    let project_name =
+        sqlx::query_scalar!("SELECT name FROM projects WHERE id = $1", req.project_id)
+            .fetch_one(&pool)
+            .await
+            .map_err(|e| AppError::Database(e.to_string()))?;
+
+    let resource_name =
+        sqlx::query_scalar!("SELECT name FROM resources WHERE id = $1", req.resource_id)
+            .fetch_one(&pool)
+            .await
+            .map_err(|e| AppError::Database(e.to_string()))?;
+
     Ok(Json(AllocationResponse {
         id: allocation.id,
         project_id: allocation.project_id.expect("project_id is not null"),
@@ -579,6 +604,7 @@ async fn create_allocation(
 /// Update an allocation
 async fn update_allocation(
     State(pool): State<PgPool>,
+    headers: HeaderMap,
     Path(id): Path<Uuid>,
     Json(req): Json<UpdateAllocationRequest>,
 ) -> Result<Json<AllocationResponse>> {
@@ -593,20 +619,28 @@ async fn update_allocation(
     .ok_or_else(|| AppError::NotFound(format!("Allocation {} not found", id)))?;
 
     // Determine values for validation
-    let resource_id = req.resource_id.or(existing.resource_id).expect("resource_id is not null");
-    let project_id = req.project_id.or(existing.project_id).expect("project_id is not null");
-    let start_date = req.start_date.or(Some(existing.start_date)).expect("start_date is not null");
-    let end_date = req.end_date.or(Some(existing.end_date)).expect("end_date is not null");
-    let new_percentage = req.allocation_percentage.unwrap_or_else(|| bigdecimal_to_f64(existing.allocation_percentage));
+    let resource_id = req
+        .resource_id
+        .or(existing.resource_id)
+        .expect("resource_id is not null");
+    let project_id = req
+        .project_id
+        .or(existing.project_id)
+        .expect("project_id is not null");
+    let start_date = req
+        .start_date
+        .or(Some(existing.start_date))
+        .expect("start_date is not null");
+    let end_date = req
+        .end_date
+        .or(Some(existing.end_date))
+        .expect("end_date is not null");
+    let existing_percentage = bigdecimal_to_f64(existing.allocation_percentage);
+    let new_percentage = req.allocation_percentage.unwrap_or(existing_percentage);
     let include_weekend = req.include_weekend.unwrap_or(existing.include_weekend);
 
     // Validate dates are within project dates
-    validate_allocation_dates(
-        &pool,
-        project_id,
-        start_date,
-        end_date,
-    ).await?;
+    validate_allocation_dates(&pool, project_id, start_date, end_date).await?;
 
     // Check if resource has capacity (excluding this allocation)
     let (has_capacity, message, _daily_capacity) = check_resource_capacity(
@@ -623,6 +657,26 @@ async fn update_allocation(
     if !has_capacity {
         return Err(AppError::Validation(message));
     }
+
+    let audit_changes = audit_payload(
+        Some(json!({
+            "project_id": existing.project_id,
+            "resource_id": existing.resource_id,
+            "start_date": existing.start_date,
+            "end_date": existing.end_date,
+            "allocation_percentage": existing_percentage,
+            "include_weekend": existing.include_weekend,
+        })),
+        Some(json!({
+            "project_id": project_id,
+            "resource_id": resource_id,
+            "start_date": start_date,
+            "end_date": end_date,
+            "allocation_percentage": new_percentage,
+            "include_weekend": include_weekend,
+        })),
+    );
+    let user_id = user_id_from_headers(&headers)?;
 
     // Convert percentage if provided
     let allocation_percentage_bd = req.allocation_percentage.map(f64_to_bigdecimal);
@@ -650,26 +704,31 @@ async fn update_allocation(
     .await
     .map_err(|e| AppError::Database(e.to_string()))?;
 
+    log_audit(
+        &pool,
+        user_id,
+        "update",
+        "allocation",
+        allocation.id,
+        audit_changes,
+    )
+    .await?;
+
     // Get project and resource names
     let project_id = allocation.project_id.expect("project_id is not null");
     let resource_id = allocation.resource_id.expect("resource_id is not null");
-    
-    let project_name = sqlx::query_scalar!(
-        "SELECT name FROM projects WHERE id = $1",
-        project_id
-    )
-    .fetch_one(&pool)
-    .await
-    .map_err(|e| AppError::Database(e.to_string()))?;
-    
-    let resource_name = sqlx::query_scalar!(
-        "SELECT name FROM resources WHERE id = $1",
-        resource_id
-    )
-    .fetch_one(&pool)
-    .await
-    .map_err(|e| AppError::Database(e.to_string()))?;
-    
+
+    let project_name = sqlx::query_scalar!("SELECT name FROM projects WHERE id = $1", project_id)
+        .fetch_one(&pool)
+        .await
+        .map_err(|e| AppError::Database(e.to_string()))?;
+
+    let resource_name =
+        sqlx::query_scalar!("SELECT name FROM resources WHERE id = $1", resource_id)
+            .fetch_one(&pool)
+            .await
+            .map_err(|e| AppError::Database(e.to_string()))?;
+
     Ok(Json(AllocationResponse {
         id: allocation.id,
         project_id,
@@ -686,32 +745,55 @@ async fn update_allocation(
 /// Delete an allocation
 async fn delete_allocation(
     State(pool): State<PgPool>,
+    headers: HeaderMap,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>> {
     // Check if allocation exists
-    let _ = sqlx::query!(
-        "SELECT id FROM allocations WHERE id = $1",
+    let existing = sqlx::query!(
+        "SELECT id, project_id, resource_id, start_date, end_date, allocation_percentage, include_weekend FROM allocations WHERE id = $1",
         id
     )
     .fetch_optional(&pool)
     .await
     .map_err(|e| AppError::Database(e.to_string()))?
     .ok_or_else(|| AppError::NotFound(format!("Allocation {} not found", id)))?;
-    
+
     // Delete the allocation
     sqlx::query!("DELETE FROM allocations WHERE id = $1", id)
         .execute(&pool)
         .await
         .map_err(|e| AppError::Database(e.to_string()))?;
-    
-    Ok(Json(serde_json::json!({"message": "Allocation deleted successfully"})))
+
+    let user_id = user_id_from_headers(&headers)?;
+    let audit_changes = audit_payload(Some(json!({
+        "project_id": existing.project_id,
+        "resource_id": existing.resource_id,
+        "start_date": existing.start_date,
+        "end_date": existing.end_date,
+        "allocation_percentage": bigdecimal_to_f64(existing.allocation_percentage),
+        "include_weekend": existing.include_weekend,
+    })), None);
+    log_audit(&pool, user_id, "delete", "allocation", id, audit_changes).await?;
+
+    Ok(Json(
+        serde_json::json!({"message": "Allocation deleted successfully"}),
+    ))
 }
 
 /// Create allocation routes
 pub fn allocation_routes() -> Router<PgPool> {
     Router::new()
         .route("/allocations", get(get_allocations).post(create_allocation))
-        .route("/allocations/:id", put(update_allocation).delete(delete_allocation))
-        .route("/allocations/project/:project_id", get(get_allocations_by_project))
-        .route("/allocations/resource/:resource_id", get(get_allocations_by_resource))
+        .route(
+            "/allocations/:id",
+            put(update_allocation).delete(delete_allocation),
+        )
+        .route(
+            "/allocations/project/:project_id",
+            get(get_allocations_by_project),
+        )
+        .route(
+            "/allocations/resource/:resource_id",
+            get(get_allocations_by_resource),
+        )
 }

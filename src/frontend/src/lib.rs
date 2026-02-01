@@ -3,26 +3,35 @@ use leptos_meta::*;
 use leptos_router::*;
 use wasm_bindgen::JsCast;
 
-pub mod components;
-pub mod pages;
 pub mod auth;
+pub mod components;
 pub mod gantt;
+pub mod pages;
 pub mod timeline;
 
-use pages::{home::Home, login::Login, dashboard::Dashboard, not_found::NotFound, resources::Resources, projects::Projects, allocations::Allocations, settings::{SettingsPage, SettingsHolidaysPage, SettingsUsersPage, SettingsDepartmentsPage}};
-use auth::{AuthContext, provide_auth_context};
+use auth::{provide_auth_context, AuthContext};
+use pages::{
+    allocations::Allocations,
+    dashboard::Dashboard,
+    home::Home,
+    login::Login,
+    not_found::NotFound,
+    projects::Projects,
+    resources::Resources,
+    settings::{SettingsDepartmentsPage, SettingsHolidaysPage, SettingsPage, SettingsUsersPage},
+};
 
 /// Main application component
 #[component]
 pub fn App() -> impl IntoView {
     web_sys::console::log_1(&"App component starting...".into());
-    
+
     // Provides context that manages stylesheets, titles, meta tags, etc.
     provide_meta_context();
-    
+
     // Provide authentication context
     provide_auth_context();
-    
+
     web_sys::console::log_1(&"Contexts provided, rendering routes...".into());
 
     view! {
@@ -61,11 +70,12 @@ pub fn App() -> impl IntoView {
 pub fn start() {
     console_error_panic_hook::set_once();
     web_sys::console::log_1(&"Starting Xynergy app...".into());
-    
+
     // Mount to the root div instead of body
     if let Some(root) = web_sys::window()
         .and_then(|w| w.document())
-        .and_then(|d| d.get_element_by_id("root")) {
+        .and_then(|d| d.get_element_by_id("root"))
+    {
         web_sys::console::log_1(&"Found root element, mounting...".into());
         leptos::mount_to(root.unchecked_into(), App);
         web_sys::console::log_1(&"Xynergy app mounted to root".into());

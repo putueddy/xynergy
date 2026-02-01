@@ -1,7 +1,7 @@
-use leptos::*;
-use uuid::Uuid;
-use serde::Deserialize;
 use crate::components::{HolidayForm, HolidayFormData};
+use leptos::*;
+use serde::Deserialize;
+use uuid::Uuid;
 
 /// Holiday data structure
 #[derive(Debug, Clone, Deserialize)]
@@ -49,16 +49,14 @@ pub fn HolidaysContent() -> impl IntoView {
             };
 
             match result {
-                Ok(_) => {
-                    match fetch_holidays().await {
-                        Ok(data) => {
-                            set_holidays.set(data);
-                            set_show_form.set(false);
-                            set_editing_holiday.set(None);
-                        }
-                        Err(e) => set_error.set(Some(e)),
+                Ok(_) => match fetch_holidays().await {
+                    Ok(data) => {
+                        set_holidays.set(data);
+                        set_show_form.set(false);
+                        set_editing_holiday.set(None);
                     }
-                }
+                    Err(e) => set_error.set(Some(e)),
+                },
                 Err(e) => set_error.set(Some(e)),
             }
             set_form_submitting.set(false);
@@ -81,7 +79,7 @@ pub fn HolidaysContent() -> impl IntoView {
                         "Manage company holidays and days off"
                     </p>
                 </div>
-                
+
                 <div class="flex items-center space-x-3">
                     <button
                         class="btn-primary"
@@ -218,7 +216,7 @@ pub fn HolidaysContent() -> impl IntoView {
                                                                             set_deleting_id.set(Some(id_clone.clone()));
                                                                             spawn_local(async move {
                                                                                 set_error.set(None);
-                                                                                
+
                                                                                 match delete_holiday(id_clone).await {
                                                                                     Ok(_) => {
                                                                                         match fetch_holidays().await {
@@ -257,9 +255,10 @@ async fn fetch_holidays() -> Result<Vec<Holiday>, String> {
     let response = reqwest::get("http://localhost:3000/api/v1/holidays")
         .await
         .map_err(|e| format!("Failed to fetch holidays: {}", e))?;
-    
+
     if response.status().is_success() {
-        response.json::<Vec<Holiday>>()
+        response
+            .json::<Vec<Holiday>>()
             .await
             .map_err(|e| format!("Failed to parse holidays: {}", e))
     } else {
@@ -276,11 +275,14 @@ async fn create_holiday(form_data: HolidayFormData) -> Result<(), String> {
         .send()
         .await
         .map_err(|e| format!("Failed to create holiday: {}", e))?;
-    
+
     if response.status().is_success() {
         Ok(())
     } else {
-        let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+        let error_text = response
+            .text()
+            .await
+            .unwrap_or_else(|_| "Unknown error".to_string());
         Err(format!("Failed to create holiday: {}", error_text))
     }
 }
@@ -289,16 +291,22 @@ async fn create_holiday(form_data: HolidayFormData) -> Result<(), String> {
 async fn update_holiday(holiday_id: String, form_data: HolidayFormData) -> Result<(), String> {
     let client = reqwest::Client::new();
     let response = client
-        .put(&format!("http://localhost:3000/api/v1/holidays/{}", holiday_id))
+        .put(&format!(
+            "http://localhost:3000/api/v1/holidays/{}",
+            holiday_id
+        ))
         .json(&form_data)
         .send()
         .await
         .map_err(|e| format!("Failed to update holiday: {}", e))?;
-    
+
     if response.status().is_success() {
         Ok(())
     } else {
-        let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+        let error_text = response
+            .text()
+            .await
+            .unwrap_or_else(|_| "Unknown error".to_string());
         Err(format!("Failed to update holiday: {}", error_text))
     }
 }
@@ -307,15 +315,21 @@ async fn update_holiday(holiday_id: String, form_data: HolidayFormData) -> Resul
 async fn delete_holiday(holiday_id: String) -> Result<(), String> {
     let client = reqwest::Client::new();
     let response = client
-        .delete(&format!("http://localhost:3000/api/v1/holidays/{}", holiday_id))
+        .delete(&format!(
+            "http://localhost:3000/api/v1/holidays/{}",
+            holiday_id
+        ))
         .send()
         .await
         .map_err(|e| format!("Failed to delete holiday: {}", e))?;
-    
+
     if response.status().is_success() {
         Ok(())
     } else {
-        let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+        let error_text = response
+            .text()
+            .await
+            .unwrap_or_else(|_| "Unknown error".to_string());
         Err(format!("Failed to delete holiday: {}", error_text))
     }
 }

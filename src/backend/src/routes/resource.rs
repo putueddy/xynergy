@@ -1,15 +1,16 @@
 use axum::{
-    extract::{State, Path},
-    routing::{get, post, put, delete},
-    Router,
-    Json,
+    extract::{Path, State},
+    http::HeaderMap,
+    routing::get,
+    Json, Router,
 };
-use sqlx::PgPool;
-use uuid::Uuid;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use sqlx::PgPool;
+use uuid::Uuid;
 
 use crate::error::{AppError, Result};
+use crate::services::{audit_payload, log_audit, user_id_from_headers};
 
 /// Resource response structure using f64 for capacity
 #[derive(Debug, Serialize)]
@@ -53,9 +54,7 @@ fn f64_to_bigdecimal(f: Option<f64>) -> Option<sqlx::types::BigDecimal> {
 }
 
 /// Get all resources
-async fn get_resources(
-    State(pool): State<PgPool>,
-) -> Result<Json<Vec<ResourceResponse>>> {
+async fn get_resources(State(pool): State<PgPool>) -> Result<Json<Vec<ResourceResponse>>> {
     let resources = sqlx::query!(
         "SELECT id, name, resource_type, capacity, department_id, skills 
          FROM resources ORDER BY name"
@@ -63,7 +62,7 @@ async fn get_resources(
     .fetch_all(&pool)
     .await
     .map_err(|e| AppError::Database(e.to_string()))?;
-    
+
     let response: Vec<ResourceResponse> = resources
         .into_iter()
         .map(|r| ResourceResponse {
@@ -75,7 +74,7 @@ async fn get_resources(
             skills: r.skills,
         })
         .collect();
-    
+
     Ok(Json(response))
 }
 
@@ -93,7 +92,7 @@ async fn get_resource(
     .await
     .map_err(|e| AppError::Database(e.to_string()))?
     .ok_or_else(|| AppError::NotFound(format!("Resource {} not found", id)))?;
-    
+
     Ok(Json(ResourceResponse {
         id: resource.id,
         name: resource.name,
@@ -107,10 +106,20 @@ async fn get_resource(
 /// Create a new resource
 async fn create_resource(
     State(pool): State<PgPool>,
+    headers: HeaderMap,
     Json(req): Json<CreateResourceRequest>,
 ) -> Result<Json<ResourceResponse>> {
+    let audit_changes = audit_payload(None, Some(json!({
+        "name": req.name.clone(),
+        "resource_type": req.resource_type.clone(),
+        "capacity": req.capacity,
+        "department_id": req.department_id,
+        "skills": req.skills.clone(),
+    })));
+    let user_id = user_id_from_headers(&headers)?;
+
     let capacity_decimal = f64_to_bigdecimal(req.capacity);
-    
+
     let resource = sqlx::query!(
         "INSERT INTO resources (name, resource_type, capacity, department_id, skills)
          VALUES ($1, $2, $3, $4, $5)
@@ -124,7 +133,17 @@ async fn create_resource(
     .fetch_one(&pool)
     .await
     .map_err(|e| AppError::Database(e.to_string()))?;
-    
+
+    log_audit(
+        &pool,
+        user_id,
+        "create",
+        "resource",
+        resource.id,
+        audit_changes,
+    )
+    .await?;
+
     Ok(Json(ResourceResponse {
         id: resource.id,
         name: resource.name,
@@ -138,22 +157,51 @@ async fn create_resource(
 /// Update a resource
 async fn update_resource(
     State(pool): State<PgPool>,
+    headers: HeaderMap,
     Path(id): Path<Uuid>,
     Json(req): Json<UpdateResourceRequest>,
 ) -> Result<Json<ResourceResponse>> {
     // Check if resource exists
-    let _ = sqlx::query!(
-        "SELECT id FROM resources WHERE id = $1",
+    let existing = sqlx::query!(
+        "SELECT id, name, resource_type, capacity, department_id, skills FROM resources WHERE id = $1",
         id
     )
     .fetch_optional(&pool)
     .await
     .map_err(|e| AppError::Database(e.to_string()))?
     .ok_or_else(|| AppError::NotFound(format!("Resource {} not found", id)))?;
-    
+    let existing = existing;
+
     // Convert capacity
     let capacity_decimal = f64_to_bigdecimal(req.capacity);
-    
+    let before_capacity = bigdecimal_to_f64(existing.capacity);
+    let before_name = existing.name.clone();
+    let before_type = existing.resource_type.clone();
+    let before_department_id = existing.department_id;
+    let before_skills = existing.skills.clone();
+    let after_name_default = existing.name;
+    let after_type_default = existing.resource_type;
+    let after_capacity_default = before_capacity;
+    let after_department_default = before_department_id;
+    let after_skills_default = existing.skills;
+    let audit_changes = audit_payload(
+        Some(json!({
+            "name": before_name,
+            "resource_type": before_type,
+            "capacity": before_capacity,
+            "department_id": before_department_id,
+            "skills": before_skills,
+        })),
+        Some(json!({
+            "name": req.name.clone().unwrap_or_else(|| after_name_default),
+            "resource_type": req.resource_type.clone().unwrap_or_else(|| after_type_default),
+            "capacity": req.capacity.or(after_capacity_default),
+            "department_id": req.department_id.or(after_department_default),
+            "skills": req.skills.clone().or(after_skills_default),
+        })),
+    );
+    let user_id = user_id_from_headers(&headers)?;
+
     // Update with new values or keep existing
     let resource = sqlx::query!(
         "UPDATE resources 
@@ -174,7 +222,17 @@ async fn update_resource(
     .fetch_one(&pool)
     .await
     .map_err(|e| AppError::Database(e.to_string()))?;
-    
+
+    log_audit(
+        &pool,
+        user_id,
+        "update",
+        "resource",
+        resource.id,
+        audit_changes,
+    )
+    .await?;
+
     Ok(Json(ResourceResponse {
         id: resource.id,
         name: resource.name,
@@ -188,24 +246,35 @@ async fn update_resource(
 /// Delete a resource
 async fn delete_resource(
     State(pool): State<PgPool>,
+    headers: HeaderMap,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>> {
     // Check if resource exists
-    let _ = sqlx::query!(
-        "SELECT id FROM resources WHERE id = $1",
+    let existing = sqlx::query!(
+        "SELECT id, name, resource_type, capacity, department_id, skills FROM resources WHERE id = $1",
         id
     )
     .fetch_optional(&pool)
     .await
     .map_err(|e| AppError::Database(e.to_string()))?
     .ok_or_else(|| AppError::NotFound(format!("Resource {} not found", id)))?;
-    
+
     // Delete the resource
     sqlx::query!("DELETE FROM resources WHERE id = $1", id)
         .execute(&pool)
         .await
         .map_err(|e| AppError::Database(e.to_string()))?;
-    
+
+    let user_id = user_id_from_headers(&headers)?;
+    let audit_changes = audit_payload(Some(json!({
+        "name": existing.name,
+        "resource_type": existing.resource_type,
+        "capacity": bigdecimal_to_f64(existing.capacity),
+        "department_id": existing.department_id,
+        "skills": existing.skills,
+    })), None);
+    log_audit(&pool, user_id, "delete", "resource", id, audit_changes).await?;
+
     Ok(Json(json!({"message": "Resource deleted successfully"})))
 }
 
@@ -213,5 +282,10 @@ async fn delete_resource(
 pub fn resource_routes() -> Router<PgPool> {
     Router::new()
         .route("/resources", get(get_resources).post(create_resource))
-        .route("/resources/:id", get(get_resource).put(update_resource).delete(delete_resource))
+        .route(
+            "/resources/:id",
+            get(get_resource)
+                .put(update_resource)
+                .delete(delete_resource),
+        )
 }

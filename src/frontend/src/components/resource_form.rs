@@ -12,29 +12,29 @@ pub struct ResourceFormData {
 /// Resource form component
 #[component]
 pub fn ResourceForm(
-    #[prop(optional)] initial_data: Option<ResourceFormData>,
+    initial_data: Signal<Option<ResourceFormData>>,
     on_submit: Callback<ResourceFormData>,
     on_cancel: Callback<()>,
 ) -> impl IntoView {
-    let (name, set_name) = create_signal(
-        initial_data
-            .as_ref()
-            .map(|d| d.name.clone())
-            .unwrap_or_default(),
-    );
-    let (resource_type, set_resource_type) = create_signal(
-        initial_data
-            .as_ref()
-            .map(|d| d.resource_type.clone())
-            .unwrap_or_default(),
-    );
-    let (capacity, set_capacity) = create_signal(
-        initial_data
-            .as_ref()
-            .and_then(|d| d.capacity)
-            .map(|c| c.to_string())
-            .unwrap_or_default(),
-    );
+    let (name, set_name) = create_signal(String::new());
+    let (resource_type, set_resource_type) = create_signal(String::new());
+    let (capacity, set_capacity) = create_signal(String::new());
+
+    create_effect(move |_| {
+        if let Some(data) = initial_data.get() {
+            set_name.set(data.name);
+            set_resource_type.set(data.resource_type);
+            set_capacity.set(
+                data.capacity
+                    .map(|c| c.to_string())
+                    .unwrap_or_default(),
+            );
+        } else {
+            set_name.set(String::new());
+            set_resource_type.set(String::new());
+            set_capacity.set(String::new());
+        }
+    });
 
     let handle_submit = move |ev: leptos::ev::SubmitEvent| {
         ev.prevent_default();
@@ -73,7 +73,7 @@ pub fn ResourceForm(
                     prop:value=resource_type
                     on:change=move |ev| set_resource_type.set(event_target_value(&ev))
                 >
-                    <option value="" disabled selected>"Select type..."</option>
+                    <option value="" disabled>"Select type..."</option>
                     <option value="employee">"Employee"</option>
                     <option value="contractor">"Contractor"</option>
                     <option value="equipment">"Equipment"</option>

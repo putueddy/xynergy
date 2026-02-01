@@ -14,21 +14,21 @@ impl Database {
     pub async fn new() -> Result<Self> {
         let database_url = env::var("DATABASE_URL")
             .map_err(|_| AppError::Internal("DATABASE_URL not set".to_string()))?;
-        
+
         let pool = sqlx::postgres::PgPoolOptions::new()
             .max_connections(5)
             .connect(&database_url)
             .await
             .map_err(|e| AppError::Database(e.to_string()))?;
-        
+
         Ok(Self { pool })
     }
-    
+
     /// Get a reference to the connection pool
     pub fn pool(&self) -> &PgPool {
         &self.pool
     }
-    
+
     /// Run migrations
     pub async fn migrate(&self) -> Result<()> {
         // Migrations are in the project root
@@ -37,14 +37,14 @@ impl Database {
         tracing::info!("Migrations should be run with: sqlx migrate run");
         Ok(())
     }
-    
+
     /// Test the database connection
     pub async fn test_connection(&self) -> Result<String> {
         let row: (String,) = sqlx::query_as("SELECT version()")
             .fetch_one(&self.pool)
             .await
             .map_err(|e| AppError::Database(e.to_string()))?;
-        
+
         Ok(row.0)
     }
 }

@@ -35,12 +35,14 @@ pub fn Header() -> impl IntoView {
                 <div class="flex items-center justify-between">
                     <div class="flex items-center">
                         <h1 class="text-2xl font-bold text-blue-600 dark:text-blue-400">
-                            "Xynergy"
+                            <a href="/" class="text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300">
+                                "Xynergy"
+                            </a>
                         </h1>
                     </div>
 
                     <nav class="hidden md:flex space-x-8">
-                        <a href="/" class="text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400">
+                        <a href="/dashboard" class="text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400">
                             "Dashboard"
                         </a>
                         <a href="/resources" class="text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400">
