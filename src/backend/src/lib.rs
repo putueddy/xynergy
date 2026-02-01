@@ -176,6 +176,14 @@ async fn serve_index() -> Html<String> {
         .vis-timeline .vis-grid.sunday {
             background-color: rgba(156, 163, 175, 0.4) !important;
         }
+        /* Holiday background styling for background items */
+        .vis-timeline .vis-item.vis-background.holiday-background {
+            background-color: rgba(156, 163, 175, 0.4) !important;
+            border: none !important;
+        }
+        .vis-timeline .vis-item.vis-background.holiday-background:hover {
+            background-color: rgba(156, 163, 175, 0.4) !important;
+        }
     </style>
 </head>
 <body>
@@ -313,6 +321,7 @@ fn api_routes() -> Router<PgPool> {
         .merge(routes::resource_routes())
         .merge(routes::project_routes())
         .merge(routes::allocation_routes())
+        .merge(routes::holiday_routes())
 }
 
 /// Run the server

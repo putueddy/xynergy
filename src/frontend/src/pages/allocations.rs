@@ -29,6 +29,15 @@ pub struct Resource {
     pub name: String,
 }
 
+/// Holiday data structure
+#[derive(Debug, Clone, Deserialize)]
+pub struct Holiday {
+    pub id: Uuid,
+    pub name: String,
+    pub date: String,
+    pub description: Option<String>,
+}
+
 /// Project data for dropdown
 #[derive(Debug, Clone, Deserialize)]
 pub struct Project {
@@ -56,6 +65,7 @@ pub fn Allocations() -> impl IntoView {
     let (allocations, set_allocations) = create_signal(Vec::new());
     let (resources, set_resources) = create_signal(Vec::new());
     let (projects, set_projects) = create_signal(Vec::new());
+    let (holidays, set_holidays) = create_signal(Vec::new());
     let (loading, set_loading) = create_signal(false);
     let (error, set_error) = create_signal(Option::<String>::None);
 
@@ -83,6 +93,12 @@ pub fn Allocations() -> impl IntoView {
             // Load projects
             match fetch_projects().await {
                 Ok(data) => set_projects.set(data),
+                Err(e) => set_error.set(Some(e)),
+            }
+            
+            // Load holidays
+            match fetch_holidays().await {
+                Ok(data) => set_holidays.set(data),
                 Err(e) => set_error.set(Some(e)),
             }
             
@@ -185,7 +201,7 @@ pub fn Allocations() -> impl IntoView {
                 
                 items.push(TimelineItem {
                     id: a.id.to_string(),
-                    group: a.resource_id.to_string(),
+                    group: Some(a.resource_id.to_string()),
                     content: format!(
                         "<div class='allocation-item {}'>{} ({:.0}%){} </div>",
                         color_class, a.project_name, a.allocation_percentage, weekend_badge
@@ -198,20 +214,30 @@ pub fn Allocations() -> impl IntoView {
                         color, color, text_color
                     )),
                     editable: Some(true),
+                    item_type: None,
                 });
             } else {
-                // Split allocation into working days only
+                // Split allocation into working days only (excluding weekends and holidays)
                 if let (Ok(start_date), Ok(end_date)) = (
                     chrono::NaiveDate::parse_from_str(&a.start_date, "%Y-%m-%d"),
                     chrono::NaiveDate::parse_from_str(&a.end_date, "%Y-%m-%d")
                 ) {
+                    // Get holiday dates as a set for O(1) lookup
+                    let holiday_dates: std::collections::HashSet<String> = holidays.get()
+                        .iter()
+                        .map(|h| h.date.clone())
+                        .collect();
+                    
                     let mut current_start: Option<chrono::NaiveDate> = None;
                     let mut current_end: Option<chrono::NaiveDate> = None;
                     
                     let mut current = start_date;
                     while current <= end_date {
                         let weekday = current.weekday();
-                        let is_working_day = weekday != chrono::Weekday::Sat && weekday != chrono::Weekday::Sun;
+                        let is_weekend = weekday == chrono::Weekday::Sat || weekday == chrono::Weekday::Sun;
+                        let current_date_str = current.format("%Y-%m-%d").to_string();
+                        let is_holiday = holiday_dates.contains(&current_date_str);
+                        let is_working_day = !is_weekend && !is_holiday;
                         
                         if is_working_day {
                             if current_start.is_none() {
@@ -224,21 +250,22 @@ pub fn Allocations() -> impl IntoView {
                                 // Add one day to make end date inclusive
                                 let end_inclusive = (end + chrono::Duration::days(1)).format("%Y-%m-%d").to_string();
                             items.push(TimelineItem {
-                                    id: format!("{}-{}", a.id, items.len()),
-                                    group: a.resource_id.to_string(),
+                                id: format!("{}-{}", a.id, items.len()),
+                                group: Some(a.resource_id.to_string()),
                                 content: format!(
-                                        "<div class='allocation-item {}'>{} ({:.0}%){} </div>",
-                                        color_class, a.project_name, a.allocation_percentage, weekend_badge
+                                    "<div class='allocation-item {}'>{} ({:.0}%){} </div>",
+                                    color_class, a.project_name, a.allocation_percentage, weekend_badge
                                 ),
-                                    start: start.format("%Y-%m-%d").to_string(),
-                                    end: Some(end_inclusive),
-                                    class_name: Some(color_class.clone()),
-                                    style: Some(format!(
-                                        "background-color: {}; border-color: {}; color: {}",
-                                        color, color, text_color
-                                    )),
-                                    editable: Some(true),
-                                });
+                                start: start.format("%Y-%m-%d").to_string(),
+                                end: Some(end_inclusive),
+                                class_name: Some(color_class.clone()),
+                                style: Some(format!(
+                                    "background-color: {}; border-color: {}; color: {}",
+                                    color, color, text_color
+                                )),
+                                editable: Some(true),
+                                item_type: None,
+                            });
                             }
                             current_start = None;
                             current_end = None;
@@ -253,7 +280,7 @@ pub fn Allocations() -> impl IntoView {
                         let end_inclusive = (end + chrono::Duration::days(1)).format("%Y-%m-%d").to_string();
                         items.push(TimelineItem {
                             id: format!("{}-{}", a.id, items.len()),
-                            group: a.resource_id.to_string(),
+                            group: Some(a.resource_id.to_string()),
                             content: format!(
                                 "<div class='allocation-item {}'>{} ({:.0}%){} </div>",
                                 color_class, a.project_name, a.allocation_percentage, weekend_badge
@@ -266,9 +293,30 @@ pub fn Allocations() -> impl IntoView {
                                 color, color, text_color
                             )),
                             editable: Some(true),
+                            item_type: None,
                         });
                     }
                 }
+            }
+        }
+
+        // Add holiday background items
+        for holiday in holidays.get() {
+            if let Ok(date) = chrono::NaiveDate::parse_from_str(&holiday.date, "%Y-%m-%d") {
+                let end_inclusive = (date + chrono::Duration::days(1))
+                    .format("%Y-%m-%d")
+                    .to_string();
+                items.push(TimelineItem {
+                    id: format!("holiday-{}", holiday.id),
+                    group: None,
+                    content: String::new(),
+                    start: holiday.date.clone(),
+                    end: Some(end_inclusive),
+                    class_name: Some("holiday-bg".to_string()),
+                    style: None,
+                    editable: Some(false),
+                    item_type: Some("background".to_string()),
+                });
             }
         }
         
@@ -325,6 +373,26 @@ pub fn Allocations() -> impl IntoView {
             id: p.id,
             name: p.name,
         }).collect::<Vec<_>>()
+    });
+
+    let holiday_axis_css = create_memo(move |_| {
+        let month_names = [
+            "january", "february", "march", "april", "may", "june",
+            "july", "august", "september", "october", "november", "december",
+        ];
+        let mut rules = String::new();
+        for holiday in holidays.get() {
+            if let Ok(date) = chrono::NaiveDate::parse_from_str(&holiday.date, "%Y-%m-%d") {
+                let month_idx = (date.month0() as usize).min(11);
+                let month_class = month_names[month_idx];
+                let day_class = format!("vis-day{}", date.day());
+                rules.push_str(&format!(
+                    ".vis-time-axis .vis-text.vis-minor.{}.vis-{} {{ background-color: rgba(156, 163, 175, 0.35) !important; }}\n",
+                    day_class, month_class
+                ));
+            }
+        }
+        rules
     });
 
     let editing_form_data = Signal::derive(move || {
@@ -420,11 +488,13 @@ pub fn Allocations() -> impl IntoView {
                     <div class="space-y-6">
                         <div class="bg-white dark:bg-gray-800 shadow rounded-lg overflow-hidden">
                             <div class="h-[500px] relative">
+                                <style>{move || holiday_axis_css.get()}</style>
                                 <TimelineChart
                                     groups=timeline_groups.into()
                                     items=timeline_items.into()
                                     days_before=15
                                     days_after=15
+                                    holidays={holidays.get().iter().map(|h| h.date.clone()).collect::<Vec<_>>()}
                                     on_item_move=Callback::new(move |(item_id, new_start, new_end): (String, String, String)| {
                                         web_sys::console::log_1(&format!("Drag callback triggered: id={}, start={}, end={}", item_id, new_start, new_end).into());
                                         let base_id = item_id.split('-').take(5).collect::<Vec<_>>().join("-");
@@ -783,5 +853,20 @@ async fn delete_allocation(allocation_id: String) -> Result<(), String> {
     } else {
         let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
         Err(format!("Failed to delete allocation: {}", error_text))
+    }
+}
+
+/// Fetch all holidays from API
+async fn fetch_holidays() -> Result<Vec<Holiday>, String> {
+    let response = reqwest::get("http://localhost:3000/api/v1/holidays")
+        .await
+        .map_err(|e| format!("Failed to fetch holidays: {}", e))?;
+    
+    if response.status().is_success() {
+        response.json::<Vec<Holiday>>()
+            .await
+            .map_err(|e| format!("Failed to parse holidays: {}", e))
+    } else {
+        Err(format!("Failed to fetch holidays: {}", response.status()))
     }
 }

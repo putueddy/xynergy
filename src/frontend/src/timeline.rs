@@ -89,20 +89,23 @@ extern "C" {
 #[derive(Debug, Clone)]
 pub struct TimelineItem {
     pub id: String,
-    pub group: String,
+    pub group: Option<String>,
     pub content: String,
     pub start: String,
     pub end: Option<String>,
     pub class_name: Option<String>,
     pub style: Option<String>,
     pub editable: Option<bool>,
+    pub item_type: Option<String>,
 }
 
 impl TimelineItem {
     pub fn to_js_object(&self) -> Object {
         let obj = Object::new();
         Reflect::set(&obj, &"id".into(), &self.id.clone().into()).unwrap();
-        Reflect::set(&obj, &"group".into(), &self.group.clone().into()).unwrap();
+        if let Some(group) = &self.group {
+            Reflect::set(&obj, &"group".into(), &group.clone().into()).unwrap();
+        }
         Reflect::set(&obj, &"content".into(), &self.content.clone().into()).unwrap();
         Reflect::set(&obj, &"start".into(), &self.start.clone().into()).unwrap();
 
@@ -116,6 +119,10 @@ impl TimelineItem {
 
         if let Some(style) = &self.style {
             Reflect::set(&obj, &"style".into(), &style.clone().into()).unwrap();
+        }
+
+        if let Some(item_type) = &self.item_type {
+            Reflect::set(&obj, &"type".into(), &item_type.clone().into()).unwrap();
         }
 
         // Set editable to true by default for drag support
@@ -175,8 +182,40 @@ pub fn groups_to_js_array(groups: &[TimelineGroup]) -> Array {
     array
 }
 
+/// Create background items for holidays
+pub fn create_holiday_background_items(holidays: &[String]) -> Array {
+    let array = Array::new();
+    for (index, holiday_date) in holidays.iter().enumerate() {
+        let obj = Object::new();
+        Reflect::set(&obj, &"id".into(), &format!("holiday-{}", index).into()).unwrap();
+        Reflect::set(
+            &obj,
+            &"start".into(),
+            &format!("{}T00:00:00", holiday_date).into(),
+        )
+        .unwrap();
+        Reflect::set(
+            &obj,
+            &"end".into(),
+            &format!("{}T23:59:59", holiday_date).into(),
+        )
+        .unwrap();
+        Reflect::set(&obj, &"type".into(), &"background".into()).unwrap();
+        Reflect::set(&obj, &"className".into(), &"holiday-background".into()).unwrap();
+        // No group assignment - background spans all groups
+        array.push(&obj);
+    }
+    array
+}
+
 /// Create timeline options
-pub fn create_timeline_options(start: &str, end: &str, editable: bool, stack: bool) -> Object {
+pub fn create_timeline_options(
+    start: &str,
+    end: &str,
+    editable: bool,
+    stack: bool,
+    _holidays: &[String],
+) -> Object {
     let options = Object::new();
 
     Reflect::set(&options, &"start".into(), &start.into()).unwrap();
