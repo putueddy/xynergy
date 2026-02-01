@@ -9,7 +9,7 @@ pub mod auth;
 pub mod gantt;
 pub mod timeline;
 
-use pages::{home::Home, login::Login, dashboard::Dashboard, not_found::NotFound, resources::Resources, projects::Projects, allocations::Allocations, settings::{SettingsPage, SettingsHolidaysPage, SettingsUsersPage}};
+use pages::{home::Home, login::Login, dashboard::Dashboard, not_found::NotFound, resources::Resources, projects::Projects, allocations::Allocations, settings::{SettingsPage, SettingsHolidaysPage, SettingsUsersPage, SettingsDepartmentsPage}};
 use auth::{AuthContext, provide_auth_context};
 
 /// Main application component
@@ -46,6 +46,7 @@ pub fn App() -> impl IntoView {
                     <Route path="/settings" view=SettingsPage>
                         <Route path="/holidays" view=SettingsHolidaysPage/>
                         <Route path="/users" view=SettingsUsersPage/>
+                        <Route path="/departments" view=SettingsDepartmentsPage/>
                         <Route path="" view=SettingsHolidaysPage/>
                     </Route>
                     <Route path="/*any" view=NotFound/>

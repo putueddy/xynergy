@@ -3,6 +3,7 @@ use leptos::*;
 use leptos_router::*;
 
 pub mod allocation_form;
+pub mod department_form;
 pub mod gantt_chart;
 pub mod holiday_form;
 pub mod project_form;
@@ -16,6 +17,7 @@ pub mod user_form;
 pub use allocation_form::{
     AllocationEditData, AllocationForm, AllocationFormData, ProjectOption, ResourceOption,
 };
+pub use department_form::{DepartmentEditData, DepartmentForm, DepartmentFormData, HeadCandidate};
 pub use gantt_chart::{GanttChart, GanttTaskItem};
 pub use holiday_form::{HolidayForm, HolidayFormData};
 pub use project_form::ProjectForm;
