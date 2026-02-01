@@ -7,6 +7,7 @@ pub mod projects;
 pub mod allocations;
 pub mod holidays;
 pub mod users;
+pub mod settings;
 
 pub use home::Home;
 pub use login::Login;
@@ -15,5 +16,6 @@ pub use not_found::NotFound;
 pub use resources::Resources;
 pub use projects::Projects;
 pub use allocations::Allocations;
-pub use holidays::HolidaysPage;
-pub use users::UsersPage;
+pub use settings::SettingsPage;
+pub use holidays::HolidaysContent;
+pub use users::UsersContent;

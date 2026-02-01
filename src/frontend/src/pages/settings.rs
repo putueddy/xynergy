@@ -1,0 +1,42 @@
+use crate::components::{Footer, Header, SettingsSidebar};
+use crate::pages::{HolidaysContent, UsersContent};
+use leptos::*;
+use leptos_router::*;
+
+/// Settings page component with sidebar layout
+#[component]
+pub fn SettingsPage() -> impl IntoView {
+    view! {
+        <div class="min-h-screen flex flex-col bg-gray-50 dark:bg-gray-900">
+            <Header/>
+
+            <div class="flex flex-1">
+                <SettingsSidebar/>
+
+                <main class="flex-1 p-8">
+                    <div class="max-w-6xl mx-auto">
+                        <Outlet/>
+                    </div>
+                </main>
+            </div>
+
+            <Footer/>
+        </div>
+    }
+}
+
+/// Settings holidays page
+#[component]
+pub fn SettingsHolidaysPage() -> impl IntoView {
+    view! {
+        <HolidaysContent/>
+    }
+}
+
+/// Settings users page
+#[component]
+pub fn SettingsUsersPage() -> impl IntoView {
+    view! {
+        <UsersContent/>
+    }
+}
