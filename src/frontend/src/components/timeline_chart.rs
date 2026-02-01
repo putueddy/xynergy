@@ -248,7 +248,7 @@ impl AllocationItem {
 
         TimelineItem {
             id: self.id.clone(),
-            group: self.resource_id.clone(),
+            group: Some(self.resource_id.clone()),
             content: format!(
                 "<div class='allocation-item {}'>{} ({:.0}%)</div>",
                 color_class, self.project_name, self.percentage
@@ -262,6 +262,7 @@ impl AllocationItem {
                 self.get_color()
             )),
             editable: Some(true),
+            item_type: None,
         }
     }
 

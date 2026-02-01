@@ -108,4 +108,9 @@
   .vis-time-axis .vis-text.vis-major {
     background: transparent !important;
   }
+
+  .vis-item.vis-background.holiday-bg {
+    background-color: rgba(156, 163, 175, 0.35) !important;
+    border: none !important;
+  }
 }

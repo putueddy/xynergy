@@ -89,20 +89,23 @@ extern "C" {
 #[derive(Debug, Clone)]
 pub struct TimelineItem {
     pub id: String,
-    pub group: String,
+    pub group: Option<String>,
     pub content: String,
     pub start: String,
     pub end: Option<String>,
     pub class_name: Option<String>,
     pub style: Option<String>,
     pub editable: Option<bool>,
+    pub item_type: Option<String>,
 }
 
 impl TimelineItem {
     pub fn to_js_object(&self) -> Object {
         let obj = Object::new();
         Reflect::set(&obj, &"id".into(), &self.id.clone().into()).unwrap();
-        Reflect::set(&obj, &"group".into(), &self.group.clone().into()).unwrap();
+        if let Some(group) = &self.group {
+            Reflect::set(&obj, &"group".into(), &group.clone().into()).unwrap();
+        }
         Reflect::set(&obj, &"content".into(), &self.content.clone().into()).unwrap();
         Reflect::set(&obj, &"start".into(), &self.start.clone().into()).unwrap();
 
@@ -116,6 +119,10 @@ impl TimelineItem {
 
         if let Some(style) = &self.style {
             Reflect::set(&obj, &"style".into(), &style.clone().into()).unwrap();
+        }
+
+        if let Some(item_type) = &self.item_type {
+            Reflect::set(&obj, &"type".into(), &item_type.clone().into()).unwrap();
         }
 
         // Set editable to true by default for drag support

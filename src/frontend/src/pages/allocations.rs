@@ -201,7 +201,7 @@ pub fn Allocations() -> impl IntoView {
                 
                 items.push(TimelineItem {
                     id: a.id.to_string(),
-                    group: a.resource_id.to_string(),
+                    group: Some(a.resource_id.to_string()),
                     content: format!(
                         "<div class='allocation-item {}'>{} ({:.0}%){} </div>",
                         color_class, a.project_name, a.allocation_percentage, weekend_badge
@@ -214,6 +214,7 @@ pub fn Allocations() -> impl IntoView {
                         color, color, text_color
                     )),
                     editable: Some(true),
+                    item_type: None,
                 });
             } else {
                 // Split allocation into working days only (excluding weekends and holidays)
@@ -249,21 +250,22 @@ pub fn Allocations() -> impl IntoView {
                                 // Add one day to make end date inclusive
                                 let end_inclusive = (end + chrono::Duration::days(1)).format("%Y-%m-%d").to_string();
                             items.push(TimelineItem {
-                                    id: format!("{}-{}", a.id, items.len()),
-                                    group: a.resource_id.to_string(),
+                                id: format!("{}-{}", a.id, items.len()),
+                                group: Some(a.resource_id.to_string()),
                                 content: format!(
-                                        "<div class='allocation-item {}'>{} ({:.0}%){} </div>",
-                                        color_class, a.project_name, a.allocation_percentage, weekend_badge
+                                    "<div class='allocation-item {}'>{} ({:.0}%){} </div>",
+                                    color_class, a.project_name, a.allocation_percentage, weekend_badge
                                 ),
-                                    start: start.format("%Y-%m-%d").to_string(),
-                                    end: Some(end_inclusive),
-                                    class_name: Some(color_class.clone()),
-                                    style: Some(format!(
-                                        "background-color: {}; border-color: {}; color: {}",
-                                        color, color, text_color
-                                    )),
-                                    editable: Some(true),
-                                });
+                                start: start.format("%Y-%m-%d").to_string(),
+                                end: Some(end_inclusive),
+                                class_name: Some(color_class.clone()),
+                                style: Some(format!(
+                                    "background-color: {}; border-color: {}; color: {}",
+                                    color, color, text_color
+                                )),
+                                editable: Some(true),
+                                item_type: None,
+                            });
                             }
                             current_start = None;
                             current_end = None;
@@ -278,7 +280,7 @@ pub fn Allocations() -> impl IntoView {
                         let end_inclusive = (end + chrono::Duration::days(1)).format("%Y-%m-%d").to_string();
                         items.push(TimelineItem {
                             id: format!("{}-{}", a.id, items.len()),
-                            group: a.resource_id.to_string(),
+                            group: Some(a.resource_id.to_string()),
                             content: format!(
                                 "<div class='allocation-item {}'>{} ({:.0}%){} </div>",
                                 color_class, a.project_name, a.allocation_percentage, weekend_badge
@@ -291,9 +293,30 @@ pub fn Allocations() -> impl IntoView {
                                 color, color, text_color
                             )),
                             editable: Some(true),
+                            item_type: None,
                         });
                     }
                 }
+            }
+        }
+
+        // Add holiday background items
+        for holiday in holidays.get() {
+            if let Ok(date) = chrono::NaiveDate::parse_from_str(&holiday.date, "%Y-%m-%d") {
+                let end_inclusive = (date + chrono::Duration::days(1))
+                    .format("%Y-%m-%d")
+                    .to_string();
+                items.push(TimelineItem {
+                    id: format!("holiday-{}", holiday.id),
+                    group: None,
+                    content: String::new(),
+                    start: holiday.date.clone(),
+                    end: Some(end_inclusive),
+                    class_name: Some("holiday-bg".to_string()),
+                    style: None,
+                    editable: Some(false),
+                    item_type: Some("background".to_string()),
+                });
             }
         }
         
@@ -350,6 +373,26 @@ pub fn Allocations() -> impl IntoView {
             id: p.id,
             name: p.name,
         }).collect::<Vec<_>>()
+    });
+
+    let holiday_axis_css = create_memo(move |_| {
+        let month_names = [
+            "january", "february", "march", "april", "may", "june",
+            "july", "august", "september", "october", "november", "december",
+        ];
+        let mut rules = String::new();
+        for holiday in holidays.get() {
+            if let Ok(date) = chrono::NaiveDate::parse_from_str(&holiday.date, "%Y-%m-%d") {
+                let month_idx = (date.month0() as usize).min(11);
+                let month_class = month_names[month_idx];
+                let day_class = format!("vis-day{}", date.day());
+                rules.push_str(&format!(
+                    ".vis-time-axis .vis-text.vis-minor.{}.vis-{} {{ background-color: rgba(156, 163, 175, 0.35) !important; }}\n",
+                    day_class, month_class
+                ));
+            }
+        }
+        rules
     });
 
     let editing_form_data = Signal::derive(move || {
@@ -445,6 +488,7 @@ pub fn Allocations() -> impl IntoView {
                     <div class="space-y-6">
                         <div class="bg-white dark:bg-gray-800 shadow rounded-lg overflow-hidden">
                             <div class="h-[500px] relative">
+                                <style>{move || holiday_axis_css.get()}</style>
                                 <TimelineChart
                                     groups=timeline_groups.into()
                                     items=timeline_items.into()
