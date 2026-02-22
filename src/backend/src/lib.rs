@@ -208,12 +208,12 @@ async fn serve_index() -> Html<String> {
         const errorMessage = document.getElementById('error-message');
         
         // Import the WASM module
-        import('/pkg/xynergy_frontend.js')
+        import('/pkg/xynergy_frontend.js?v=20260222-ctc-fix')
             .then(module => {
                 console.log('WASM module loaded:', module);
                 
                 // Initialize the WASM module
-                return module.default();
+                return module.default('/pkg/xynergy_frontend_bg.wasm?v=20260222-ctc-fix');
             })
             .then(() => {
                 console.log('WASM initialized, starting Leptos...');

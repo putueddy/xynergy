@@ -52,7 +52,7 @@ development_status:
   epic-2: in-progress
   2-0-ctc-encryption-foundation: done
   2-1-employee-ctc-record-creation: done
-  2-2-ctc-revision-management: backlog
+  2-2-ctc-revision-management: done
   2-3-thr-management: backlog
   2-4-ctc-validation-and-compliance: backlog
   epic-2-retrospective: optional

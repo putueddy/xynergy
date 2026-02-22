@@ -3,6 +3,7 @@ use crate::auth::{
     use_auth, validate_token,
 };
 use crate::components::{Footer, Header};
+use chrono::DateTime;
 use leptos::*;
 use leptos_router::*;
 use serde_json::{json, Value};
@@ -56,6 +57,13 @@ pub fn CtcManagement() -> impl IntoView {
     let (risk_tier, set_risk_tier) = create_signal(String::from("1"));
     let (working_days, set_working_days) = create_signal(String::from("22"));
     let (preview, set_preview) = create_signal(None::<Value>);
+
+    let (is_editing, set_is_editing) = create_signal(false);
+    let (change_reason, set_change_reason) = create_signal(String::new());
+    let (effective_date_policy, set_effective_date_policy) = create_signal(String::from("pro_rata"));
+    let (history, set_history) = create_signal(Vec::<Value>::new());
+    let (show_history, set_show_history) = create_signal(false);
+    let (history_loading, set_history_loading) = create_signal(false);
 
     {
         let navigate = navigate.clone();
@@ -289,24 +297,68 @@ pub fn CtcManagement() -> impl IntoView {
         let tier = risk_tier.get().parse::<i32>().unwrap_or(1);
         let days = working_days.get().parse::<i32>().unwrap_or(22);
 
+        let d_is_editing = is_editing.get();
+        let reason = change_reason.get();
+        let policy = effective_date_policy.get();
+
+        if d_is_editing && reason.trim().is_empty() {
+            set_error.set(Some("Change reason is required when editing".to_string()));
+            return;
+        }
+
         set_loading.set(true);
         spawn_local(async move {
-            let payload = json!({
-                "resource_id": resource_id,
-                "base_salary": base,
-                "hra_allowance": hra,
-                "medical_allowance": medical,
-                "transport_allowance": transport,
-                "meal_allowance": meal,
-                "working_days_per_month": days,
-                "risk_tier": tier
-            });
+            if d_is_editing {
+                let payload = json!({
+                    "components": {
+                        "base_salary": base,
+                        "hra_allowance": hra,
+                        "medical_allowance": medical,
+                        "transport_allowance": transport,
+                        "meal_allowance": meal,
+                        "working_days_per_month": days,
+                        "risk_tier": tier,
+                    },
+                    "reason": reason,
+                    "effective_date_policy": policy
+                });
 
-            match create_ctc_record(payload).await {
-                Ok(_) => {
-                    set_success.set(Some("CTC record created with status Active".to_string()));
+                match update_ctc_record(resource_id.clone(), payload).await {
+                    Ok(_) => {
+                        set_success.set(Some("CTC changes saved successfully".to_string()));
+                        if let Ok(hist) = fetch_ctc_history(&resource_id).await {
+                            set_history.set(hist);
+                        }
+                    }
+                    Err(e) => set_error.set(Some(e)),
                 }
-                Err(e) => set_error.set(Some(e)),
+            } else {
+                let payload = json!({
+                    "resource_id": resource_id,
+                    "base_salary": base,
+                    "hra_allowance": hra,
+                    "medical_allowance": medical,
+                    "transport_allowance": transport,
+                    "meal_allowance": meal,
+                    "working_days_per_month": days,
+                    "risk_tier": tier
+                });
+
+                match create_ctc_record(payload).await {
+                    Ok(_) => {
+                        set_success.set(Some("CTC record created with status Active".to_string()));
+                    }
+                    Err(e) => {
+                        if e.contains("already exists") {
+                            set_is_editing.set(true);
+                            set_error.set(Some(
+                                "CTC already exists for this employee. Switched to edit mode; add Change Reason and click Save again.".to_string(),
+                            ));
+                        } else {
+                            set_error.set(Some(e));
+                        }
+                    }
+                }
             }
             set_loading.set(false);
         });
@@ -393,6 +445,12 @@ pub fn CtcManagement() -> impl IntoView {
                                         set_meal_allowance.set(String::from("0"));
                                         set_risk_tier.set(String::from("1"));
                                         set_working_days.set(String::from("22"));
+                                        
+                                        set_is_editing.set(false);
+                                        set_change_reason.set(String::new());
+                                        set_history.set(Vec::new());
+                                        set_show_history.set(false);
+                                        set_history_loading.set(false);
                                         return;
                                     }
 
@@ -402,10 +460,15 @@ pub fn CtcManagement() -> impl IntoView {
                                     }
 
                                     let selected_for_load = selected;
+                                    set_is_editing.set(false);
+                                    set_change_reason.set(String::new());
+                                    set_show_history.set(false);
+                                    set_history_loading.set(false);
                                     set_loading.set(true);
                                     spawn_local(async move {
                                         match fetch_existing_ctc(&selected_for_load).await {
                                             Ok(Some(existing)) => {
+                                                set_is_editing.set(true);
                                                 set_base_salary.set(existing.base_salary.to_string());
                                                 set_hra_allowance.set(existing.hra_allowance.to_string());
                                                 set_medical_allowance
@@ -413,8 +476,13 @@ pub fn CtcManagement() -> impl IntoView {
                                                 set_transport_allowance
                                                     .set(existing.transport_allowance.to_string());
                                                 set_meal_allowance.set(existing.meal_allowance.to_string());
+                                                
+                                                // History is fetched on demand when user clicks "View History"
+                                                set_history.set(Vec::new());
                                             }
                                             Ok(None) => {
+                                                set_is_editing.set(false);
+                                                set_history.set(Vec::new());
                                                 set_base_salary.set(String::new());
                                                 set_hra_allowance.set(String::from("0"));
                                                 set_medical_allowance.set(String::from("0"));
@@ -422,6 +490,7 @@ pub fn CtcManagement() -> impl IntoView {
                                                 set_meal_allowance.set(String::from("0"));
                                             }
                                             Err(e) => {
+                                                set_is_editing.set(false);
                                                 set_error.set(Some(e));
                                             }
                                         }
@@ -501,25 +570,156 @@ pub fn CtcManagement() -> impl IntoView {
                             </div>
                         </div>
 
-                        <div class="flex gap-3">
+                        {move || is_editing.get().then(|| view! {
+                            <div class="space-y-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                                <h3 class="text-lg font-medium text-gray-900 dark:text-white">"Update Information"</h3>
+                                
+                                <div>
+                                    <label class="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">"Change Reason (Required)"</label>
+                                    <textarea
+                                        class="w-full border rounded px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                                        rows="2"
+                                        placeholder="Explain why these changes are being made..."
+                                        prop:value=change_reason
+                                        on:input=move |ev| set_change_reason.set(event_target_value(&ev))
+                                    ></textarea>
+                                </div>
+                                
+                                <div>
+                                    <label class="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">"Effective Date Policy"</label>
+                                    <select class="w-full border rounded px-3 py-2 bg-white dark:bg-gray-700"
+                                        prop:value=effective_date_policy
+                                        on:change=move |ev| set_effective_date_policy.set(event_target_value(&ev))>
+                                        <option value="pro_rata">"Pro Rata Calculation (Immediate)"</option>
+                                        <option value="effective_first_of_month">"Effective First of Month"</option>
+                                    </select>
+                                </div>
+                            </div>
+                        })}
+
+                        <div class="flex gap-3 items-center mt-4">
                             <button class="btn-secondary" disabled=loading on:click=calculate_bpjs>
                                 "Calculate BPJS"
                             </button>
                             <button class="btn-primary" disabled=loading on:click=save_ctc>
                                 "Save"
                             </button>
+                            
+                            {move || is_editing.get().then(|| view! {
+                                <button class="ml-auto text-blue-600 dark:text-blue-400 font-medium hover:underline text-sm"
+                                    on:click=move |_| {
+                                        let should_show = !show_history.get();
+                                        set_show_history.set(should_show);
+
+                                        if should_show {
+                                            let selected = selected_resource.get();
+                                            if selected.is_empty() {
+                                                return;
+                                            }
+
+                                            set_history_loading.set(true);
+                                            spawn_local(async move {
+                                                match fetch_ctc_history(&selected).await {
+                                                    Ok(hist) => set_history.set(hist),
+                                                    Err(e) => set_error.set(Some(e)),
+                                                }
+                                                set_history_loading.set(false);
+                                            });
+                                        }
+                                    }>
+                                    {move || if show_history.get() { "Hide History" } else { "View History" }}
+                                </button>
+                            })}
                         </div>
                     </div>
 
                     {move || preview.get().map(|p| view! {
                         <div class="bg-white dark:bg-gray-800 shadow rounded-lg p-6 space-y-2">
                             <h2 class="text-xl font-semibold text-gray-900 dark:text-white">"Calculation Preview"</h2>
-                            <p>{format!("BPJS Kesehatan Employer: {}", p["bpjs"]["kesehatan"]["employer"].as_i64().unwrap_or(0))}</p>
-                            <p>{format!("BPJS Kesehatan Employee: {}", p["bpjs"]["kesehatan"]["employee"].as_i64().unwrap_or(0))}</p>
-                            <p>{format!("BPJS Ketenagakerjaan Employer: {}", p["bpjs"]["ketenagakerjaan"]["employer"].as_i64().unwrap_or(0))}</p>
-                            <p>{format!("BPJS Ketenagakerjaan Employee: {}", p["bpjs"]["ketenagakerjaan"]["employee"].as_i64().unwrap_or(0))}</p>
-                            <p>{format!("Total Monthly CTC: {}", p["total_monthly_ctc"].as_i64().unwrap_or(0))}</p>
-                            <p>{format!("Daily Rate: {:.2}", p["daily_rate"].as_f64().unwrap_or(0.0))}</p>
+                            <p class="text-gray-900 dark:text-white">{format!("BPJS Kesehatan Employer: {}", p["bpjs"]["kesehatan"]["employer"].as_i64().unwrap_or(0))}</p>
+                            <p class="text-gray-900 dark:text-white">{format!("BPJS Kesehatan Employee: {}", p["bpjs"]["kesehatan"]["employee"].as_i64().unwrap_or(0))}</p>
+                            <p class="text-gray-900 dark:text-white">{format!("BPJS Ketenagakerjaan Employer: {}", p["bpjs"]["ketenagakerjaan"]["employer"].as_i64().unwrap_or(0))}</p>
+                            <p class="text-gray-900 dark:text-white">{format!("BPJS Ketenagakerjaan Employee: {}", p["bpjs"]["ketenagakerjaan"]["employee"].as_i64().unwrap_or(0))}</p>
+                            <p class="text-gray-900 dark:text-white">{format!("Total Monthly CTC: {}", p["total_monthly_ctc"].as_i64().unwrap_or(0))}</p>
+                            <p class="text-gray-900 dark:text-white">{format!("Daily Rate: {:.2}", p["daily_rate"].as_f64().unwrap_or(0.0))}</p>
+                        </div>
+                    })}
+
+                    {move || show_history.get().then(|| view! {
+                        <div class="bg-white dark:bg-gray-800 shadow rounded-lg p-6 space-y-4">
+                            <h2 class="text-xl font-semibold text-gray-900 dark:text-white mb-4">"Revision History"</h2>
+                            {move || history_loading.get().then(|| view! {
+                                <p class="text-sm text-gray-500 dark:text-gray-400">"Loading revision history..."</p>
+                            })}
+                            {move || (!history_loading.get() && history.get().is_empty()).then(|| view! {
+                                <p class="text-sm text-gray-500 dark:text-gray-400">"No revision history yet."</p>
+                            })}
+                            <div class="relative border-l border-gray-200 dark:border-gray-700 ml-3">
+                                <For
+                                    each=move || history.get()
+                                    key=|h| h["revision_number"].as_i64().unwrap_or_default()
+                                    children=move |h| {
+                                        let date = h["date"].as_str().unwrap_or("").to_string();
+                                        let reason = h["reason"].as_str().unwrap_or("No reason provided").to_string();
+                                        let policy = h["policy"].as_str().unwrap_or("").to_string();
+                                        let rev_num = h["revision_number"].as_i64().unwrap_or(0);
+                                        
+                                        let diffs = h["diffs"].as_array().cloned().unwrap_or_default();
+                                        
+                                        view! {
+                                            <div class="mb-8 ml-6">
+                                                <div class="flex justify-between items-start mb-2">
+                                                    <div class="flex items-center gap-2">
+                                                        <span class="inline-block w-3 h-3 bg-blue-500 rounded-full border border-white dark:border-gray-900 shrink-0"></span>
+                                                        <span class="font-medium text-blue-600 dark:text-blue-400">
+                                                            {format!(
+                                                                "v{} - {}",
+                                                                rev_num,
+                                                                date.get(0..10).unwrap_or(&date)
+                                                            )}
+                                                        </span>
+                                                        <span class="px-2 py-0.5 rounded text-xs bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200">
+                                                            {policy.replace("_", " ")}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                                <div class="text-gray-800 dark:text-gray-200 text-sm italic mb-2">
+                                                    "Reason: "{reason}
+                                                </div>
+                                                <div class="bg-gray-50 dark:bg-gray-700 rounded-md p-3 text-sm overflow-x-auto">
+                                                    <table class="w-full text-left">
+                                                        <thead>
+                                                            <tr class="text-gray-500 dark:text-gray-400">
+                                                                <th class="pb-2 font-medium">"Field"</th>
+                                                                <th class="pb-2 font-medium break-all w-1/3">"Old"</th>
+                                                                <th class="pb-2 font-medium break-all w-1/3">"New"</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody class="text-gray-900 dark:text-gray-100 font-mono text-xs">
+                                                            <For
+                                                                each=move || diffs.clone()
+                                                                key=|d| d["field"].as_str().unwrap_or_default().to_string()
+                                                                children=move |d| {
+                                                                    let field = d["field"].as_str().unwrap_or("").to_string();
+                                                                    let old_val = d["old_value"].to_string();
+                                                                    let new_val = d["new_value"].to_string();
+                                                                    view! {
+                                                                        <tr class="border-t border-gray-200 dark:border-gray-600">
+                                                                            <td class="py-1">{field}</td>
+                                                                            <td class="py-1 text-red-500 line-through truncate">{old_val}</td>
+                                                                            <td class="py-1 text-green-500 truncate">{new_val}</td>
+                                                                        </tr>
+                                                                    }
+                                                                }
+                                                            />
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                            </div>
+                                        }
+                                    }
+                                />
+                            </div>
                         </div>
                     })}
                 </div>
@@ -626,7 +826,7 @@ async fn calculate_bpjs_preview(payload: Value) -> Result<Value, String> {
 }
 
 async fn create_ctc_record(payload: Value) -> Result<(), String> {
-    let response = authenticated_post_json("http://localhost:3000/api/v1/ctc", &payload)
+    let response = crate::auth::authenticated_post_json("http://localhost:3000/api/v1/ctc", &payload)
         .await
         .map_err(|e| format!("Failed to create CTC record: {}", e))?;
 
@@ -639,6 +839,71 @@ async fn create_ctc_record(payload: Value) -> Result<(), String> {
             .unwrap_or_else(|_| "Unknown error".to_string());
         Err(format!("CTC creation failed: {}", text))
     }
+}
+
+async fn update_ctc_record(resource_id: String, payload: Value) -> Result<(), String> {
+    let response = crate::auth::authenticated_put_json(&format!("http://localhost:3000/api/v1/ctc/{}/components", resource_id), &payload)
+        .await
+        .map_err(|e| format!("Failed to update CTC record: {}", e))?;
+
+    if response.status().is_success() {
+        Ok(())
+    } else {
+        let text = response
+            .text()
+            .await
+            .unwrap_or_else(|_| "Unknown error".to_string());
+        Err(format!("CTC update failed: {}", text))
+    }
+}
+
+async fn fetch_ctc_history(resource_id: &str) -> Result<Vec<Value>, String> {
+    let response = crate::auth::authenticated_get(&format!("http://localhost:3000/api/v1/ctc/{}/history", resource_id))
+        .await
+        .map_err(|e| format!("Failed to fetch history: {}", e))?;
+
+    if !response.status().is_success() {
+        return Err(format!("Failed to fetch history: {}", response.status()));
+    }
+
+    let parsed: Value = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse history: {}", e))?;
+
+    let mut history = parsed
+        .get("history")
+        .and_then(|h| h.as_array())
+        .cloned()
+        .unwrap_or_default();
+
+    history.sort_by(|a, b| {
+        let a_ts = a
+            .get("date")
+            .and_then(|d| d.as_str())
+            .and_then(|s| DateTime::parse_from_rfc3339(s).ok());
+        let b_ts = b
+            .get("date")
+            .and_then(|d| d.as_str())
+            .and_then(|s| DateTime::parse_from_rfc3339(s).ok());
+
+        match (a_ts, b_ts) {
+            (Some(a_dt), Some(b_dt)) => b_dt.cmp(&a_dt),
+            _ => {
+                let a_rev = a
+                    .get("revision_number")
+                    .and_then(|r| r.as_i64())
+                    .unwrap_or_default();
+                let b_rev = b
+                    .get("revision_number")
+                    .and_then(|r| r.as_i64())
+                    .unwrap_or_default();
+                b_rev.cmp(&a_rev)
+            }
+        }
+    });
+
+    Ok(history)
 }
 
 fn value_to_i64(value: &Value) -> Option<i64> {

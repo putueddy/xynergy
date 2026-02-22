@@ -5,6 +5,7 @@ use axum::{
     Json, Router,
 };
 use bigdecimal::BigDecimal;
+use chrono::{Datelike, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sqlx::PgPool;
@@ -222,6 +223,66 @@ async fn get_ctc_components(
 pub struct UpdateCtcRequest {
     pub components: serde_json::Value,
     pub reason: String,
+    pub effective_date_policy: Option<String>,
+}
+
+fn normalize_effective_date_policy(value: &str) -> Option<&'static str> {
+    match value {
+        "pro_rata" => Some("pro_rata"),
+        "effective_first_of_month" => Some("effective_first_of_month"),
+        _ => None,
+    }
+}
+
+fn apply_effective_date_policy(policy: &str, today: NaiveDate) -> NaiveDate {
+    if policy == "effective_first_of_month" && today.day() != 1 {
+        let (year, month) = if today.month() == 12 {
+            (today.year() + 1, 1)
+        } else {
+            (today.year(), today.month() + 1)
+        };
+        return NaiveDate::from_ymd_opt(year, month, 1).unwrap_or(today);
+    }
+
+    today
+}
+
+async fn resolve_effective_date_policy(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    requested_policy: Option<&str>,
+) -> Result<String> {
+    let db_policy: Option<String> = sqlx::query_scalar(
+        "SELECT value FROM global_settings WHERE key = 'ctc_effective_date_policy' LIMIT 1",
+    )
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(|e| AppError::Database(e.to_string()))?;
+
+    if let Some(policy) = db_policy {
+        let normalized = normalize_effective_date_policy(policy.trim()).ok_or_else(|| {
+            AppError::Validation(
+                "Invalid ctc_effective_date_policy in global_settings".to_string(),
+            )
+        })?;
+        return Ok(normalized.to_string());
+    }
+
+    let requested = requested_policy
+        .and_then(normalize_effective_date_policy)
+        .unwrap_or("pro_rata");
+
+    sqlx::query(
+        "INSERT INTO global_settings (key, value, description)
+         VALUES ('ctc_effective_date_policy', $1, 'CTC effective date policy: pro_rata or effective_first_of_month')
+         ON CONFLICT (key)
+         DO UPDATE SET value = EXCLUDED.value, updated_at = CURRENT_TIMESTAMP",
+    )
+    .bind(requested)
+    .execute(&mut **tx)
+    .await
+    .map_err(|e| AppError::Database(e.to_string()))?;
+
+    Ok(requested.to_string())
 }
 
 async fn update_ctc_components(
@@ -285,6 +346,107 @@ async fn update_ctc_components(
         encrypted_daily_rate_payload.ciphertext
     };
 
+    let existing_ctc_state = sqlx::query(
+        "SELECT encrypted_components, encrypted_daily_rate, key_version, encryption_version, encryption_algorithm, encrypted_at,
+                effective_date, working_days_per_month, status
+         FROM ctc_records
+         WHERE resource_id = $1",
+    )
+    .bind(resource_id)
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(|e| AppError::Database(e.to_string()))?;
+
+    // Get next revision number
+    let next_revision: i32 = sqlx::query_scalar(
+        "SELECT COALESCE(MAX(revision_number), 0) + 1 FROM ctc_revisions WHERE resource_id = $1",
+    )
+    .bind(resource_id)
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(|e| AppError::Database(e.to_string()))?;
+
+    let requested_policy = payload
+        .effective_date_policy
+        .as_deref()
+        .or_else(|| {
+            payload
+                .components
+                .get("effective_date_policy")
+                .and_then(|v| v.as_str())
+        });
+
+    let effective_date_policy = resolve_effective_date_policy(&mut tx, requested_policy).await?;
+    let applied_effective_date = apply_effective_date_policy(&effective_date_policy, Utc::now().date_naive());
+
+    // If this is the first revision for a legacy CTC row, persist a baseline snapshot first
+    // so the first user-visible change can diff against actual prior values instead of null.
+    let mut new_revision_number = next_revision;
+    if next_revision == 1 {
+        if let Some(row) = &existing_ctc_state {
+            use sqlx::Row;
+            let base_encrypted_components: String = row
+                .try_get("encrypted_components")
+                .map_err(|e| AppError::Database(e.to_string()))?;
+            let base_encrypted_daily_rate: Option<String> = row
+                .try_get("encrypted_daily_rate")
+                .map_err(|e| AppError::Database(e.to_string()))?;
+            let base_key_version: String = row
+                .try_get("key_version")
+                .map_err(|e| AppError::Database(e.to_string()))?;
+            let base_encryption_version: String = row
+                .try_get("encryption_version")
+                .map_err(|e| AppError::Database(e.to_string()))?;
+            let base_encryption_algorithm: String = row
+                .try_get("encryption_algorithm")
+                .map_err(|e| AppError::Database(e.to_string()))?;
+            let base_encrypted_at: chrono::DateTime<chrono::Utc> = row
+                .try_get("encrypted_at")
+                .map_err(|e| AppError::Database(e.to_string()))?;
+            let base_effective_date: chrono::NaiveDate = row
+                .try_get("effective_date")
+                .map_err(|e| AppError::Database(e.to_string()))?;
+            let base_working_days: i32 = row
+                .try_get("working_days_per_month")
+                .map_err(|e| AppError::Database(e.to_string()))?;
+            let base_status: String = row
+                .try_get("status")
+                .map_err(|e| AppError::Database(e.to_string()))?;
+
+            sqlx::query(
+                "INSERT INTO ctc_revisions (
+                    resource_id, revision_number,
+                    key_version, encryption_version, encryption_algorithm, encrypted_at,
+                    encrypted_components, encrypted_daily_rate,
+                    effective_date_policy, effective_date, working_days_per_month, status,
+                    changed_by, reason, created_at
+                 ) VALUES (
+                    $1, 1,
+                    $2, $3, $4, $5,
+                    $6, $7,
+                    'pro_rata', $8, $9, $10,
+                    $11, 'Baseline snapshot before first revision update', CURRENT_TIMESTAMP
+                 )",
+            )
+            .bind(resource_id)
+            .bind(&base_key_version)
+            .bind(&base_encryption_version)
+            .bind(&base_encryption_algorithm)
+            .bind(base_encrypted_at)
+            .bind(&base_encrypted_components)
+            .bind(&base_encrypted_daily_rate)
+            .bind(base_effective_date)
+            .bind(base_working_days)
+            .bind(&base_status)
+            .bind(user_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| AppError::Database(e.to_string()))?;
+
+            new_revision_number = 2;
+        }
+    }
+
     sqlx::query(
         "INSERT INTO ctc_records (resource_id, components, encrypted_components, key_version, encryption_version, encryption_algorithm, encrypted_at, encrypted_daily_rate, updated_by, reason)
          VALUES ($1, '{}'::jsonb, $2, $3, $4, $5, $6, $7, $8, $9)
@@ -307,6 +469,37 @@ async fn update_ctc_components(
     .bind(&encrypted_payload.algorithm)
     .bind(encrypted_payload.encrypted_at)
     .bind(&encrypted_daily_rate)
+    .bind(user_id)
+    .bind(&payload.reason)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| AppError::Database(e.to_string()))?;
+
+    sqlx::query(
+        "INSERT INTO ctc_revisions (
+            resource_id, revision_number,
+            key_version, encryption_version, encryption_algorithm, encrypted_at,
+            encrypted_components, encrypted_daily_rate,
+            effective_date_policy, effective_date, working_days_per_month, status,
+            changed_by, reason, created_at
+        ) VALUES (
+            $1, $2,
+            $3, $4, $5, $6,
+            $7, $8,
+            $9, $10, 22, 'Active',
+            $11, $12, CURRENT_TIMESTAMP
+        )"
+    )
+    .bind(resource_id)
+    .bind(new_revision_number as i32)
+    .bind(&encrypted_payload.key_version)
+    .bind(&encrypted_payload.encryption_version)
+    .bind(&encrypted_payload.algorithm)
+    .bind(encrypted_payload.encrypted_at)
+    .bind(&encrypted_payload.ciphertext)
+    .bind(&encrypted_daily_rate)
+    .bind(&effective_date_policy)
+    .bind(applied_effective_date)
     .bind(user_id)
     .bind(&payload.reason)
     .execute(&mut *tx)
@@ -336,6 +529,8 @@ async fn update_ctc_components(
     Ok(Json(json!({
         "resource_id": resource_id,
         "components": after_state,
+        "policy": effective_date_policy,
+        "effective_date": applied_effective_date,
         "note": "CTC mutation recorded with snapshot audit log"
     })))
 }
@@ -637,6 +832,8 @@ async fn create_ctc_record(
         .encrypt_components(&json!({ "daily_rate": daily_rate_str }))
         .await?;
 
+    let mut tx = pool.begin().await.map_err(|e| AppError::Database(e.to_string()))?;
+
     sqlx::query(
         "INSERT INTO ctc_records (
             resource_id, components, encrypted_components, key_version, encryption_version, encryption_algorithm, encrypted_at, encrypted_daily_rate,
@@ -656,9 +853,39 @@ async fn create_ctc_record(
     .bind("0")
     .bind(working_days)
     .bind(user_id)
-    .execute(&pool)
+    .execute(&mut *tx)
     .await
     .map_err(|e| AppError::Database(e.to_string()))?;
+
+    sqlx::query(
+        "INSERT INTO ctc_revisions (
+            resource_id, revision_number,
+            key_version, encryption_version, encryption_algorithm, encrypted_at,
+            encrypted_components, encrypted_daily_rate,
+            effective_date_policy, effective_date, working_days_per_month, status,
+            changed_by, reason, created_at
+        ) VALUES (
+            $1, 1,
+            $2, $3, $4, $5,
+            $6, $7,
+            'pro_rata', CURRENT_DATE, $8, 'Active',
+            $9, 'Initial CTC record creation', CURRENT_TIMESTAMP
+        )"
+    )
+    .bind(resource_id)
+    .bind(&encrypted_payload.key_version)
+    .bind(&encrypted_payload.encryption_version)
+    .bind(&encrypted_payload.algorithm)
+    .bind(encrypted_payload.encrypted_at)
+    .bind(&encrypted_payload.ciphertext)
+    .bind(&encrypted_daily_rate_payload.ciphertext)
+    .bind(working_days)
+    .bind(user_id)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| AppError::Database(e.to_string()))?;
+
+    tx.commit().await.map_err(|e| AppError::Database(e.to_string()))?;
 
     // Log audit event
     // Plaintext values are not included in audit logs per AC #5
@@ -709,6 +936,163 @@ async fn create_ctc_record(
     Ok(Json(response))
 }
 
+#[derive(Debug, Serialize)]
+pub struct CtcDiffField {
+    pub field: String,
+    pub old_value: serde_json::Value,
+    pub new_value: serde_json::Value,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CtcHistoryEntry {
+    pub revision_number: i32,
+    pub date: chrono::DateTime<chrono::Utc>,
+    pub actor_id: Uuid,
+    pub reason: String,
+    pub policy: String,
+    pub diffs: Vec<CtcDiffField>,
+}
+
+async fn get_ctc_history(
+    State(pool): State<PgPool>,
+    headers: HeaderMap,
+    Path(resource_id): Path<Uuid>,
+) -> Result<Json<serde_json::Value>> {
+    let claims = user_claims_from_headers(&headers)?
+        .ok_or_else(|| AppError::Authentication("Missing token".to_string()))?;
+
+    if claims.role != "hr" {
+        return Err(AppError::Forbidden("Insufficient permissions".to_string()));
+    }
+
+    let user_id = Uuid::parse_str(&claims.sub)
+        .map_err(|_| AppError::Authentication("Invalid user ID in token".to_string()))?;
+
+    // Log the access
+    log_audit(
+        &pool,
+        Some(user_id),
+        "VIEW",
+        "ctc_history",
+        resource_id,
+        json!({
+            "action": "view_ctc_history",
+            "role": claims.role,
+        }),
+    )
+    .await?;
+
+    let revisions = sqlx::query(
+        r#"
+        SELECT 
+            revision_number, created_at, changed_by, reason, effective_date_policy,
+            encrypted_components, encrypted_daily_rate,
+            key_version, encryption_version, encryption_algorithm, encrypted_at
+        FROM ctc_revisions
+        WHERE resource_id = $1
+        ORDER BY revision_number ASC
+        "#
+    )
+    .bind(resource_id)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| AppError::Database(e.to_string()))?;
+
+    let crypto_svc = DefaultCtcCryptoService::new(EnvKeyProvider::new());
+    let mut history_entries = Vec::new();
+    let mut previous_state: Option<serde_json::Value> = None;
+
+    use sqlx::Row;
+    for row in revisions {
+        let rev_revision_number: i32 = row.get("revision_number");
+        let rev_created_at: chrono::DateTime<chrono::Utc> = row.get("created_at");
+        let rev_changed_by: Uuid = row.get("changed_by");
+        let rev_reason: String = row.get("reason");
+        let rev_effective_date_policy: String = row.get("effective_date_policy");
+        
+        let encrypted_components: String = row.get("encrypted_components");
+        let encrypted_daily_rate: Option<String> = row.get("encrypted_daily_rate");
+        let key_version: String = row.get("key_version");
+        let encryption_version: String = row.get("encryption_version");
+        let encryption_algorithm: String = row.get("encryption_algorithm");
+        let encrypted_at: chrono::DateTime<chrono::Utc> = row.get("encrypted_at");
+
+        let payload = EncryptedPayload {
+            ciphertext: encrypted_components,
+            key_version: key_version.clone(),
+            encryption_version: encryption_version.clone(),
+            algorithm: encryption_algorithm.clone(),
+            encrypted_at,
+        };
+        
+        let mut current_state = crypto_svc.decrypt_components(&payload).await?;
+
+        if let Some(enc_daily) = encrypted_daily_rate {
+             let daily_payload = EncryptedPayload {
+                ciphertext: enc_daily,
+                key_version,
+                encryption_version,
+                algorithm: encryption_algorithm,
+                encrypted_at,
+            };
+            let daily_decrypted = crypto_svc.decrypt_components(&daily_payload).await?;
+            if let Some(dr) = daily_decrypted.get("daily_rate") {
+                if let Some(obj) = current_state.as_object_mut() {
+                    obj.insert("daily_rate".to_string(), dr.clone());
+                }
+            }
+        }
+
+        let mut diffs = Vec::new();
+
+        let current_obj = current_state
+            .as_object()
+            .cloned()
+            .unwrap_or_default();
+
+        if let Some(prev) = &previous_state {
+            let prev_obj = prev.as_object().cloned().unwrap_or_default();
+            
+            // Check for changed or new fields
+            for (k, v) in &current_obj {
+                let prev_v = prev_obj.get(k).cloned().unwrap_or(serde_json::Value::Null);
+                if *v != prev_v {
+                    diffs.push(CtcDiffField {
+                        field: k.clone(),
+                        old_value: prev_v,
+                        new_value: v.clone(),
+                    });
+                }
+            }
+        } else {
+            // First revision, all are new
+            for (k, v) in &current_obj {
+                diffs.push(CtcDiffField {
+                    field: k.clone(),
+                    old_value: serde_json::Value::Null,
+                    new_value: v.clone(),
+                });
+            }
+        }
+
+        history_entries.push(CtcHistoryEntry {
+            revision_number: rev_revision_number,
+            date: rev_created_at,
+            actor_id: rev_changed_by,
+            reason: rev_reason,
+            policy: rev_effective_date_policy,
+            diffs,
+        });
+
+        previous_state = Some(current_state);
+    }
+
+    Ok(Json(json!({
+        "resource_id": resource_id,
+        "history": history_entries
+    })))
+}
+
 pub fn ctc_routes() -> Router<PgPool> {
     Router::new()
         .route("/ctc", post(create_ctc_record))
@@ -718,4 +1102,5 @@ pub fn ctc_routes() -> Router<PgPool> {
             "/ctc/:resource_id/components",
             axum::routing::put(update_ctc_components),
         )
+        .route("/ctc/:resource_id/history", get(get_ctc_history))
 }
