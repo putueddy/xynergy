@@ -403,6 +403,11 @@ So that **the system has accurate cost data for project calculations**.
 **And** the daily rate is automatically calculated (monthly CTC ÷ 22 working days)
 **And** an audit log entry is created with all values
 
+**Given** I am logged in as a non-HR role
+**When** I view top navigation or attempt to open `/ctc`
+**Then** I do not see the CTC menu item
+**And** direct URL access to `/ctc` is blocked by RBAC (forbidden UX state and redirect to dashboard)
+
 ---
 
 ### Story 2.2: CTC Revision Management
@@ -1018,4 +1023,3 @@ So that **I can ensure all employees have complete cost data**.
 **Given** I track completeness over time
 **When** I view the trend chart
 **Then** I see completeness % by month showing progress toward 100%
-

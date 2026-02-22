@@ -1,4 +1,5 @@
 pub mod allocations;
+pub mod ctc;
 pub mod dashboard;
 pub mod departments;
 pub mod holidays;
@@ -11,6 +12,7 @@ pub mod settings;
 pub mod users;
 
 pub use allocations::Allocations;
+pub use ctc::CtcManagement;
 pub use dashboard::Dashboard;
 pub use departments::DepartmentsContent;
 pub use holidays::HolidaysContent;

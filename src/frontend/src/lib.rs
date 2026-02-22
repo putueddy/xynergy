@@ -12,6 +12,7 @@ pub mod timeline;
 use auth::provide_auth_context;
 use pages::{
     allocations::Allocations,
+    ctc::CtcManagement,
     dashboard::Dashboard,
     home::Home,
     login::Login,
@@ -52,6 +53,7 @@ pub fn App() -> impl IntoView {
                     <Route path="/resources" view=Resources/>
                     <Route path="/projects" view=Projects/>
                     <Route path="/allocations" view=Allocations/>
+                    <Route path="/ctc" view=CtcManagement/>
                     <Route path="/settings" view=SettingsPage>
                         <Route path="/holidays" view=SettingsHolidaysPage/>
                         <Route path="/users" view=SettingsUsersPage/>

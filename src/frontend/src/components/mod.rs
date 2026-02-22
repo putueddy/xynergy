@@ -1,3 +1,4 @@
+use crate::auth::use_auth;
 use leptos::*;
 
 pub mod allocation_form;
@@ -29,6 +30,8 @@ pub use user_form::{DepartmentOption, UserEditData, UserForm, UserFormData};
 /// Header component
 #[component]
 pub fn Header() -> impl IntoView {
+    let auth = use_auth();
+
     view! {
         <header class="bg-white dark:bg-gray-800 shadow-sm">
             <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
@@ -54,6 +57,18 @@ pub fn Header() -> impl IntoView {
                         <a href="/allocations" class="text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400">
                             "Allocations"
                         </a>
+                        {move || {
+                            if auth.user.get().map(|u| u.role == "hr").unwrap_or(false) {
+                                view! {
+                                    <a href="/ctc" class="text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400">
+                                        "CTC"
+                                    </a>
+                                }
+                                    .into_view()
+                            } else {
+                                view! { <></> }.into_view()
+                            }
+                        }}
                         <a href="/settings" class="text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400">
                             "Settings"
                         </a>

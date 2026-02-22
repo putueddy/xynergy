@@ -50,7 +50,7 @@ development_status:
   
   # Epic 2: CTC Management
   epic-2: in-progress
-  2-1-employee-ctc-record-creation: ready-for-dev
+  2-1-employee-ctc-record-creation: done
   2-2-ctc-revision-management: backlog
   2-3-thr-management: backlog
   2-4-ctc-validation-and-compliance: backlog

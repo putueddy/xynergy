@@ -1,3 +1,4 @@
+use crate::auth::{authenticated_delete, authenticated_get, authenticated_post_json, authenticated_put_json};
 use crate::components::{HolidayForm, HolidayFormData};
 use leptos::*;
 use serde::Deserialize;
@@ -252,7 +253,7 @@ pub fn HolidaysContent() -> impl IntoView {
 
 /// Fetch all holidays from API
 async fn fetch_holidays() -> Result<Vec<Holiday>, String> {
-    let response = reqwest::get("http://localhost:3000/api/v1/holidays")
+    let response = authenticated_get("http://localhost:3000/api/v1/holidays")
         .await
         .map_err(|e| format!("Failed to fetch holidays: {}", e))?;
 
@@ -268,11 +269,7 @@ async fn fetch_holidays() -> Result<Vec<Holiday>, String> {
 
 /// Create a new holiday
 async fn create_holiday(form_data: HolidayFormData) -> Result<(), String> {
-    let client = reqwest::Client::new();
-    let response = client
-        .post("http://localhost:3000/api/v1/holidays")
-        .json(&form_data)
-        .send()
+    let response = authenticated_post_json("http://localhost:3000/api/v1/holidays", &form_data)
         .await
         .map_err(|e| format!("Failed to create holiday: {}", e))?;
 
@@ -289,14 +286,13 @@ async fn create_holiday(form_data: HolidayFormData) -> Result<(), String> {
 
 /// Update a holiday
 async fn update_holiday(holiday_id: String, form_data: HolidayFormData) -> Result<(), String> {
-    let client = reqwest::Client::new();
-    let response = client
-        .put(&format!(
+    let response = authenticated_put_json(
+        &format!(
             "http://localhost:3000/api/v1/holidays/{}",
             holiday_id
-        ))
-        .json(&form_data)
-        .send()
+        ),
+        &form_data,
+    )
         .await
         .map_err(|e| format!("Failed to update holiday: {}", e))?;
 
@@ -313,13 +309,10 @@ async fn update_holiday(holiday_id: String, form_data: HolidayFormData) -> Resul
 
 /// Delete a holiday
 async fn delete_holiday(holiday_id: String) -> Result<(), String> {
-    let client = reqwest::Client::new();
-    let response = client
-        .delete(&format!(
+    let response = authenticated_delete(&format!(
             "http://localhost:3000/api/v1/holidays/{}",
             holiday_id
         ))
-        .send()
         .await
         .map_err(|e| format!("Failed to delete holiday: {}", e))?;
 

@@ -1,4 +1,4 @@
-use crate::auth::use_auth;
+use crate::auth::{authenticated_delete, authenticated_get, authenticated_post_json, authenticated_put_json, use_auth};
 use crate::components::{
     AllocationEditData, AllocationForm, AllocationFormData, Footer, Header, ProjectOption,
     ResourceOption, TimelineChart,
@@ -832,7 +832,7 @@ pub fn Allocations() -> impl IntoView {
 
 /// Fetch all allocations from API
 async fn fetch_allocations() -> Result<Vec<Allocation>, String> {
-    let response = reqwest::get("http://localhost:3000/api/v1/allocations")
+    let response = authenticated_get("http://localhost:3000/api/v1/allocations")
         .await
         .map_err(|e| format!("Failed to fetch allocations: {}", e))?;
 
@@ -851,7 +851,7 @@ async fn fetch_allocations() -> Result<Vec<Allocation>, String> {
 
 /// Fetch all resources from API
 async fn fetch_resources() -> Result<Vec<Resource>, String> {
-    let response = reqwest::get("http://localhost:3000/api/v1/resources")
+    let response = authenticated_get("http://localhost:3000/api/v1/resources")
         .await
         .map_err(|e| format!("Failed to fetch resources: {}", e))?;
 
@@ -880,7 +880,7 @@ async fn fetch_resources() -> Result<Vec<Resource>, String> {
 
 /// Fetch all projects from API
 async fn fetch_projects() -> Result<Vec<Project>, String> {
-    let response = reqwest::get("http://localhost:3000/api/v1/projects")
+    let response = authenticated_get("http://localhost:3000/api/v1/projects")
         .await
         .map_err(|e| format!("Failed to fetch projects: {}", e))?;
 
@@ -922,18 +922,17 @@ async fn create_allocation(form_data: AllocationFormData) -> Result<(), String> 
         .parse::<f64>()
         .map_err(|_| "Invalid allocation percentage")?;
 
-    let client = reqwest::Client::new();
-    let response = client
-        .post("http://localhost:3000/api/v1/allocations")
-        .json(&serde_json::json!({
+    let response = authenticated_post_json(
+        "http://localhost:3000/api/v1/allocations",
+        &serde_json::json!({
             "resource_id": resource_id,
             "project_id": project_id,
             "start_date": form_data.start_date,
             "end_date": form_data.end_date,
             "allocation_percentage": allocation_percentage,
             "include_weekend": form_data.include_weekend,
-        }))
-        .send()
+        }),
+    )
         .await
         .map_err(|e| format!("Failed to create allocation: {}", e))?;
 
@@ -966,21 +965,20 @@ async fn update_allocation_form(
         .parse::<f64>()
         .map_err(|_| "Invalid allocation percentage")?;
 
-    let client = reqwest::Client::new();
-    let response = client
-        .put(&format!(
+    let response = authenticated_put_json(
+        &format!(
             "http://localhost:3000/api/v1/allocations/{}",
             allocation_id
-        ))
-        .json(&serde_json::json!({
+        ),
+        &serde_json::json!({
             "resource_id": resource_id,
             "project_id": project_id,
             "start_date": form_data.start_date,
             "end_date": form_data.end_date,
             "allocation_percentage": allocation_percentage,
             "include_weekend": form_data.include_weekend,
-        }))
-        .send()
+        }),
+    )
         .await
         .map_err(|e| format!("Failed to update allocation: {}", e))?;
 
@@ -1011,14 +1009,13 @@ async fn update_allocation(
         .parse::<Uuid>()
         .map_err(|_| "Invalid allocation ID")?;
 
-    let client = reqwest::Client::new();
-    let response = client
-        .put(&format!("http://localhost:3000/api/v1/allocations/{}", id))
-        .json(&serde_json::json!({
+    let response = authenticated_put_json(
+        &format!("http://localhost:3000/api/v1/allocations/{}", id),
+        &serde_json::json!({
             "start_date": start_date,
             "end_date": end_date,
-        }))
-        .send()
+        }),
+    )
         .await
         .map_err(|e| format!("Failed to update allocation: {}", e))?;
 
@@ -1039,10 +1036,7 @@ async fn delete_allocation(allocation_id: String) -> Result<(), String> {
         .parse::<Uuid>()
         .map_err(|_| "Invalid allocation ID")?;
 
-    let client = reqwest::Client::new();
-    let response = client
-        .delete(&format!("http://localhost:3000/api/v1/allocations/{}", id))
-        .send()
+    let response = authenticated_delete(&format!("http://localhost:3000/api/v1/allocations/{}", id))
         .await
         .map_err(|e| format!("Failed to delete allocation: {}", e))?;
 
@@ -1059,7 +1053,7 @@ async fn delete_allocation(allocation_id: String) -> Result<(), String> {
 
 /// Fetch all holidays from API
 async fn fetch_holidays() -> Result<Vec<Holiday>, String> {
-    let response = reqwest::get("http://localhost:3000/api/v1/holidays")
+    let response = authenticated_get("http://localhost:3000/api/v1/holidays")
         .await
         .map_err(|e| format!("Failed to fetch holidays: {}", e))?;
 

@@ -1,3 +1,4 @@
+use crate::auth::{authenticated_delete, authenticated_get, authenticated_post_json, authenticated_put_json};
 use crate::components::{DepartmentEditData, DepartmentForm, DepartmentFormData, HeadCandidate};
 use leptos::*;
 use serde::Deserialize;
@@ -277,7 +278,7 @@ pub fn DepartmentsContent() -> impl IntoView {
 
 /// Fetch all departments from API
 async fn fetch_departments() -> Result<Vec<Department>, String> {
-    let response = reqwest::get("http://localhost:3000/api/v1/departments")
+    let response = authenticated_get("http://localhost:3000/api/v1/departments")
         .await
         .map_err(|e| format!("Failed to fetch departments: {}", e))?;
 
@@ -296,7 +297,7 @@ async fn fetch_departments() -> Result<Vec<Department>, String> {
 
 /// Fetch head candidates from API
 async fn fetch_head_candidates() -> Result<Vec<HeadCandidate>, String> {
-    let response = reqwest::get("http://localhost:3000/api/v1/departments/head-candidates")
+    let response = authenticated_get("http://localhost:3000/api/v1/departments/head-candidates")
         .await
         .map_err(|e| format!("Failed to fetch head candidates: {}", e))?;
 
@@ -326,14 +327,13 @@ async fn create_department(form_data: DepartmentFormData) -> Result<(), String> 
         )
     };
 
-    let client = reqwest::Client::new();
-    let response = client
-        .post("http://localhost:3000/api/v1/departments")
-        .json(&serde_json::json!({
+    let response = authenticated_post_json(
+        "http://localhost:3000/api/v1/departments",
+        &serde_json::json!({
             "name": form_data.name,
             "head_id": head_id,
-        }))
-        .send()
+        }),
+    )
         .await
         .map_err(|e| format!("Failed to create department: {}", e))?;
 
@@ -365,14 +365,13 @@ async fn update_department(dept_id: String, form_data: DepartmentFormData) -> Re
         )
     };
 
-    let client = reqwest::Client::new();
-    let response = client
-        .put(&format!("http://localhost:3000/api/v1/departments/{}", id))
-        .json(&serde_json::json!({
+    let response = authenticated_put_json(
+        &format!("http://localhost:3000/api/v1/departments/{}", id),
+        &serde_json::json!({
             "name": form_data.name,
             "head_id": head_id,
-        }))
-        .send()
+        }),
+    )
         .await
         .map_err(|e| format!("Failed to update department: {}", e))?;
 
@@ -393,10 +392,7 @@ async fn delete_department(dept_id: String) -> Result<(), String> {
         .parse::<Uuid>()
         .map_err(|_| "Invalid department ID")?;
 
-    let client = reqwest::Client::new();
-    let response = client
-        .delete(&format!("http://localhost:3000/api/v1/departments/{}", id))
-        .send()
+    let response = authenticated_delete(&format!("http://localhost:3000/api/v1/departments/{}", id))
         .await
         .map_err(|e| format!("Failed to delete department: {}", e))?;
 

@@ -1,4 +1,4 @@
-use crate::auth::use_auth;
+use crate::auth::{authenticated_delete, authenticated_get, authenticated_post_json, authenticated_put_json, use_auth};
 use crate::components::resource_list::Resource;
 use crate::components::{
     resource_form::ResourceFormData, Footer, Header, ResourceForm, ResourceList,
@@ -210,7 +210,7 @@ pub fn Resources() -> impl IntoView {
 
 /// Fetch all resources from API
 async fn fetch_resources() -> Result<Vec<Resource>, String> {
-    let response = reqwest::get("http://localhost:3000/api/v1/resources")
+    let response = authenticated_get("http://localhost:3000/api/v1/resources")
         .await
         .map_err(|e| format!("Failed to fetch resources: {}", e))?;
 
@@ -226,17 +226,16 @@ async fn fetch_resources() -> Result<Vec<Resource>, String> {
 
 /// Create a new resource
 async fn create_resource(form_data: ResourceFormData) -> Result<(), String> {
-    let client = reqwest::Client::new();
-    let response = client
-        .post("http://localhost:3000/api/v1/resources")
-        .json(&serde_json::json!({
+    let response = authenticated_post_json(
+        "http://localhost:3000/api/v1/resources",
+        &serde_json::json!({
             "name": form_data.name,
             "resource_type": form_data.resource_type,
             "capacity": form_data.capacity,
             "department_id": form_data.department_id,
             "skills": null
-        }))
-        .send()
+        }),
+    )
         .await
         .map_err(|e| format!("Failed to create resource: {}", e))?;
 
@@ -253,17 +252,16 @@ async fn create_resource(form_data: ResourceFormData) -> Result<(), String> {
 
 /// Update an existing resource
 async fn update_resource(id: Uuid, form_data: ResourceFormData) -> Result<(), String> {
-    let client = reqwest::Client::new();
-    let response = client
-        .put(format!("http://localhost:3000/api/v1/resources/{}", id))
-        .json(&serde_json::json!({
+    let response = authenticated_put_json(
+        &format!("http://localhost:3000/api/v1/resources/{}", id),
+        &serde_json::json!({
             "name": form_data.name,
             "resource_type": form_data.resource_type,
             "capacity": form_data.capacity,
             "department_id": form_data.department_id,
             "skills": null
-        }))
-        .send()
+        }),
+    )
         .await
         .map_err(|e| format!("Failed to update resource: {}", e))?;
 
@@ -280,10 +278,7 @@ async fn update_resource(id: Uuid, form_data: ResourceFormData) -> Result<(), St
 
 /// Delete a resource
 async fn delete_resource(id: Uuid) -> Result<(), String> {
-    let client = reqwest::Client::new();
-    let response = client
-        .delete(format!("http://localhost:3000/api/v1/resources/{}", id))
-        .send()
+    let response = authenticated_delete(&format!("http://localhost:3000/api/v1/resources/{}", id))
         .await
         .map_err(|e| format!("Failed to delete resource: {}", e))?;
 

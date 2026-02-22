@@ -1,4 +1,5 @@
 use leptos::*;
+use reqwest::{Method, Response};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use wasm_bindgen::prelude::*;
@@ -106,6 +107,117 @@ fn setup_token_refresh(
             }
         }
     });
+}
+
+fn read_local_storage(key: &str) -> Option<String> {
+    web_sys::window()
+        .and_then(|w| w.local_storage().ok().flatten())
+        .and_then(|s| s.get_item(key).ok().flatten())
+}
+
+fn write_local_storage(key: &str, value: &str) {
+    if let Some(storage) = web_sys::window().and_then(|w| w.local_storage().ok().flatten()) {
+        let _ = storage.set_item(key, value);
+    }
+}
+
+pub fn clear_auth_storage() {
+    if let Some(storage) = web_sys::window().and_then(|w| w.local_storage().ok().flatten()) {
+        let _ = storage.remove_item("auth_token");
+        let _ = storage.remove_item("auth_refresh_token");
+    }
+}
+
+pub fn auth_token() -> Result<String, String> {
+    read_local_storage("auth_token")
+        .ok_or_else(|| "SESSION_EXPIRED".to_string())
+}
+
+fn force_relogin() {
+    clear_auth_storage();
+    if let Some(window) = web_sys::window() {
+        let _ = window.location().set_href("/login");
+    }
+}
+
+pub async fn refresh_access_token_from_storage() -> Result<String, String> {
+    let refresh = read_local_storage("auth_refresh_token")
+        .ok_or_else(|| "SESSION_EXPIRED".to_string())?;
+
+    match refresh_access_token(&refresh).await {
+        Ok((new_token, new_refresh)) => {
+            write_local_storage("auth_token", &new_token);
+            write_local_storage("auth_refresh_token", &new_refresh);
+            Ok(new_token)
+        }
+        Err(_) => {
+            force_relogin();
+            Err("SESSION_EXPIRED".to_string())
+        }
+    }
+}
+
+async fn authenticated_request<T: Serialize + ?Sized>(
+    method: Method,
+    url: &str,
+    payload: Option<&T>,
+) -> Result<Response, String> {
+    let client = reqwest::Client::new();
+    let token = auth_token()?;
+
+    let mut builder = client
+        .request(method.clone(), url)
+        .header("Authorization", format!("Bearer {}", token));
+    if let Some(body) = payload {
+        builder = builder.json(body);
+    }
+    let mut response = builder
+        .send()
+        .await
+        .map_err(|e| format!("Request failed: {}", e))?;
+
+    if response.status() == reqwest::StatusCode::UNAUTHORIZED {
+        let refreshed = refresh_access_token_from_storage().await?;
+        let mut retry_builder = client
+            .request(method, url)
+            .header("Authorization", format!("Bearer {}", refreshed));
+        if let Some(body) = payload {
+            retry_builder = retry_builder.json(body);
+        }
+        response = retry_builder
+            .send()
+            .await
+            .map_err(|e| format!("Request failed: {}", e))?;
+
+        if response.status() == reqwest::StatusCode::UNAUTHORIZED {
+            force_relogin();
+            return Err("SESSION_EXPIRED".to_string());
+        }
+    }
+
+    Ok(response)
+}
+
+pub async fn authenticated_get(url: &str) -> Result<Response, String> {
+    authenticated_request::<serde_json::Value>(Method::GET, url, None).await
+}
+
+pub async fn authenticated_post_json<T: Serialize + ?Sized>(
+    url: &str,
+    payload: &T,
+) -> Result<Response, String> {
+    authenticated_request(Method::POST, url, Some(payload)).await
+}
+
+pub async fn authenticated_put_json<T: Serialize + ?Sized>(
+    url: &str,
+    payload: &T,
+) -> Result<Response, String> {
+    authenticated_request(Method::PUT, url, Some(payload)).await
+}
+
+pub async fn authenticated_delete(url: &str) -> Result<Response, String> {
+    authenticated_request::<serde_json::Value>(Method::DELETE, url, None).await
 }
 
 /// Use the authentication context

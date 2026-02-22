@@ -1,4 +1,4 @@
-use crate::auth::use_auth;
+use crate::auth::{authenticated_delete, authenticated_get, authenticated_post_json, authenticated_put_json, use_auth};
 use crate::components::project_list::Project;
 use crate::components::{project_form::ProjectFormData, Footer, Header, ProjectForm, ProjectList};
 use chrono::NaiveDate;
@@ -208,7 +208,7 @@ pub fn Projects() -> impl IntoView {
 
 /// Fetch all projects from API
 async fn fetch_projects() -> Result<Vec<Project>, String> {
-    let response = reqwest::get("http://localhost:3000/api/v1/projects")
+    let response = authenticated_get("http://localhost:3000/api/v1/projects")
         .await
         .map_err(|e| format!("Failed to fetch projects: {}", e))?;
 
@@ -229,18 +229,17 @@ async fn create_project(form_data: ProjectFormData) -> Result<(), String> {
     let end_date = NaiveDate::parse_from_str(&form_data.end_date, "%Y-%m-%d")
         .map_err(|_| "Invalid end date".to_string())?;
 
-    let client = reqwest::Client::new();
-    let response = client
-        .post("http://localhost:3000/api/v1/projects")
-        .json(&serde_json::json!({
+    let response = authenticated_post_json(
+        "http://localhost:3000/api/v1/projects",
+        &serde_json::json!({
             "name": form_data.name,
             "description": if form_data.description.is_empty() { None } else { Some(form_data.description) },
             "start_date": start_date,
             "end_date": end_date,
             "status": form_data.status,
             "project_manager_id": null
-        }))
-        .send()
+        }),
+    )
         .await
         .map_err(|e| format!("Failed to create project: {}", e))?;
 
@@ -262,18 +261,17 @@ async fn update_project(id: Uuid, form_data: ProjectFormData) -> Result<(), Stri
     let end_date = NaiveDate::parse_from_str(&form_data.end_date, "%Y-%m-%d")
         .map_err(|_| "Invalid end date".to_string())?;
 
-    let client = reqwest::Client::new();
-    let response = client
-        .put(format!("http://localhost:3000/api/v1/projects/{}", id))
-        .json(&serde_json::json!({
+    let response = authenticated_put_json(
+        &format!("http://localhost:3000/api/v1/projects/{}", id),
+        &serde_json::json!({
             "name": form_data.name,
             "description": if form_data.description.is_empty() { None } else { Some(form_data.description) },
             "start_date": start_date,
             "end_date": end_date,
             "status": form_data.status,
             "project_manager_id": null
-        }))
-        .send()
+        }),
+    )
         .await
         .map_err(|e| format!("Failed to update project: {}", e))?;
 
@@ -290,10 +288,7 @@ async fn update_project(id: Uuid, form_data: ProjectFormData) -> Result<(), Stri
 
 /// Delete a project
 async fn delete_project(id: Uuid) -> Result<(), String> {
-    let client = reqwest::Client::new();
-    let response = client
-        .delete(format!("http://localhost:3000/api/v1/projects/{}", id))
-        .send()
+    let response = authenticated_delete(&format!("http://localhost:3000/api/v1/projects/{}", id))
         .await
         .map_err(|e| format!("Failed to delete project: {}", e))?;
 

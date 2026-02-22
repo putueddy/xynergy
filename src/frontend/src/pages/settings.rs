@@ -1,3 +1,4 @@
+use crate::auth::use_auth;
 use crate::components::{Footer, Header, SettingsSidebar};
 use crate::pages::{DepartmentsContent, HolidaysContent, UsersContent};
 use leptos::*;
@@ -6,6 +7,18 @@ use leptos_router::*;
 /// Settings page component with sidebar layout
 #[component]
 pub fn SettingsPage() -> impl IntoView {
+    let auth = use_auth();
+    let navigate = use_navigate();
+
+    {
+        let navigate = navigate.clone();
+        create_effect(move |_| {
+            if !auth.is_authenticated.get() {
+                navigate("/login", Default::default());
+            }
+        });
+    }
+
     view! {
         <div class="min-h-screen flex flex-col bg-gray-50 dark:bg-gray-900">
             <Header/>

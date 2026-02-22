@@ -1,4 +1,4 @@
-use crate::auth::{logout_user, use_auth};
+use crate::auth::{authenticated_get, logout_user, use_auth};
 use crate::components::{Footer, Header};
 use chrono::NaiveDate;
 use leptos::*;
@@ -40,17 +40,29 @@ pub fn Dashboard() -> impl IntoView {
 
     create_effect(move |_| {
         set_loading.set(true);
+        let navigate = navigate.clone();
         spawn_local(async move {
             let mut had_error = None;
+            let mut session_expired = false;
 
             match fetch_resources_count().await {
                 Ok(count) => set_resources_count.set(count),
-                Err(e) => had_error = Some(e),
+                Err(e) => {
+                    if e == "SESSION_EXPIRED" {
+                        session_expired = true;
+                    }
+                    had_error = Some(e)
+                }
             }
 
             match fetch_allocations_count().await {
                 Ok(count) => set_allocations_count.set(count),
-                Err(e) => had_error = Some(e),
+                Err(e) => {
+                    if e == "SESSION_EXPIRED" {
+                        session_expired = true;
+                    }
+                    had_error = Some(e)
+                }
             }
 
             match fetch_projects().await {
@@ -67,12 +79,31 @@ pub fn Dashboard() -> impl IntoView {
                     upcoming.truncate(5);
                     set_upcoming_deadlines.set(upcoming);
                 }
-                Err(e) => had_error = Some(e),
+                Err(e) => {
+                    if e == "SESSION_EXPIRED" {
+                        session_expired = true;
+                    }
+                    had_error = Some(e)
+                }
             }
 
             match fetch_audit_logs().await {
                 Ok(entries) => set_recent_activity.set(entries),
-                Err(e) => had_error = Some(e),
+                Err(e) => {
+                    if e == "SESSION_EXPIRED" {
+                        session_expired = true;
+                    }
+                    had_error = Some(e)
+                }
+            }
+
+            if session_expired {
+                logout_user(&auth);
+                set_dashboard_error
+                    .set(Some("Your session expired. Please sign in again.".to_string()));
+                navigate("/login", Default::default());
+                set_loading.set(false);
+                return;
             }
 
             set_dashboard_error.set(had_error);
@@ -270,14 +301,25 @@ struct AuditLogEntry {
     created_at: String,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+struct AuditLogsEnvelope {
+    entries: Vec<AuditLogEntry>,
+}
+
 fn parse_date(value: &str) -> Option<NaiveDate> {
     NaiveDate::parse_from_str(value, "%Y-%m-%d").ok()
 }
 
 async fn fetch_resources_count() -> Result<usize, String> {
-    let response = reqwest::get("http://localhost:3000/api/v1/resources")
+    let response = authenticated_get("http://localhost:3000/api/v1/resources")
         .await
-        .map_err(|e| format!("Failed to fetch resources: {}", e))?;
+        .map_err(|e| {
+            if e == "SESSION_EXPIRED" {
+                e
+            } else {
+                format!("Failed to fetch resources: {}", e)
+            }
+        })?;
 
     if response.status().is_success() {
         let items: Vec<serde_json::Value> = response
@@ -291,9 +333,15 @@ async fn fetch_resources_count() -> Result<usize, String> {
 }
 
 async fn fetch_allocations_count() -> Result<usize, String> {
-    let response = reqwest::get("http://localhost:3000/api/v1/allocations")
+    let response = authenticated_get("http://localhost:3000/api/v1/allocations")
         .await
-        .map_err(|e| format!("Failed to fetch allocations: {}", e))?;
+        .map_err(|e| {
+            if e == "SESSION_EXPIRED" {
+                e
+            } else {
+                format!("Failed to fetch allocations: {}", e)
+            }
+        })?;
 
     if response.status().is_success() {
         let items: Vec<serde_json::Value> = response
@@ -310,9 +358,15 @@ async fn fetch_allocations_count() -> Result<usize, String> {
 }
 
 async fn fetch_projects() -> Result<Vec<ProjectSummary>, String> {
-    let response = reqwest::get("http://localhost:3000/api/v1/projects")
+    let response = authenticated_get("http://localhost:3000/api/v1/projects")
         .await
-        .map_err(|e| format!("Failed to fetch projects: {}", e))?;
+        .map_err(|e| {
+            if e == "SESSION_EXPIRED" {
+                e
+            } else {
+                format!("Failed to fetch projects: {}", e)
+            }
+        })?;
 
     if response.status().is_success() {
         response
@@ -325,15 +379,24 @@ async fn fetch_projects() -> Result<Vec<ProjectSummary>, String> {
 }
 
 async fn fetch_audit_logs() -> Result<Vec<AuditLogEntry>, String> {
-    let response = reqwest::get("http://localhost:3000/api/v1/audit-logs?limit=10")
+    let response = authenticated_get("http://localhost:3000/api/v1/audit-logs?limit=10")
         .await
-        .map_err(|e| format!("Failed to fetch audit logs: {}", e))?;
+        .map_err(|e| {
+            if e == "SESSION_EXPIRED" {
+                e
+            } else {
+                format!("Failed to fetch audit logs: {}", e)
+            }
+        })?;
 
     if response.status().is_success() {
-        response
-            .json::<Vec<AuditLogEntry>>()
+        let body = response
+            .json::<AuditLogsEnvelope>()
             .await
-            .map_err(|e| format!("Failed to parse audit logs: {}", e))
+            .map_err(|e| format!("Failed to parse audit logs: {}", e))?;
+        Ok(body.entries)
+    } else if response.status() == reqwest::StatusCode::FORBIDDEN {
+        Ok(Vec::new())
     } else {
         Err(format!("Failed to fetch audit logs: {}", response.status()))
     }

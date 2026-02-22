@@ -171,7 +171,10 @@ pub fn UserForm(
                         required
                     >
                         <option value="admin">"Admin"</option>
+                        <option value="hr">"HR"</option>
+                        <option value="department_head">"Department Head"</option>
                         <option value="project_manager">"Project Manager"</option>
+                        <option value="finance">"Finance"</option>
                         <option value="team_member">"Team Member"</option>
                     </select>
                 </div>
