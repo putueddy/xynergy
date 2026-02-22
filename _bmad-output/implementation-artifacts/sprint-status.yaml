@@ -44,7 +44,7 @@ development_status:
   epic-1: in-progress
   1-1-user-authentication-system: done
   1-2-role-based-access-control: done
-  1-3-row-level-security: backlog
+  1-3-row-level-security: done
   1-4-audit-logging-system: backlog
   epic-1-retrospective: optional
   

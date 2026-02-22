@@ -54,17 +54,50 @@ fn f64_to_bigdecimal(f: Option<f64>) -> Option<sqlx::types::BigDecimal> {
 }
 
 /// Get all resources
-async fn get_resources(State(pool): State<PgPool>) -> Result<Json<Vec<ResourceResponse>>> {
+async fn get_resources(
+    State(pool): State<PgPool>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<ResourceResponse>>> {
+    let claims = crate::services::audit_log::user_claims_from_headers(&headers)?
+        .ok_or_else(|| AppError::Authentication("Missing token".to_string()))?;
+
+    let mut tx = crate::services::begin_rls_transaction(&pool, &headers).await?;
+
     let resources = sqlx::query!(
         "SELECT id, name, resource_type, capacity, department_id, skills 
          FROM resources ORDER BY name"
     )
-    .fetch_all(&pool)
+    .fetch_all(&mut *tx)
     .await
     .map_err(|e| AppError::Database(e.to_string()))?;
 
+    tx.commit()
+        .await
+        .map_err(|e| AppError::Database(e.to_string()))?;
+
+    // Application level defense-in-depth filtering
+    let mut user_dept_id = None;
+    if claims.role == "department_head" {
+        if let Ok(uid) = Uuid::parse_str(&claims.sub) {
+            let row = sqlx::query!("SELECT department_id FROM users WHERE id = $1", uid)
+                .fetch_optional(&pool)
+                .await
+                .map_err(|e| AppError::Database(e.to_string()))?;
+            if let Some(rec) = row {
+                user_dept_id = rec.department_id;
+            }
+        }
+    }
+
     let response: Vec<ResourceResponse> = resources
         .into_iter()
+        .filter(|r| {
+            if claims.role == "department_head" {
+                r.department_id == user_dept_id && user_dept_id.is_some()
+            } else {
+                true
+            }
+        })
         .map(|r| ResourceResponse {
             id: r.id,
             name: r.name,
@@ -81,17 +114,48 @@ async fn get_resources(State(pool): State<PgPool>) -> Result<Json<Vec<ResourceRe
 /// Get resource by ID
 async fn get_resource(
     State(pool): State<PgPool>,
+    headers: HeaderMap,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ResourceResponse>> {
+    let claims = crate::services::audit_log::user_claims_from_headers(&headers)?
+        .ok_or_else(|| AppError::Authentication("Missing token".to_string()))?;
+
+    let mut tx = crate::services::begin_rls_transaction(&pool, &headers).await?;
+
     let resource = sqlx::query!(
         "SELECT id, name, resource_type, capacity, department_id, skills 
          FROM resources WHERE id = $1",
         id
     )
-    .fetch_optional(&pool)
+    .fetch_optional(&mut *tx)
     .await
-    .map_err(|e| AppError::Database(e.to_string()))?
-    .ok_or_else(|| AppError::NotFound(format!("Resource {} not found", id)))?;
+    .map_err(|e| AppError::Database(e.to_string()))?;
+
+    tx.commit()
+        .await
+        .map_err(|e| AppError::Database(e.to_string()))?;
+
+    let resource =
+        resource.ok_or_else(|| AppError::NotFound(format!("Resource {} not found", id)))?;
+
+    // Application level defense-in-depth filtering
+    if claims.role == "department_head" {
+        if let Ok(uid) = Uuid::parse_str(&claims.sub) {
+            let row = sqlx::query!("SELECT department_id FROM users WHERE id = $1", uid)
+                .fetch_optional(&pool)
+                .await
+                .map_err(|e| AppError::Database(e.to_string()))?;
+            if let Some(rec) = row {
+                if rec.department_id != resource.department_id || rec.department_id.is_none() {
+                    return Err(AppError::Forbidden(
+                        "Insufficient permissions (Department Isolation)".to_string(),
+                    ));
+                }
+            } else {
+                return Err(AppError::Forbidden("Insufficient permissions".to_string()));
+            }
+        }
+    }
 
     Ok(Json(ResourceResponse {
         id: resource.id,

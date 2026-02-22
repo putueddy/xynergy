@@ -226,10 +226,43 @@ async fn department_head_denied_ctc_components_and_audited(pool: PgPool) {
     std::env::set_var("JWT_SECRET", "test-secret");
     let app = xynergy_backend::create_app(pool.clone());
 
+    let dept_a = sqlx::query_scalar::<_, Uuid>(
+        "INSERT INTO departments (name) VALUES ('Dept A') RETURNING id",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let dept_b = sqlx::query_scalar::<_, Uuid>(
+        "INSERT INTO departments (name) VALUES ('Dept B') RETURNING id",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
     let dh_email = test_email();
-    let dh_id = create_test_user_with_role(&pool, &dh_email, "department_head").await;
+    let password_hash = xynergy_backend::routes::auth::hash_password("Password123!")
+        .expect("password hashing should succeed in tests");
+    let dh_id = sqlx::query_scalar::<_, Uuid>(
+        "INSERT INTO users (email, password_hash, first_name, last_name, role, department_id)
+         VALUES ($1, $2, 'Test', 'User', 'department_head', $3)
+         RETURNING id",
+    )
+    .bind(&dh_email)
+    .bind(password_hash)
+    .bind(dept_a)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
     let dh_token = get_auth_token(&app, &dh_email).await;
-    let resource_id = create_test_resource(&pool, "RBAC Test Resource").await;
+    let resource_id = sqlx::query_scalar::<_, Uuid>(
+        "INSERT INTO resources (name, resource_type, capacity, department_id)
+         VALUES ('RBAC Test Resource', 'human', 1.0, $1)
+         RETURNING id",
+    )
+    .bind(dept_b)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
 
     let req = Request::builder()
         .method("GET")
