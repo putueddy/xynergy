@@ -134,21 +134,23 @@ async fn test_valid_deterministic_hash_chain(pool: PgPool) {
 #[sqlx::test(migrations = "../../migrations")]
 async fn test_ctc_view_and_mutation_audit(pool: PgPool) {
     std::env::set_var("JWT_SECRET", "test-secret");
+    std::env::set_var("CTC_ACTIVE_KEY_VERSION", "v1");
+    std::env::set_var("CTC_ENCRYPTION_KEY_V1", "QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE=");
     let app = xynergy_backend::create_app(pool.clone());
 
-    let dh_email = test_email();
+    let hr_email = test_email();
     let dept_id = create_test_department(&pool, "Finance").await;
-    let _dh_id =
-        create_test_user_with_role_and_dept(&pool, &dh_email, "department_head", Some(dept_id))
+    let _hr_id =
+        create_test_user_with_role_and_dept(&pool, &hr_email, "hr", Some(dept_id))
             .await;
-    let dh_token = get_auth_token(&app, &dh_email).await;
+    let hr_token = get_auth_token(&app, &hr_email).await;
     let resource_id = create_test_resource_in_dept(&pool, "Fin Resource", dept_id).await;
 
     // View resource
     let req_view = Request::builder()
         .method("GET")
         .uri(format!("/api/v1/ctc/{}/components", resource_id))
-        .header("Authorization", format!("Bearer {}", dh_token))
+        .header("Authorization", format!("Bearer {}", hr_token))
         .body(Body::empty())
         .unwrap();
 
@@ -159,7 +161,7 @@ async fn test_ctc_view_and_mutation_audit(pool: PgPool) {
     let req_update = Request::builder()
         .method("PUT")
         .uri(format!("/api/v1/ctc/{}/components", resource_id))
-        .header("Authorization", format!("Bearer {}", dh_token))
+        .header("Authorization", format!("Bearer {}", hr_token))
         .header("Content-Type", "application/json")
         .body(Body::from(
             json!({
@@ -188,7 +190,7 @@ async fn test_ctc_view_and_mutation_audit(pool: PgPool) {
     let update_changes = logs[1].changes.clone().unwrap_or_else(|| json!({}));
     assert_eq!(update_changes["action"], "update_ctc");
     assert_eq!(update_changes["reason"], "Annual Adjustment");
-    assert_eq!(update_changes["after"]["salary"], 5000);
+    assert_eq!(update_changes["status"], "encrypted");
 }
 
 #[sqlx::test(migrations = "../../migrations")]

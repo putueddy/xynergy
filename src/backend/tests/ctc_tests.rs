@@ -13,6 +13,14 @@ fn test_email() -> String {
     format!("ctc-test-{}@example.com", Uuid::new_v4())
 }
 
+fn set_ctc_crypto_env() {
+    std::env::set_var("CTC_ACTIVE_KEY_VERSION", "v1");
+    std::env::set_var(
+        "CTC_ENCRYPTION_KEY_V1",
+        "QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE=",
+    );
+}
+
 async fn create_test_user_with_role(pool: &PgPool, email: &str, role: &str) -> Uuid {
     let password_hash = xynergy_backend::routes::auth::hash_password("Password123!")
         .expect("password hashing should succeed in tests");
@@ -67,6 +75,7 @@ async fn get_auth_token(app: &axum::Router, email: &str) -> String {
 #[sqlx::test(migrations = "../../migrations")]
 async fn hr_can_create_ctc_record(pool: PgPool) {
     std::env::set_var("JWT_SECRET", "test-secret");
+    set_ctc_crypto_env();
     let app = xynergy_backend::create_app(pool.clone());
 
     // Create HR user
@@ -142,6 +151,7 @@ async fn hr_can_create_ctc_record(pool: PgPool) {
 #[sqlx::test(migrations = "../../migrations")]
 async fn non_hr_cannot_create_ctc_record(pool: PgPool) {
     std::env::set_var("JWT_SECRET", "test-secret");
+    set_ctc_crypto_env();
     let app = xynergy_backend::create_app(pool.clone());
 
     // Create non-HR user (e.g., department_head)
@@ -176,6 +186,7 @@ async fn non_hr_cannot_create_ctc_record(pool: PgPool) {
 #[sqlx::test(migrations = "../../migrations")]
 async fn admin_cannot_create_ctc_record(pool: PgPool) {
     std::env::set_var("JWT_SECRET", "test-secret");
+    set_ctc_crypto_env();
     let app = xynergy_backend::create_app(pool.clone());
 
     let admin_email = test_email();
@@ -209,6 +220,7 @@ async fn admin_cannot_create_ctc_record(pool: PgPool) {
 #[sqlx::test(migrations = "../../migrations")]
 async fn create_ctc_rejects_negative_values(pool: PgPool) {
     std::env::set_var("JWT_SECRET", "test-secret");
+    set_ctc_crypto_env();
     let app = xynergy_backend::create_app(pool.clone());
 
     let hr_email = test_email();
@@ -242,6 +254,7 @@ async fn create_ctc_rejects_negative_values(pool: PgPool) {
 #[sqlx::test(migrations = "../../migrations")]
 async fn create_ctc_rejects_duplicate_resource(pool: PgPool) {
     std::env::set_var("JWT_SECRET", "test-secret");
+    set_ctc_crypto_env();
     let app = xynergy_backend::create_app(pool.clone());
 
     let hr_email = test_email();
@@ -298,6 +311,7 @@ async fn create_ctc_rejects_duplicate_resource(pool: PgPool) {
 #[sqlx::test(migrations = "../../migrations")]
 async fn calculate_bpjs_preview_works(pool: PgPool) {
     std::env::set_var("JWT_SECRET", "test-secret");
+    set_ctc_crypto_env();
     let app = xynergy_backend::create_app(pool.clone());
 
     let hr_email = test_email();

@@ -37,6 +37,7 @@ Xynergy transforms resource allocation from operational scheduling into financia
 2. **Efficiency at Scale** - Monthly rhythm requires streamlined workflows for 60+ employees
 3. **Cross-User Impact Visibility** - CTC changes affect multiple users; need clear impact communication
 4. **Error Recovery** - Catastrophic error potential requires robust validation and undo capabilities
+5. **Confidential-by-Design Payroll UX** - CTC component values are rendered only in HR-authorized flows; non-HR experiences must never expose component plaintext.
 
 ### Design Opportunities
 

@@ -139,7 +139,7 @@ The existing architecture provides a solid foundation including:
 | Category | Decision | MVP Scope | Post-MVP |
 |:---------|:---------|:----------|:---------|
 | **Data Architecture** | Separate CTC table with revision history | ✅ Include | Enhanced indexing |
-| **Security** | PostgreSQL TDE (app-level encryption Post-MVP) | ✅ Include | Field-level encryption |
+| **Security** | Defense-in-depth: TDE + app-controlled field-level encryption for CTC sensitive fields | ✅ Include | Key rotation automation + envelope hardening |
 | **Integration** | Daily ERP polling + manual fallback | ✅ Include | Webhooks/real-time |
 | **Calculation** | Pre-calculated daily rates, configurable working days | ✅ Include | Caching layer |
 | **API Design** | REST endpoints following existing patterns | ✅ Include | GraphQL (optional) |
@@ -219,23 +219,26 @@ ALTER TABLE projects ADD COLUMN budget_settings JSONB DEFAULT '{
 
 #### Decision: CTC Data Protection (MVP)
 
-**Choice:** PostgreSQL Transparent Data Encryption (TDE) only for MVP
+**Choice:** Defense-in-depth for CTC: PostgreSQL storage encryption (TDE/disk) + application-controlled field-level encryption in MVP
 
 **Rationale:**
-- 4-week MVP timeline constraints
-- TDE provides adequate protection for initial launch
-- Application-level encryption adds significant complexity
-- Can add defense-in-depth later without schema changes
+- TDE alone does not address privileged DBA plaintext-read threat
+- CTC contains highly sensitive compensation components (salary, allowances, BPJS, THR)
+- ISO 27001-aligned cryptography controls require explicit key management and auditable handling
+- App-controlled encryption closes the gap while preserving existing RBAC/RLS model
 
 **MVP Implementation:**
-- Enable PostgreSQL TDE for entire database
-- Row-level security policies on `ctc_records` table
-- Application-level access control (HR role only)
+- Enable PostgreSQL storage encryption at rest (TDE/disk controls)
+- Encrypt sensitive CTC columns before persistence using application-controlled keys
+- Store ciphertext plus algorithm/key-version metadata in `ctc_records`
+- Keep row-level security policies on `ctc_records` table
+- Keep application-level access control (HR role only)
 
-**Post-MVP Enhancement:**
-- Application-level field encryption for sensitive CTC components
-- Separate encryption keys per field type
-- Key rotation strategy
+**Key Management Baseline:**
+- KEK managed in centralized secrets system (Vault/KMS compatible)
+- DEK wrapped by KEK; no plaintext keys stored in database
+- Key versioning to support rotation and decrypt compatibility
+- Audit logging for decrypt-sensitive operations
 
 #### Decision: Audit Log Hash Chain (Simplified MVP)
 
@@ -450,4 +453,3 @@ Router::new()
 1. ERP integration (polling)
 2. Cash flow tracking (MVP scope)
 3. Performance optimization
-

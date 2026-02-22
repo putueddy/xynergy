@@ -15,6 +15,8 @@ use crate::error::{AppError, Result};
 use crate::services::{
     audit_log::user_claims_from_headers, calculate_ctc, log_audit, BpjsConfig, CtcComponents,
 };
+use crate::services::ctc_crypto::{CtcCryptoService, DefaultCtcCryptoService, EncryptedPayload};
+use crate::services::key_provider::EnvKeyProvider;
 
 async fn get_ctc_components(
     State(pool): State<PgPool>,
@@ -144,14 +146,66 @@ async fn get_ctc_components(
     )
     .await?;
 
-    let components = sqlx::query_scalar::<_, serde_json::Value>(
-        "SELECT components FROM ctc_records WHERE resource_id = $1 ORDER BY updated_at DESC LIMIT 1",
+    let row_result = sqlx::query(
+        "SELECT components, encrypted_components, encrypted_daily_rate, key_version, encryption_version, encryption_algorithm 
+         FROM ctc_records WHERE resource_id = $1 ORDER BY updated_at DESC LIMIT 1"
     )
     .bind(resource_id)
     .fetch_optional(&mut *tx)
     .await
-    .map_err(|e| AppError::Database(e.to_string()))?
-    .unwrap_or_else(|| json!({}));
+    .map_err(|e| AppError::Database(e.to_string()))?;
+
+    let mut components = json!({});
+
+    if let Some(row) = row_result {
+        use sqlx::Row;
+        let encrypted_components: Option<String> = row.try_get("encrypted_components").unwrap_or(None);
+        let encrypted_daily_rate: Option<String> = row.try_get("encrypted_daily_rate").unwrap_or(None);
+        
+        if let Some(enc_str) = encrypted_components {
+            if claims.role == "hr" {
+                let key_version: String = row.try_get("key_version").unwrap_or_default();
+                let encryption_version: String = row.try_get("encryption_version").unwrap_or_default();
+                let algorithm: String = row.try_get("encryption_algorithm").unwrap_or_default();
+                
+                let payload = EncryptedPayload {
+                    ciphertext: enc_str,
+                    key_version: key_version.clone(),
+                    encryption_version: encryption_version.clone(),
+                    algorithm: algorithm.clone(),
+                    encrypted_at: chrono::Utc::now(), // Not strictly needed for decrypt
+                };
+                
+                let crypto_svc = DefaultCtcCryptoService::new(EnvKeyProvider::new());
+                let mut decrypted_components = crypto_svc.decrypt_components(&payload).await?;
+
+                if let Some(enc_daily_rate) = encrypted_daily_rate {
+                    let daily_payload = EncryptedPayload {
+                        ciphertext: enc_daily_rate,
+                        key_version: key_version.clone(),
+                        encryption_version: encryption_version.clone(),
+                        algorithm: algorithm.clone(),
+                        encrypted_at: chrono::Utc::now(),
+                    };
+
+                    let decrypted_daily_rate = crypto_svc.decrypt_components(&daily_payload).await?;
+                    if let Some(daily_rate_value) = decrypted_daily_rate.get("daily_rate") {
+                        if let Some(obj) = decrypted_components.as_object_mut() {
+                            obj.insert("daily_rate".to_string(), daily_rate_value.clone());
+                        }
+                    }
+                }
+
+                components = decrypted_components;
+            } else {
+                components = json!({"status": "encrypted", "note": "Detailed components are restricted to HR"});
+            }
+        } else {
+            return Err(AppError::Forbidden(
+                "CTC record is pending encryption migration".to_string(),
+            ));
+        }
+    }
 
     tx.commit()
         .await
@@ -187,6 +241,10 @@ async fn update_ctc_components(
         ));
     }
 
+    if claims.role != "hr" {
+        return Err(AppError::Forbidden("Insufficient permissions".to_string()));
+    }
+
     let mut tx = crate::services::begin_rls_transaction(&pool, &headers).await?;
 
     // RLS validation (similar to view)
@@ -199,24 +257,56 @@ async fn update_ctc_components(
         return Err(AppError::NotFound("Resource not found".to_string()));
     }
 
-    let before_state = sqlx::query_scalar::<_, serde_json::Value>(
-        "SELECT components FROM ctc_records WHERE resource_id = $1 ORDER BY updated_at DESC LIMIT 1",
+    let after_state = payload.components.clone();
+
+    let crypto_svc = DefaultCtcCryptoService::new(EnvKeyProvider::new());
+    let encrypted_payload = crypto_svc.encrypt_components(&after_state).await?;
+
+    let existing_encrypted_daily_rate = sqlx::query_scalar::<_, Option<String>>(
+        "SELECT encrypted_daily_rate FROM ctc_records WHERE resource_id = $1",
     )
     .bind(resource_id)
     .fetch_optional(&mut *tx)
     .await
     .map_err(|e| AppError::Database(e.to_string()))?
-    .unwrap_or_else(|| json!({}));
-    let after_state = payload.components.clone();
+    .flatten();
+
+    let encrypted_daily_rate = if let Some(daily_rate) = extract_daily_rate_string(&after_state) {
+        let encrypted_daily_rate_payload = crypto_svc
+            .encrypt_components(&json!({ "daily_rate": daily_rate }))
+            .await?;
+        encrypted_daily_rate_payload.ciphertext
+    } else if let Some(existing_ciphertext) = existing_encrypted_daily_rate {
+        existing_ciphertext
+    } else {
+        let encrypted_daily_rate_payload = crypto_svc
+            .encrypt_components(&json!({ "daily_rate": "0" }))
+            .await?;
+        encrypted_daily_rate_payload.ciphertext
+    };
 
     sqlx::query(
-        "INSERT INTO ctc_records (resource_id, components, updated_by, reason)
-         VALUES ($1, $2, $3, $4)
+        "INSERT INTO ctc_records (resource_id, components, encrypted_components, key_version, encryption_version, encryption_algorithm, encrypted_at, encrypted_daily_rate, updated_by, reason)
+         VALUES ($1, '{}'::jsonb, $2, $3, $4, $5, $6, $7, $8, $9)
          ON CONFLICT (resource_id)
-         DO UPDATE SET components = EXCLUDED.components, updated_by = EXCLUDED.updated_by, reason = EXCLUDED.reason, updated_at = CURRENT_TIMESTAMP",
+         DO UPDATE SET components = '{}'::jsonb, 
+                       encrypted_components = EXCLUDED.encrypted_components, 
+                       key_version = EXCLUDED.key_version, 
+                       encryption_version = EXCLUDED.encryption_version, 
+                       encryption_algorithm = EXCLUDED.encryption_algorithm, 
+                       encrypted_at = EXCLUDED.encrypted_at, 
+                       encrypted_daily_rate = EXCLUDED.encrypted_daily_rate,
+                       updated_by = EXCLUDED.updated_by, 
+                       reason = EXCLUDED.reason, 
+                       updated_at = CURRENT_TIMESTAMP",
     )
     .bind(resource_id)
-    .bind(&after_state)
+    .bind(&encrypted_payload.ciphertext)
+    .bind(&encrypted_payload.key_version)
+    .bind(&encrypted_payload.encryption_version)
+    .bind(&encrypted_payload.algorithm)
+    .bind(encrypted_payload.encrypted_at)
+    .bind(&encrypted_daily_rate)
     .bind(user_id)
     .bind(&payload.reason)
     .execute(&mut *tx)
@@ -224,6 +314,7 @@ async fn update_ctc_components(
     .map_err(|e| AppError::Database(e.to_string()))?;
 
     // Log the mutation with before/after snapshots and reason string
+    // Redact sensitive payload in audit logs per AC #5
     log_audit(
         &pool,
         Some(user_id),
@@ -233,8 +324,7 @@ async fn update_ctc_components(
         json!({
             "action": "update_ctc",
             "reason": payload.reason,
-            "before": before_state,
-            "after": after_state
+            "status": "encrypted"
         }),
     )
     .await?;
@@ -338,6 +428,14 @@ fn bd_to_f64(bd: &BigDecimal) -> Result<f64> {
     bd.to_string()
         .parse::<f64>()
         .map_err(|_| AppError::Internal("Invalid decimal conversion for daily_rate".to_string()))
+}
+
+fn extract_daily_rate_string(components: &serde_json::Value) -> Option<String> {
+    match components.get("daily_rate") {
+        Some(serde_json::Value::String(s)) => Some(s.clone()),
+        Some(serde_json::Value::Number(n)) => Some(n.to_string()),
+        _ => None,
+    }
 }
 
 fn jkk_rate_for_tier(tier: i32) -> Result<BigDecimal> {
@@ -517,20 +615,11 @@ async fn create_ctc_record(
     let thr_monthly: i64 = bd_to_i64(&calculation.thr_monthly_accrual);
     let total_ctc: i64 = bd_to_i64(&calculation.total_monthly_ctc);
     let daily_rate = calculation.daily_rate.with_scale(2);
+    let daily_rate_str = daily_rate.to_string();
 
-    // Insert CTC record (using runtime query for compatibility with new columns)
-    sqlx::query(
-        "INSERT INTO ctc_records (
-            resource_id, components, base_salary, hra_allowance, medical_allowance,
-            transport_allowance, meal_allowance, bpjs_kesehatan, bpjs_ketenagakerjaan,
-            thr_monthly_accrual, total_monthly_ctc, daily_rate, working_days_per_month,
-            effective_date, status, created_by, created_at, updated_by, reason
-        ) VALUES (
-            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::numeric, $13, CURRENT_DATE, 'Active', $14, CURRENT_TIMESTAMP, $14, 'Initial CTC record creation'
-        )"
-    )
-    .bind(resource_id)
-    .bind(json!({
+    // Insert CTC record
+    let crypto_svc = DefaultCtcCryptoService::new(EnvKeyProvider::new());
+    let encrypted_payload = crypto_svc.encrypt_components(&json!({
         "base_salary": base_salary_i64,
         "hra_allowance": hra_i64,
         "medical_allowance": medical_i64,
@@ -541,17 +630,30 @@ async fn create_ctc_record(
         "bpjs_ketenagakerjaan_employer": bpjs_ket_employer,
         "bpjs_ketenagakerjaan_employee": bpjs_ket_employee,
         "thr_monthly_accrual": thr_monthly,
-    }))
-    .bind(base_salary_i64)
-    .bind(hra_i64)
-    .bind(medical_i64)
-    .bind(transport_i64)
-    .bind(meal_i64)
-    .bind(bpjs_kes_employer)
-    .bind(bpjs_ket_employer)
-    .bind(thr_monthly)
-    .bind(total_ctc)
-    .bind(daily_rate.to_string())
+        "total_monthly_ctc": total_ctc,
+    })).await?;
+
+    let encrypted_daily_rate_payload = crypto_svc
+        .encrypt_components(&json!({ "daily_rate": daily_rate_str }))
+        .await?;
+
+    sqlx::query(
+        "INSERT INTO ctc_records (
+            resource_id, components, encrypted_components, key_version, encryption_version, encryption_algorithm, encrypted_at, encrypted_daily_rate,
+            daily_rate, working_days_per_month,
+            effective_date, status, created_by, created_at, updated_by, reason
+        ) VALUES (
+            $1, '{}'::jsonb, $2, $3, $4, $5, $6, $7, $8::numeric, $9, CURRENT_DATE, 'Active', $10, CURRENT_TIMESTAMP, $10, 'Initial CTC record creation'
+        )"
+    )
+    .bind(resource_id)
+    .bind(&encrypted_payload.ciphertext)
+    .bind(&encrypted_payload.key_version)
+    .bind(&encrypted_payload.encryption_version)
+    .bind(&encrypted_payload.algorithm)
+    .bind(encrypted_payload.encrypted_at)
+    .bind(&encrypted_daily_rate_payload.ciphertext)
+    .bind("0")
     .bind(working_days)
     .bind(user_id)
     .execute(&pool)
@@ -559,6 +661,7 @@ async fn create_ctc_record(
     .map_err(|e| AppError::Database(e.to_string()))?;
 
     // Log audit event
+    // Plaintext values are not included in audit logs per AC #5
     log_audit(
         &pool,
         Some(user_id),
@@ -567,24 +670,8 @@ async fn create_ctc_record(
         resource_id,
         json!({
             "action": "create_ctc",
-            "base_salary": base_salary_i64,
-            "allowances": {
-                "hra": hra_i64,
-                "medical": medical_i64,
-                "transport": transport_i64,
-                "meal": meal_i64,
-            },
-            "bpjs": {
-                "kesehatan_employer": bpjs_kes_employer,
-                "kesehatan_employee": bpjs_kes_employee,
-                "ketenagakerjaan_employer": bpjs_ket_employer,
-                "ketenagakerjaan_employee": bpjs_ket_employee,
-            },
-            "thr_monthly_accrual": thr_monthly,
-            "total_monthly_ctc": total_ctc,
-            "daily_rate": daily_rate.to_string(),
+            "status": "encrypted",
             "working_days_per_month": working_days,
-            "status": "Active",
         }),
     )
     .await?;

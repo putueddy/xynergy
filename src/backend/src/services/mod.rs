@@ -1,6 +1,8 @@
 pub mod allocation_service;
 pub mod audit_log;
 pub mod ctc_calculator;
+pub mod ctc_crypto;
+pub mod key_provider;
 pub mod project_service;
 pub mod resource_service;
 pub mod rls_context;

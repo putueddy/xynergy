@@ -91,7 +91,7 @@ This document provides the complete epic and story breakdown for xynergy, decomp
 - **NFR6:** WASM bundle size is <500KB gzipped with code-splitting by route
 - **NFR7:** Dashboard data polling updates display within 30 seconds of server data changes
 - **NFR8:** API response time for standard CRUD operations is <200ms (95th percentile)
-- **NFR9:** All CTC data encrypted at rest using PostgreSQL TDE
+- **NFR9:** CTC data protected with defense-in-depth: TDE plus application-controlled field-level encryption for sensitive CTC columns
 - **NFR10:** All data in transit encrypted using TLS 1.3
 - **NFR11:** JWT tokens expire after 15 minutes; refresh tokens rotate on each use
 - **NFR12:** Session cookies configured as HttpOnly, Secure, SameSite=Strict
@@ -377,6 +377,38 @@ So that **I can demonstrate compliance during audits and detect unauthorized acc
 
 ### Story 2.1: Employee CTC Record Creation
 
+### Story 2.0: CTC Encryption Foundation
+
+As a **Security-focused Engineering Team**,
+I want **CTC sensitive fields encrypted with application-controlled keys before storing in PostgreSQL**,
+So that **direct database reads by privileged DB admins do not reveal plaintext compensation data**.
+
+**Acceptance Criteria:**
+
+**Given** CTC data is persisted
+**When** salary/allowance/BPJS/THR values are written
+**Then** sensitive fields are stored as ciphertext
+**And** plaintext values are not queryable from raw SQL table reads
+
+**Given** the application reads CTC for authorized HR workflows
+**When** the requester is HR and passes RBAC checks
+**Then** data is decrypted in application/service layer only
+**And** decryption is denied for non-HR workflows
+
+**Given** key management is configured
+**When** encryption/decryption occurs
+**Then** keys are sourced from centralized key management (Vault/KMS compatible)
+**And** key version metadata is stored for rotation support
+
+**Given** encryption migration is executed
+**When** existing plaintext CTC records are migrated
+**Then** migration completes with integrity checks and rollback plan
+**And** no sensitive plaintext columns remain active after cutover
+
+---
+
+### Story 2.1: Employee CTC Record Creation
+
 As an **HR Staff member**,
 I want **to create employee CTC records with full component breakdown**,
 So that **the system has accurate cost data for project calculations**.
@@ -402,6 +434,11 @@ So that **the system has accurate cost data for project calculations**.
 **Then** the record is created with status="Active"
 **And** the daily rate is automatically calculated (monthly CTC ÷ 22 working days)
 **And** an audit log entry is created with all values
+
+**Given** CTC data is persisted
+**When** salary and allowance components are saved
+**Then** sensitive components are encrypted at the field level
+**And** direct SQL table reads do not expose plaintext values
 
 **Given** I am logged in as a non-HR role
 **When** I view top navigation or attempt to open `/ctc`

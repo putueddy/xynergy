@@ -161,7 +161,7 @@ When the first monthly P&L generates in 2 seconds instead of 2 hours of spreadsh
 | | CTC Calculation | <100ms for 1,000 employee daily rate calculations |
 | **Security** | Unauthorized CTC Access | Zero incidents (logged + alerted) |
 | | Audit Log Completeness | 100% of CTC views and mutations captured |
-| | Data Encryption | CTC encrypted at rest (PostgreSQL TDE) |
+| | Data Encryption | CTC protected with defense-in-depth (TDE + field-level encryption for sensitive CTC columns) |
 | **Integration** | ERP Revenue API Uptime | 99.5% availability |
 | | API Response Time | <500ms for revenue data ingestion |
 | | Data Sync Frequency | Real-time (on receipt) + daily reconciliation |
@@ -885,7 +885,7 @@ Xynergy HR & Financial Management is a **Single Page Application (SPA)** built w
 
 ### Security
 
-- **NFR9:** All CTC data encrypted at rest using PostgreSQL TDE
+- **NFR9:** CTC sensitive data must be encrypted with defense-in-depth: storage encryption at rest (TDE/disk) and application-controlled field-level encryption for salary/allowance/BPJS/THR components so direct DB table reads do not reveal plaintext.
 - **NFR10:** All data in transit encrypted using TLS 1.3
 - **NFR11:** JWT tokens expire after 15 minutes; refresh tokens rotate on each use
 - **NFR12:** Session cookies configured as HttpOnly, Secure, SameSite=Strict
@@ -934,4 +934,3 @@ Xynergy HR & Financial Management is a **Single Page Application (SPA)** built w
 - **NFR43:** Automated daily database backups with 7-day retention
 - **NFR44:** Point-in-time recovery capability (24-hour recovery window)
 - **NFR45:** Graceful degradation when external services (ERP) unavailable
-
