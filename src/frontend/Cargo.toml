@@ -36,6 +36,7 @@ web-sys = { version = "0.3", features = ["console", "Window", "Document", "Stora
 
 # Utilities
 console_error_panic_hook = "0.1"
+gloo-timers = { version = "0.3", features = ["futures"] }
 
 [features]
 default = ["csr"]

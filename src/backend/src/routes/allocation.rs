@@ -12,7 +12,80 @@ use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::error::{AppError, Result};
-use crate::services::{audit_payload, log_audit, user_id_from_headers};
+use crate::services::{
+    audit_log::user_claims_from_headers, audit_payload, log_audit, user_id_from_headers,
+};
+
+fn required_uuid(value: Option<Uuid>, field: &str) -> Result<Uuid> {
+    value.ok_or_else(|| AppError::Internal(format!("{} is unexpectedly null", field)))
+}
+
+async fn ensure_allocation_access(
+    pool: &PgPool,
+    headers: &HeaderMap,
+    action: &str,
+    entity_id: Uuid,
+    project_id: Option<Uuid>,
+) -> Result<(String, Uuid)> {
+    let claims = user_claims_from_headers(headers)?
+        .ok_or_else(|| AppError::Authentication("Missing token".to_string()))?;
+    let user_id = Uuid::parse_str(&claims.sub)
+        .map_err(|_| AppError::Authentication("Invalid user ID in token".to_string()))?;
+
+    let can_manage = matches!(
+        claims.role.as_str(),
+        "admin" | "department_head" | "project_manager"
+    );
+    if !can_manage {
+        log_audit(
+            pool,
+            Some(user_id),
+            "ACCESS_DENIED",
+            "allocation",
+            entity_id,
+            serde_json::json!({
+                "reason": "insufficient_permissions",
+                "attempted_role": claims.role,
+                "action": action,
+            }),
+        )
+        .await
+        .ok();
+        return Err(AppError::Forbidden("Insufficient permissions".to_string()));
+    }
+
+    if claims.role == "project_manager" {
+        let pid = project_id.ok_or_else(|| {
+            AppError::Validation("project_id is required for project manager actions".to_string())
+        })?;
+        let pm_id =
+            sqlx::query_scalar!("SELECT project_manager_id FROM projects WHERE id = $1", pid)
+                .fetch_optional(pool)
+                .await
+                .map_err(|e| AppError::Database(e.to_string()))?
+                .flatten();
+        if pm_id != Some(user_id) {
+            log_audit(
+                pool,
+                Some(user_id),
+                "ACCESS_DENIED",
+                "allocation",
+                entity_id,
+                serde_json::json!({
+                    "reason": "not_project_manager",
+                    "attempted_role": claims.role,
+                    "project_id": pid,
+                    "action": action,
+                }),
+            )
+            .await
+            .ok();
+            return Err(AppError::Forbidden("Insufficient permissions".to_string()));
+        }
+    }
+
+    Ok((claims.role, user_id))
+}
 
 /// Allocation response structure
 #[derive(Debug, Serialize)]
@@ -238,15 +311,13 @@ async fn calculate_daily_allocations(
                     })
                     .allocated_hours += hours;
 
-                daily_allocations
-                    .get_mut(&current_date)
-                    .unwrap()
-                    .assignments
-                    .push(AssignmentInfo {
+                if let Some(entry) = daily_allocations.get_mut(&current_date) {
+                    entry.assignments.push(AssignmentInfo {
                         allocation_id: alloc_id,
                         project_id: Uuid::nil(), // Will be filled if needed
                         hours,
                     });
+                }
             }
             current_date = current_date.succ_opt().unwrap_or(current_date);
         }
@@ -409,33 +480,74 @@ async fn validate_allocation_dates(
 }
 
 /// Get all allocations with project and resource names
-async fn get_allocations(State(pool): State<PgPool>) -> Result<Json<Vec<AllocationResponse>>> {
-    let allocations = sqlx::query!(
-        "SELECT a.id, a.project_id, a.resource_id, a.start_date, a.end_date, a.allocation_percentage, a.include_weekend,
-                p.name as project_name, r.name as resource_name
-         FROM allocations a
-         JOIN projects p ON a.project_id = p.id
-         JOIN resources r ON a.resource_id = r.id
-         ORDER BY a.start_date DESC"
-    )
-    .fetch_all(&pool)
-    .await
-    .map_err(|e| AppError::Database(e.to_string()))?;
+async fn get_allocations(
+    State(pool): State<PgPool>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<AllocationResponse>>> {
+    let claims = user_claims_from_headers(&headers)?
+        .ok_or_else(|| AppError::Authentication("Missing token".to_string()))?;
 
-    let response: Vec<AllocationResponse> = allocations
+    let is_pm = claims.role == "project_manager";
+    let user_id = Uuid::parse_str(&claims.sub)
+        .map_err(|_| AppError::Authentication("Invalid user ID in token".to_string()))?;
+
+    let response: Vec<AllocationResponse> = if is_pm {
+        sqlx::query!(
+            "SELECT a.id, a.project_id, a.resource_id, a.start_date, a.end_date, a.allocation_percentage, a.include_weekend,
+                    p.name as project_name, r.name as resource_name
+             FROM allocations a
+             JOIN projects p ON a.project_id = p.id
+             JOIN resources r ON a.resource_id = r.id
+             WHERE p.project_manager_id = $1
+             ORDER BY a.start_date DESC",
+             user_id
+        )
+        .fetch_all(&pool)
+        .await
+        .map_err(|e| AppError::Database(e.to_string()))?
         .into_iter()
-        .map(|a| AllocationResponse {
-            id: a.id,
-            project_id: a.project_id.expect("project_id is not null"),
-            resource_id: a.resource_id.expect("resource_id is not null"),
-            start_date: a.start_date,
-            end_date: a.end_date,
-            allocation_percentage: bigdecimal_to_f64(a.allocation_percentage),
-            include_weekend: a.include_weekend,
-            project_name: a.project_name,
-            resource_name: a.resource_name,
+        .map(|a| {
+            Ok(AllocationResponse {
+                id: a.id,
+                project_id: required_uuid(a.project_id, "allocations.project_id")?,
+                resource_id: required_uuid(a.resource_id, "allocations.resource_id")?,
+                start_date: a.start_date,
+                end_date: a.end_date,
+                allocation_percentage: bigdecimal_to_f64(a.allocation_percentage),
+                include_weekend: a.include_weekend,
+                project_name: a.project_name,
+                resource_name: a.resource_name,
+            })
         })
-        .collect();
+        .collect::<Result<Vec<_>>>()?
+    } else {
+        sqlx::query!(
+            "SELECT a.id, a.project_id, a.resource_id, a.start_date, a.end_date, a.allocation_percentage, a.include_weekend,
+                    p.name as project_name, r.name as resource_name
+             FROM allocations a
+             JOIN projects p ON a.project_id = p.id
+             JOIN resources r ON a.resource_id = r.id
+             ORDER BY a.start_date DESC"
+        )
+        .fetch_all(&pool)
+        .await
+        .map_err(|e| AppError::Database(e.to_string()))?
+        .into_iter()
+        .map(|a| {
+            Ok(AllocationResponse {
+                id: a.id,
+                project_id: required_uuid(a.project_id, "allocations.project_id")?,
+                resource_id: required_uuid(a.resource_id, "allocations.resource_id")?,
+                start_date: a.start_date,
+                end_date: a.end_date,
+                allocation_percentage: bigdecimal_to_f64(a.allocation_percentage),
+                include_weekend: a.include_weekend,
+                project_name: a.project_name,
+                resource_name: a.resource_name,
+            })
+        })
+        .collect::<Result<Vec<_>>>()?
+    };
 
     Ok(Json(response))
 }
@@ -443,8 +555,45 @@ async fn get_allocations(State(pool): State<PgPool>) -> Result<Json<Vec<Allocati
 /// Get allocations by project ID
 async fn get_allocations_by_project(
     State(pool): State<PgPool>,
+    headers: HeaderMap,
     Path(project_id): Path<Uuid>,
 ) -> Result<Json<Vec<AllocationResponse>>> {
+    let claims = user_claims_from_headers(&headers)?
+        .ok_or_else(|| AppError::Authentication("Missing token".to_string()))?;
+
+    let is_pm = claims.role == "project_manager";
+    let user_id = Uuid::parse_str(&claims.sub)
+        .map_err(|_| AppError::Authentication("Invalid user ID in token".to_string()))?;
+
+    // Check project assignment if PM
+    if is_pm {
+        let pm_id = sqlx::query_scalar!(
+            "SELECT project_manager_id FROM projects WHERE id = $1",
+            project_id
+        )
+        .fetch_optional(&pool)
+        .await
+        .map_err(|e| AppError::Database(e.to_string()))?
+        .flatten();
+
+        if pm_id != Some(user_id) {
+            log_audit(
+                &pool,
+                Some(user_id),
+                "ACCESS_DENIED",
+                "allocation",
+                project_id,
+                serde_json::json!({
+                    "reason": "not_project_manager",
+                    "attempted_role": claims.role
+                }),
+            )
+            .await
+            .ok();
+            return Err(AppError::Forbidden("Insufficient permissions".to_string()));
+        }
+    }
+
     let allocations = sqlx::query!(
         "SELECT a.id, a.project_id, a.resource_id, a.start_date, a.end_date, a.allocation_percentage, a.include_weekend,
                 p.name as project_name, r.name as resource_name
@@ -461,18 +610,20 @@ async fn get_allocations_by_project(
 
     let response: Vec<AllocationResponse> = allocations
         .into_iter()
-        .map(|a| AllocationResponse {
-            id: a.id,
-            project_id: a.project_id.expect("project_id is not null"),
-            resource_id: a.resource_id.expect("resource_id is not null"),
-            start_date: a.start_date,
-            end_date: a.end_date,
-            allocation_percentage: bigdecimal_to_f64(a.allocation_percentage),
-            include_weekend: a.include_weekend,
-            project_name: a.project_name,
-            resource_name: a.resource_name,
+        .map(|a| {
+            Ok(AllocationResponse {
+                id: a.id,
+                project_id: required_uuid(a.project_id, "allocations.project_id")?,
+                resource_id: required_uuid(a.resource_id, "allocations.resource_id")?,
+                start_date: a.start_date,
+                end_date: a.end_date,
+                allocation_percentage: bigdecimal_to_f64(a.allocation_percentage),
+                include_weekend: a.include_weekend,
+                project_name: a.project_name,
+                resource_name: a.resource_name,
+            })
         })
-        .collect();
+        .collect::<Result<Vec<_>>>()?;
 
     Ok(Json(response))
 }
@@ -480,8 +631,15 @@ async fn get_allocations_by_project(
 /// Get allocations by resource ID
 async fn get_allocations_by_resource(
     State(pool): State<PgPool>,
+    headers: HeaderMap,
     Path(resource_id): Path<Uuid>,
 ) -> Result<Json<Vec<AllocationResponse>>> {
+    let claims = user_claims_from_headers(&headers)?
+        .ok_or_else(|| AppError::Authentication("Missing token".to_string()))?;
+    let user_id = Uuid::parse_str(&claims.sub)
+        .map_err(|_| AppError::Authentication("Invalid user ID in token".to_string()))?;
+
+    let is_pm = claims.role == "project_manager";
     let allocations = sqlx::query!(
         "SELECT a.id, a.project_id, a.resource_id, a.start_date, a.end_date, a.allocation_percentage, a.include_weekend,
                 p.name as project_name, r.name as resource_name
@@ -489,8 +647,11 @@ async fn get_allocations_by_resource(
          JOIN projects p ON a.project_id = p.id
          JOIN resources r ON a.resource_id = r.id
          WHERE a.resource_id = $1
+           AND ($2 = FALSE OR p.project_manager_id = $3)
          ORDER BY a.start_date DESC",
-        resource_id
+        resource_id,
+        is_pm,
+        user_id
     )
     .fetch_all(&pool)
     .await
@@ -498,18 +659,20 @@ async fn get_allocations_by_resource(
 
     let response: Vec<AllocationResponse> = allocations
         .into_iter()
-        .map(|a| AllocationResponse {
-            id: a.id,
-            project_id: a.project_id.expect("project_id is not null"),
-            resource_id: a.resource_id.expect("resource_id is not null"),
-            start_date: a.start_date,
-            end_date: a.end_date,
-            allocation_percentage: bigdecimal_to_f64(a.allocation_percentage),
-            include_weekend: a.include_weekend,
-            project_name: a.project_name,
-            resource_name: a.resource_name,
+        .map(|a| {
+            Ok(AllocationResponse {
+                id: a.id,
+                project_id: required_uuid(a.project_id, "allocations.project_id")?,
+                resource_id: required_uuid(a.resource_id, "allocations.resource_id")?,
+                start_date: a.start_date,
+                end_date: a.end_date,
+                allocation_percentage: bigdecimal_to_f64(a.allocation_percentage),
+                include_weekend: a.include_weekend,
+                project_name: a.project_name,
+                resource_name: a.resource_name,
+            })
         })
-        .collect();
+        .collect::<Result<Vec<_>>>()?;
 
     Ok(Json(response))
 }
@@ -520,14 +683,26 @@ async fn create_allocation(
     headers: HeaderMap,
     Json(req): Json<CreateAllocationRequest>,
 ) -> Result<Json<AllocationResponse>> {
-    let audit_changes = audit_payload(None, Some(json!({
-        "project_id": req.project_id,
-        "resource_id": req.resource_id,
-        "start_date": req.start_date,
-        "end_date": req.end_date,
-        "allocation_percentage": req.allocation_percentage,
-        "include_weekend": req.include_weekend,
-    })));
+    ensure_allocation_access(
+        &pool,
+        &headers,
+        "create",
+        req.project_id,
+        Some(req.project_id),
+    )
+    .await?;
+
+    let audit_changes = audit_payload(
+        None,
+        Some(json!({
+            "project_id": req.project_id,
+            "resource_id": req.resource_id,
+            "start_date": req.start_date,
+            "end_date": req.end_date,
+            "allocation_percentage": req.allocation_percentage,
+            "include_weekend": req.include_weekend,
+        })),
+    );
     let user_id = user_id_from_headers(&headers)?;
     // Validate dates are within project dates
     validate_allocation_dates(&pool, req.project_id, req.start_date, req.end_date).await?;
@@ -590,8 +765,8 @@ async fn create_allocation(
 
     Ok(Json(AllocationResponse {
         id: allocation.id,
-        project_id: allocation.project_id.expect("project_id is not null"),
-        resource_id: allocation.resource_id.expect("resource_id is not null"),
+        project_id: required_uuid(allocation.project_id, "allocations.project_id")?,
+        resource_id: required_uuid(allocation.resource_id, "allocations.resource_id")?,
         start_date: allocation.start_date,
         end_date: allocation.end_date,
         allocation_percentage: bigdecimal_to_f64(allocation.allocation_percentage),
@@ -619,22 +794,23 @@ async fn update_allocation(
     .ok_or_else(|| AppError::NotFound(format!("Allocation {} not found", id)))?;
 
     // Determine values for validation
-    let resource_id = req
-        .resource_id
-        .or(existing.resource_id)
-        .expect("resource_id is not null");
-    let project_id = req
-        .project_id
-        .or(existing.project_id)
-        .expect("project_id is not null");
+    let resource_id = req.resource_id.or(existing.resource_id).ok_or_else(|| {
+        AppError::Internal("allocations.resource_id is unexpectedly null".to_string())
+    })?;
+    let project_id = req.project_id.or(existing.project_id).ok_or_else(|| {
+        AppError::Internal("allocations.project_id is unexpectedly null".to_string())
+    })?;
     let start_date = req
         .start_date
         .or(Some(existing.start_date))
-        .expect("start_date is not null");
-    let end_date = req
-        .end_date
-        .or(Some(existing.end_date))
-        .expect("end_date is not null");
+        .ok_or_else(|| {
+            AppError::Internal("allocations.start_date is unexpectedly null".to_string())
+        })?;
+    let end_date = req.end_date.or(Some(existing.end_date)).ok_or_else(|| {
+        AppError::Internal("allocations.end_date is unexpectedly null".to_string())
+    })?;
+
+    ensure_allocation_access(&pool, &headers, "update", id, Some(project_id)).await?;
     let existing_percentage = bigdecimal_to_f64(existing.allocation_percentage);
     let new_percentage = req.allocation_percentage.unwrap_or(existing_percentage);
     let include_weekend = req.include_weekend.unwrap_or(existing.include_weekend);
@@ -715,8 +891,8 @@ async fn update_allocation(
     .await?;
 
     // Get project and resource names
-    let project_id = allocation.project_id.expect("project_id is not null");
-    let resource_id = allocation.resource_id.expect("resource_id is not null");
+    let project_id = required_uuid(allocation.project_id, "allocations.project_id")?;
+    let resource_id = required_uuid(allocation.resource_id, "allocations.resource_id")?;
 
     let project_name = sqlx::query_scalar!("SELECT name FROM projects WHERE id = $1", project_id)
         .fetch_one(&pool)
@@ -758,6 +934,8 @@ async fn delete_allocation(
     .map_err(|e| AppError::Database(e.to_string()))?
     .ok_or_else(|| AppError::NotFound(format!("Allocation {} not found", id)))?;
 
+    ensure_allocation_access(&pool, &headers, "delete", id, existing.project_id).await?;
+
     // Delete the allocation
     sqlx::query!("DELETE FROM allocations WHERE id = $1", id)
         .execute(&pool)
@@ -765,14 +943,17 @@ async fn delete_allocation(
         .map_err(|e| AppError::Database(e.to_string()))?;
 
     let user_id = user_id_from_headers(&headers)?;
-    let audit_changes = audit_payload(Some(json!({
-        "project_id": existing.project_id,
-        "resource_id": existing.resource_id,
-        "start_date": existing.start_date,
-        "end_date": existing.end_date,
-        "allocation_percentage": bigdecimal_to_f64(existing.allocation_percentage),
-        "include_weekend": existing.include_weekend,
-    })), None);
+    let audit_changes = audit_payload(
+        Some(json!({
+            "project_id": existing.project_id,
+            "resource_id": existing.resource_id,
+            "start_date": existing.start_date,
+            "end_date": existing.end_date,
+            "allocation_percentage": bigdecimal_to_f64(existing.allocation_percentage),
+            "include_weekend": existing.include_weekend,
+        })),
+        None,
+    );
     log_audit(&pool, user_id, "delete", "allocation", id, audit_changes).await?;
 
     Ok(Json(

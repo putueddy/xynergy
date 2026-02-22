@@ -10,7 +10,9 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::error::{AppError, Result};
-use crate::services::{audit_payload, log_audit, user_id_from_headers};
+use crate::services::{
+    audit_log::user_claims_from_headers, audit_payload, log_audit, user_id_from_headers,
+};
 
 /// Project response structure
 #[derive(Debug, Serialize)]
@@ -47,15 +49,36 @@ pub struct UpdateProjectRequest {
 }
 
 /// Get all projects
-async fn get_projects(State(pool): State<PgPool>) -> Result<Json<Vec<ProjectResponse>>> {
-    let projects = sqlx::query_as!(
-        ProjectResponse,
-        "SELECT id, name, description, start_date, end_date, status, project_manager_id 
-         FROM projects ORDER BY start_date DESC"
-    )
-    .fetch_all(&pool)
-    .await
-    .map_err(|e| AppError::Database(e.to_string()))?;
+async fn get_projects(
+    State(pool): State<PgPool>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<ProjectResponse>>> {
+    let claims = user_claims_from_headers(&headers)?
+        .ok_or_else(|| AppError::Authentication("Missing token".to_string()))?;
+
+    let is_pm = claims.role == "project_manager";
+    let user_id = Uuid::parse_str(&claims.sub).unwrap_or(Uuid::nil());
+
+    let projects = if is_pm {
+        sqlx::query_as!(
+            ProjectResponse,
+            "SELECT id, name, description, start_date, end_date, status, project_manager_id 
+             FROM projects WHERE project_manager_id = $1 ORDER BY start_date DESC",
+            user_id
+        )
+        .fetch_all(&pool)
+        .await
+        .map_err(|e| AppError::Database(e.to_string()))?
+    } else {
+        sqlx::query_as!(
+            ProjectResponse,
+            "SELECT id, name, description, start_date, end_date, status, project_manager_id 
+             FROM projects ORDER BY start_date DESC"
+        )
+        .fetch_all(&pool)
+        .await
+        .map_err(|e| AppError::Database(e.to_string()))?
+    };
 
     Ok(Json(projects))
 }
@@ -63,8 +86,15 @@ async fn get_projects(State(pool): State<PgPool>) -> Result<Json<Vec<ProjectResp
 /// Get project by ID
 async fn get_project(
     State(pool): State<PgPool>,
+    headers: HeaderMap,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ProjectResponse>> {
+    let claims = user_claims_from_headers(&headers)?
+        .ok_or_else(|| AppError::Authentication("Missing token".to_string()))?;
+
+    let is_pm = claims.role == "project_manager";
+    let user_id = Uuid::parse_str(&claims.sub).unwrap_or(Uuid::nil());
+
     let project = sqlx::query_as!(
         ProjectResponse,
         "SELECT id, name, description, start_date, end_date, status, project_manager_id 
@@ -76,6 +106,25 @@ async fn get_project(
     .map_err(|e| AppError::Database(e.to_string()))?
     .ok_or_else(|| AppError::NotFound(format!("Project {} not found", id)))?;
 
+    if is_pm && project.project_manager_id != Some(user_id) {
+        // Enforce visibility constraint
+        log_audit(
+            &pool,
+            Some(user_id),
+            "ACCESS_DENIED",
+            "project",
+            id,
+            serde_json::json!({
+                "reason": "not_project_manager",
+                "attempted_role": claims.role
+            }),
+        )
+        .await
+        .ok();
+
+        return Err(AppError::Forbidden("Insufficient permissions".to_string()));
+    }
+
     Ok(Json(project))
 }
 
@@ -85,14 +134,17 @@ async fn create_project(
     headers: HeaderMap,
     Json(req): Json<CreateProjectRequest>,
 ) -> Result<Json<ProjectResponse>> {
-    let audit_changes = audit_payload(None, Some(serde_json::json!({
-        "name": req.name.clone(),
-        "description": req.description.clone(),
-        "start_date": req.start_date,
-        "end_date": req.end_date,
-        "status": req.status.clone(),
-        "project_manager_id": req.project_manager_id,
-    })));
+    let audit_changes = audit_payload(
+        None,
+        Some(serde_json::json!({
+            "name": req.name.clone(),
+            "description": req.description.clone(),
+            "start_date": req.start_date,
+            "end_date": req.end_date,
+            "status": req.status.clone(),
+            "project_manager_id": req.project_manager_id,
+        })),
+    );
     let user_id = user_id_from_headers(&headers)?;
 
     let project = sqlx::query_as!(
@@ -233,14 +285,17 @@ async fn delete_project(
         .map_err(|e| AppError::Database(e.to_string()))?;
 
     let user_id = user_id_from_headers(&headers)?;
-    let audit_changes = audit_payload(Some(serde_json::json!({
-        "name": existing.name,
-        "description": existing.description,
-        "start_date": existing.start_date,
-        "end_date": existing.end_date,
-        "status": existing.status,
-        "project_manager_id": existing.project_manager_id,
-    })), None);
+    let audit_changes = audit_payload(
+        Some(serde_json::json!({
+            "name": existing.name,
+            "description": existing.description,
+            "start_date": existing.start_date,
+            "end_date": existing.end_date,
+            "status": existing.status,
+            "project_manager_id": existing.project_manager_id,
+        })),
+        None,
+    );
     log_audit(&pool, user_id, "delete", "project", id, audit_changes).await?;
 
     Ok(Json(

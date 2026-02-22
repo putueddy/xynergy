@@ -1,0 +1,93 @@
+# generated: 2026-02-22
+# project: xynergy
+# project_key: NOKEY
+# tracking_system: file-system
+# story_location: _bmad-output/implementation-artifacts
+
+# STATUS DEFINITIONS:
+# ==================
+# Epic Status:
+#   - backlog: Epic not yet started
+#   - in-progress: Epic actively being worked on
+#   - done: All stories in epic completed
+#
+# Epic Status Transitions:
+#   - backlog → in-progress: Automatically when first story is created (via create-story)
+#   - in-progress → done: Manually when all stories reach 'done' status
+#
+# Story Status:
+#   - backlog: Story only exists in epic file
+#   - ready-for-dev: Story file created in stories folder
+#   - in-progress: Developer actively working on implementation
+#   - review: Ready for code review (via Dev's code-review workflow)
+#   - done: Story completed
+#
+# Retrospective Status:
+#   - optional: Can be completed but not required
+#   - done: Retrospective has been completed
+#
+# WORKFLOW NOTES:
+# ===============
+# - Epic transitions to 'in-progress' automatically when first story is created
+# - Stories can be worked in parallel if team capacity allows
+# - SM typically creates next story after previous one is 'done' to incorporate learnings
+# - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
+
+generated: 2026-02-22
+project: xynergy
+project_key: NOKEY
+tracking_system: file-system
+story_location: _bmad-output/implementation-artifacts
+
+development_status:
+  # Epic 1: Security & RBAC Foundation
+  epic-1: in-progress
+  1-1-user-authentication-system: done
+  1-2-role-based-access-control: done
+  1-3-row-level-security: backlog
+  1-4-audit-logging-system: backlog
+  epic-1-retrospective: optional
+  
+  # Epic 2: CTC Management
+  epic-2: backlog
+  2-1-employee-ctc-record-creation: backlog
+  2-2-ctc-revision-management: backlog
+  2-3-thr-management: backlog
+  2-4-ctc-validation-and-compliance: backlog
+  epic-2-retrospective: optional
+  
+  # Epic 3: Department Resource Assignment
+  epic-3: backlog
+  3-1-team-view-with-blended-rates: backlog
+  3-2-resource-assignment-interface: backlog
+  3-3-cost-impact-preview: backlog
+  3-4-overallocation-warnings: backlog
+  3-5-department-budget-utilization: backlog
+  epic-3-retrospective: optional
+  
+  # Epic 4: Project Budget & P&L
+  epic-4: backlog
+  4-1-project-budget-setup: backlog
+  4-2-non-resource-cost-entry: backlog
+  4-3-automatic-resource-cost-calculation: backlog
+  4-4-revenue-entry: backlog
+  4-5-pl-dashboard: backlog
+  4-6-profitability-forecasting: backlog
+  epic-4-retrospective: optional
+  
+  # Epic 5: Cash Flow & Compliance
+  epic-5: backlog
+  5-1-cash-flow-entry: backlog
+  5-2-cash-flow-dashboard: backlog
+  5-3-ctc-validation-reports: backlog
+  5-4-compliance-audit-reports: backlog
+  epic-5-retrospective: optional
+  
+  # Epic 6: Dashboard & Reporting
+  epic-6: backlog
+  6-1-role-based-dashboard: backlog
+  6-2-real-time-dashboard-updates: backlog
+  6-3-project-health-dashboard: backlog
+  6-4-team-utilization-dashboard: backlog
+  6-5-ctc-completeness-dashboard: backlog
+  epic-6-retrospective: optional

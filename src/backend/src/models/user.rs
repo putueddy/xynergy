@@ -16,6 +16,12 @@ pub struct User {
     pub department_id: Option<Uuid>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    // Auth security fields
+    pub login_attempts: Option<i32>,
+    pub locked_until: Option<DateTime<Utc>>,
+    #[serde(skip_serializing)]
+    pub refresh_token_hash: Option<String>,
+    pub last_login_at: Option<DateTime<Utc>>,
 }
 
 /// User response model (without sensitive data)

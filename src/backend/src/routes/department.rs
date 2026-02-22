@@ -86,10 +86,13 @@ async fn create_department(
     headers: HeaderMap,
     Json(req): Json<CreateDepartmentRequest>,
 ) -> Result<Json<serde_json::Value>> {
-    let audit_changes = audit_payload(None, Some(json!({
-        "name": req.name.clone(),
-        "head_id": req.head_id,
-    })));
+    let audit_changes = audit_payload(
+        None,
+        Some(json!({
+            "name": req.name.clone(),
+            "head_id": req.head_id,
+        })),
+    );
     let user_id = user_id_from_headers(&headers)?;
     // Validate head_id if provided
     if let Some(head_id) = req.head_id {
@@ -291,10 +294,13 @@ async fn delete_department(
         .map_err(|e| AppError::Database(format!("Failed to delete department: {}", e)))?;
 
     let user_id = user_id_from_headers(&headers)?;
-    let audit_changes = audit_payload(Some(json!({
-        "name": existing.name,
-        "head_id": existing.head_id,
-    })), None);
+    let audit_changes = audit_payload(
+        Some(json!({
+            "name": existing.name,
+            "head_id": existing.head_id,
+        })),
+        None,
+    );
     log_audit(&pool, user_id, "delete", "department", id, audit_changes).await?;
 
     Ok(Json(json!({"message": "Department deleted successfully"})))

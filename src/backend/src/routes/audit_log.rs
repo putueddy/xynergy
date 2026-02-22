@@ -43,8 +43,8 @@ async fn get_audit_logs(
             al.entity_id,
             al.changes,
             al.created_at,
-            u.first_name,
-            u.last_name
+            u.first_name AS "first_name?",
+            u.last_name AS "last_name?"
         FROM audit_logs al
         LEFT JOIN users u ON al.user_id = u.id
         ORDER BY al.created_at DESC
@@ -59,16 +59,15 @@ async fn get_audit_logs(
     let response = rows
         .into_iter()
         .map(|row| {
-            let user_name = if row.user_id.is_some() {
-                let full_name = format!("{} {}", row.first_name, row.last_name);
-                let trimmed = full_name.trim().to_string();
-                if trimmed.is_empty() {
+            let first_name = row.first_name.unwrap_or_default();
+            let last_name = row.last_name.unwrap_or_default();
+            let user_name = {
+                let full_name = format!("{} {}", first_name, last_name).trim().to_string();
+                if full_name.is_empty() {
                     None
                 } else {
-                    Some(trimmed)
+                    Some(full_name)
                 }
-            } else {
-                None
             };
 
             AuditLogResponse {
@@ -79,9 +78,7 @@ async fn get_audit_logs(
                 entity_type: row.entity_type,
                 entity_id: row.entity_id,
                 changes: row.changes.unwrap_or(serde_json::Value::Null),
-                created_at: row
-                    .created_at
-                    .expect("audit_logs.created_at should not be null"),
+                created_at: row.created_at.unwrap_or_else(Utc::now),
             }
         })
         .collect();

@@ -1,6 +1,7 @@
 pub mod allocation;
 pub mod audit_log;
 pub mod auth;
+pub mod ctc;
 pub mod department;
 pub mod holiday;
 pub mod project;
@@ -10,6 +11,7 @@ pub mod user;
 pub use allocation::allocation_routes;
 pub use audit_log::audit_log_routes;
 pub use auth::{auth_routes, Claims};
+pub use ctc::ctc_routes;
 pub use department::department_routes;
 pub use holiday::holiday_routes;
 pub use project::project_routes;

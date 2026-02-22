@@ -3,6 +3,17 @@ use crate::components::{Footer, Header};
 use leptos::*;
 use leptos_router::*;
 
+fn role_dashboard_path(role: &str) -> &'static str {
+    match role {
+        "admin" => "/settings/users",
+        "hr" => "/resources",
+        "department_head" => "/allocations",
+        "project_manager" => "/projects",
+        "finance" => "/dashboard",
+        _ => "/dashboard",
+    }
+}
+
 /// Login page component
 #[component]
 pub fn Login() -> impl IntoView {
@@ -20,7 +31,12 @@ pub fn Login() -> impl IntoView {
         let navigate = navigate.clone();
         create_effect(move |_| {
             if auth.is_authenticated.get() {
-                navigate("/dashboard", Default::default());
+                let path = auth
+                    .user
+                    .get()
+                    .map(|u| role_dashboard_path(&u.role).to_string())
+                    .unwrap_or_else(|| "/dashboard".to_string());
+                navigate(&path, Default::default());
             }
         });
     }
@@ -41,11 +57,14 @@ pub fn Login() -> impl IntoView {
             spawn_local(async move {
                 match login_user(email_val, password_val).await {
                     Ok(response) => {
+                        let destination = role_dashboard_path(&response.user.role).to_string();
                         auth.user.set(Some(response.user));
                         auth.token.set(Some(response.token));
-                        navigate("/dashboard", Default::default());
+                        auth.refresh_token.set(Some(response.refresh_token));
+                        navigate(&destination, Default::default());
                     }
                     Err(e) => {
+                        // Display generic error message (no user enumeration)
                         set_error.set(Some(e));
                         set_loading.set(false);
                     }

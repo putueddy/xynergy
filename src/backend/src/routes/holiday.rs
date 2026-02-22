@@ -110,11 +110,14 @@ pub async fn create_holiday(
     .map_err(|e| AppError::Database(e.to_string()))?;
 
     let user_id = user_id_from_headers(&headers)?;
-    let audit_changes = audit_payload(None, Some(serde_json::json!({
-        "name": holiday.name,
-        "date": holiday.date,
-        "description": holiday.description,
-    })));
+    let audit_changes = audit_payload(
+        None,
+        Some(serde_json::json!({
+            "name": holiday.name,
+            "date": holiday.date,
+            "description": holiday.description,
+        })),
+    );
     log_audit(
         &pool,
         user_id,
@@ -248,11 +251,14 @@ pub async fn delete_holiday(
         .map_err(|e| AppError::Database(e.to_string()))?;
 
     let user_id = user_id_from_headers(&headers)?;
-    let audit_changes = audit_payload(Some(serde_json::json!({
-        "name": existing.name,
-        "date": existing.date,
-        "description": existing.description,
-    })), None);
+    let audit_changes = audit_payload(
+        Some(serde_json::json!({
+            "name": existing.name,
+            "date": existing.date,
+            "description": existing.description,
+        })),
+        None,
+    );
     log_audit(&pool, user_id, "delete", "holiday", id, audit_changes).await?;
 
     Ok(StatusCode::NO_CONTENT)

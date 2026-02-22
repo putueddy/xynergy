@@ -24,11 +24,7 @@ pub fn ResourceForm(
         if let Some(data) = initial_data.get() {
             set_name.set(data.name);
             set_resource_type.set(data.resource_type);
-            set_capacity.set(
-                data.capacity
-                    .map(|c| c.to_string())
-                    .unwrap_or_default(),
-            );
+            set_capacity.set(data.capacity.map(|c| c.to_string()).unwrap_or_default());
         } else {
             set_name.set(String::new());
             set_resource_type.set(String::new());

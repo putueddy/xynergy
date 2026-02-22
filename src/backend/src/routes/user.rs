@@ -11,10 +11,44 @@ use uuid::Uuid;
 
 use crate::error::{AppError, Result};
 use crate::routes::auth::hash_password;
-use crate::services::{audit_payload, log_audit, user_id_from_headers};
+use crate::services::{
+    audit_log::user_claims_from_headers, audit_payload, log_audit, user_id_from_headers,
+};
+
+/// Helper to ensure standard user management routes are only for admins.
+async fn require_admin(pool: &PgPool, headers: &HeaderMap) -> Result<()> {
+    let claims = user_claims_from_headers(headers)?
+        .ok_or_else(|| AppError::Authentication("Missing token".to_string()))?;
+
+    if claims.role != "admin" {
+        // Log denied attempt
+        log_audit(
+            pool,
+            Uuid::parse_str(&claims.sub).ok(),
+            "ACCESS_DENIED",
+            "user_management",
+            Uuid::nil(),
+            json!({
+                "reason": "insufficient_permissions",
+                "attempted_role": claims.role
+            }),
+        )
+        .await
+        .ok();
+
+        return Err(AppError::Forbidden("Insufficient permissions".to_string()));
+    }
+
+    Ok(())
+}
 
 /// Get all users
-async fn get_users(State(pool): State<PgPool>) -> Result<Json<serde_json::Value>> {
+async fn get_users(
+    State(pool): State<PgPool>,
+    headers: HeaderMap,
+) -> Result<Json<serde_json::Value>> {
+    require_admin(&pool, &headers).await?;
+
     let users = sqlx::query!(
         "SELECT id, email, first_name, last_name, role, department_id 
          FROM users ORDER BY last_name, first_name"
@@ -43,8 +77,11 @@ async fn get_users(State(pool): State<PgPool>) -> Result<Json<serde_json::Value>
 /// Get user by ID
 async fn get_user(
     State(pool): State<PgPool>,
+    headers: HeaderMap,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>> {
+    require_admin(&pool, &headers).await?;
+
     let user = sqlx::query!(
         "SELECT id, email, first_name, last_name, role, department_id 
          FROM users WHERE id = $1",
@@ -82,13 +119,18 @@ async fn create_user(
     headers: HeaderMap,
     Json(req): Json<CreateUserRequest>,
 ) -> Result<Json<serde_json::Value>> {
-    let audit_changes = audit_payload(None, Some(json!({
-        "email": req.email.clone(),
-        "first_name": req.first_name.clone(),
-        "last_name": req.last_name.clone(),
-        "role": req.role.clone(),
-        "department_id": req.department_id,
-    })));
+    require_admin(&pool, &headers).await?;
+
+    let audit_changes = audit_payload(
+        None,
+        Some(json!({
+            "email": req.email.clone(),
+            "first_name": req.first_name.clone(),
+            "last_name": req.last_name.clone(),
+            "role": req.role.clone(),
+            "department_id": req.department_id,
+        })),
+    );
     let user_id = user_id_from_headers(&headers)?;
 
     // Hash the password
@@ -138,6 +180,8 @@ async fn update_user(
     Path(id): Path<Uuid>,
     Json(req): Json<UpdateUserRequest>,
 ) -> Result<Json<serde_json::Value>> {
+    require_admin(&pool, &headers).await?;
+
     // Check if user exists
     let existing = sqlx::query!(
         "SELECT id, email, first_name, last_name, role, department_id FROM users WHERE id = $1",
@@ -179,7 +223,7 @@ async fn update_user(
         })));
     }
 
-    let existing = existing.expect("checked user exists");
+    let existing = existing.ok_or_else(|| AppError::NotFound(format!("User {} not found", id)))?;
     let before_email = existing.email.clone();
     let before_first = existing.first_name.clone();
     let before_last = existing.last_name.clone();
@@ -248,6 +292,8 @@ async fn delete_user(
     headers: HeaderMap,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>> {
+    require_admin(&pool, &headers).await?;
+
     // Check if user exists
     let existing = sqlx::query!(
         "SELECT id, email, first_name, last_name, role, department_id FROM users WHERE id = $1",
@@ -261,7 +307,7 @@ async fn delete_user(
         return Err(AppError::NotFound(format!("User {} not found", id)));
     }
 
-    let existing = existing.expect("checked user exists");
+    let existing = existing.ok_or_else(|| AppError::NotFound(format!("User {} not found", id)))?;
 
     sqlx::query!("DELETE FROM users WHERE id = $1", id)
         .execute(&pool)
@@ -269,13 +315,16 @@ async fn delete_user(
         .map_err(|e| AppError::Database(format!("Failed to delete user: {}", e)))?;
 
     let user_id = user_id_from_headers(&headers)?;
-    let audit_changes = audit_payload(Some(json!({
-        "email": existing.email,
-        "first_name": existing.first_name,
-        "last_name": existing.last_name,
-        "role": existing.role,
-        "department_id": existing.department_id,
-    })), None);
+    let audit_changes = audit_payload(
+        Some(json!({
+            "email": existing.email,
+            "first_name": existing.first_name,
+            "last_name": existing.last_name,
+            "role": existing.role,
+            "department_id": existing.department_id,
+        })),
+        None,
+    );
     log_audit(&pool, user_id, "delete", "user", id, audit_changes).await?;
 
     Ok(Json(json!({"message": "User deleted successfully"})))

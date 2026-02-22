@@ -1,10 +1,14 @@
 ---
-description: 'Structural editor that proposes cuts, reorganization,
-    and simplification while preserving comprehension'
+name: 'editorial-review-structure'
+description: 'Structural editor that proposes cuts, reorganization, and simplification while preserving comprehension'
 ---
 
-# Editorial Review - Structure
+Execute the BMAD 'editorial-review-structure' task.
 
-Read the entire task file at: _bmad/core/tasks/editorial-review-structure.xml
+TASK INSTRUCTIONS:
 
-Follow all instructions in the task file exactly as written.
+1. LOAD the task file from {project-root}/_bmad/core/tasks/editorial-review-structure.xml
+2. READ its entire contents
+3. FOLLOW every instruction precisely as specified
+
+TASK FILE: {project-root}/_bmad/core/tasks/editorial-review-structure.xml

@@ -19,6 +19,9 @@ pub enum AppError {
     #[error("Authentication error: {0}")]
     Authentication(String),
 
+    #[error("{0}")]
+    Forbidden(String),
+
     #[error("Not found: {0}")]
     NotFound(String),
 
@@ -47,6 +50,7 @@ impl IntoResponse for AppError {
                 "AUTHENTICATION_ERROR",
                 self.to_string(),
             ),
+            AppError::Forbidden(_) => (StatusCode::FORBIDDEN, "FORBIDDEN_ERROR", self.to_string()),
             AppError::NotFound(_) => (StatusCode::NOT_FOUND, "NOT_FOUND", self.to_string()),
             AppError::Internal(_) => (
                 StatusCode::INTERNAL_SERVER_ERROR,

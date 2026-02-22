@@ -109,13 +109,16 @@ async fn create_resource(
     headers: HeaderMap,
     Json(req): Json<CreateResourceRequest>,
 ) -> Result<Json<ResourceResponse>> {
-    let audit_changes = audit_payload(None, Some(json!({
-        "name": req.name.clone(),
-        "resource_type": req.resource_type.clone(),
-        "capacity": req.capacity,
-        "department_id": req.department_id,
-        "skills": req.skills.clone(),
-    })));
+    let audit_changes = audit_payload(
+        None,
+        Some(json!({
+            "name": req.name.clone(),
+            "resource_type": req.resource_type.clone(),
+            "capacity": req.capacity,
+            "department_id": req.department_id,
+            "skills": req.skills.clone(),
+        })),
+    );
     let user_id = user_id_from_headers(&headers)?;
 
     let capacity_decimal = f64_to_bigdecimal(req.capacity);
@@ -266,13 +269,16 @@ async fn delete_resource(
         .map_err(|e| AppError::Database(e.to_string()))?;
 
     let user_id = user_id_from_headers(&headers)?;
-    let audit_changes = audit_payload(Some(json!({
-        "name": existing.name,
-        "resource_type": existing.resource_type,
-        "capacity": bigdecimal_to_f64(existing.capacity),
-        "department_id": existing.department_id,
-        "skills": existing.skills,
-    })), None);
+    let audit_changes = audit_payload(
+        Some(json!({
+            "name": existing.name,
+            "resource_type": existing.resource_type,
+            "capacity": bigdecimal_to_f64(existing.capacity),
+            "department_id": existing.department_id,
+            "skills": existing.skills,
+        })),
+        None,
+    );
     log_audit(&pool, user_id, "delete", "resource", id, audit_changes).await?;
 
     Ok(Json(json!({"message": "Resource deleted successfully"})))

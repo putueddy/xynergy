@@ -9,7 +9,7 @@ pub mod gantt;
 pub mod pages;
 pub mod timeline;
 
-use auth::{provide_auth_context, AuthContext};
+use auth::provide_auth_context;
 use pages::{
     allocations::Allocations,
     dashboard::Dashboard,

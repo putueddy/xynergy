@@ -38,7 +38,7 @@ pub fn audit_payload(before: Option<Value>, after: Option<Value>) -> Value {
     Value::Object(map)
 }
 
-pub fn user_id_from_headers(headers: &HeaderMap) -> Result<Option<Uuid>> {
+pub fn user_claims_from_headers(headers: &HeaderMap) -> Result<Option<Claims>> {
     let auth_header = match headers.get(axum::http::header::AUTHORIZATION) {
         Some(header) => header.to_str().map_err(|_| {
             AppError::Authentication("Invalid authorization header format".to_string())
@@ -60,8 +60,16 @@ pub fn user_id_from_headers(headers: &HeaderMap) -> Result<Option<Uuid>> {
     )
     .map_err(|e| AppError::Authentication(format!("Invalid token: {}", e)))?;
 
-    let user_id = Uuid::parse_str(&token_data.claims.sub)
-        .map_err(|_| AppError::Authentication("Invalid user ID in token".to_string()))?;
+    Ok(Some(token_data.claims))
+}
 
-    Ok(Some(user_id))
+pub fn user_id_from_headers(headers: &HeaderMap) -> Result<Option<Uuid>> {
+    let claims_opt = user_claims_from_headers(headers)?;
+    if let Some(claims) = claims_opt {
+        let user_id = Uuid::parse_str(&claims.sub)
+            .map_err(|_| AppError::Authentication("Invalid user ID in token".to_string()))?;
+        Ok(Some(user_id))
+    } else {
+        Ok(None)
+    }
 }

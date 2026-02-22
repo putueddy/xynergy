@@ -47,7 +47,7 @@ pub fn TimelineChart(
                 }
 
                 let js_groups = groups_to_js_array(&groups_data);
-                let mut js_items = items_to_js_array(&items_data);
+                let js_items = items_to_js_array(&items_data);
 
                 // Add holiday background items
                 let holiday_items = create_holiday_background_items(&holidays);

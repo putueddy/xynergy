@@ -2,8 +2,8 @@
   "workflow_version": "1.2.0",
   "timestamps": {
     "started": "2026-01-29T23:10:00Z",
-    "last_updated": "2026-01-29T23:15:00Z",
-    "completed": "2026-01-29T23:15:00Z"
+    "last_updated": "2026-02-01T00:00:00Z",
+    "completed": "2026-02-01T00:00:00Z"
   },
   "mode": "greenfield_planning",
   "scan_level": "planning",
@@ -24,6 +24,36 @@
     }
   ],
   "current_step": "completed",
+  "deep_dive_targets": [
+    {
+      "target_name": "Auth & User Management",
+      "target_path": "src/backend/src/routes/auth.rs, src/backend/src/routes/user.rs",
+      "files_analyzed": 2,
+      "output_file": "deep-dive-auth-user-management.md",
+      "timestamp": "2026-02-01T00:00:00Z"
+    },
+    {
+      "target_name": "Resource & Department Management",
+      "target_path": "src/backend/src/routes/resource.rs, src/backend/src/routes/department.rs",
+      "files_analyzed": 2,
+      "output_file": "deep-dive-resource-department-management.md",
+      "timestamp": "2026-02-01T00:00:00Z"
+    },
+    {
+      "target_name": "Project & Allocation Management",
+      "target_path": "src/backend/src/routes/project.rs, src/backend/src/routes/allocation.rs",
+      "files_analyzed": 2,
+      "output_file": "deep-dive-project-allocation-management.md",
+      "timestamp": "2026-02-01T00:00:00Z"
+    },
+    {
+      "target_name": "Settings & Audit System",
+      "target_path": "src/backend/src/routes/holiday.rs, src/backend/src/routes/audit_log.rs, src/backend/src/services/audit_log.rs",
+      "files_analyzed": 3,
+      "output_file": "deep-dive-settings-audit.md",
+      "timestamp": "2026-02-01T00:00:00Z"
+    }
+  ],
   "findings": {
     "project_classification": {
       "type": "greenfield",
@@ -66,7 +96,11 @@
     "docs/architecture.md",
     "docs/tech-stack.md",
     "docs/development-guide.md",
-    "docs/environment-setup.md"
+    "docs/environment-setup.md",
+    "docs/deep-dive-auth-user-management.md",
+    "docs/deep-dive-resource-department-management.md",
+    "docs/deep-dive-project-allocation-management.md",
+    "docs/deep-dive-settings-audit.md"
   ],
   "resume_instructions": "Documentation generation complete. Ready for implementation phase."
 }

@@ -1,7 +1,9 @@
 use crate::auth::{logout_user, use_auth};
 use crate::components::{Footer, Header};
+use chrono::NaiveDate;
 use leptos::*;
 use leptos_router::*;
+use serde::Deserialize;
 
 /// Dashboard page component
 #[component]
@@ -28,6 +30,55 @@ pub fn Dashboard() -> impl IntoView {
     };
 
     let user = auth.user;
+    let (resources_count, set_resources_count) = create_signal(0usize);
+    let (active_projects_count, set_active_projects_count) = create_signal(0usize);
+    let (allocations_count, set_allocations_count) = create_signal(0usize);
+    let (upcoming_deadlines, set_upcoming_deadlines) = create_signal(Vec::<ProjectSummary>::new());
+    let (recent_activity, set_recent_activity) = create_signal(Vec::<AuditLogEntry>::new());
+    let (dashboard_error, set_dashboard_error) = create_signal(Option::<String>::None);
+    let (loading, set_loading) = create_signal(false);
+
+    create_effect(move |_| {
+        set_loading.set(true);
+        spawn_local(async move {
+            let mut had_error = None;
+
+            match fetch_resources_count().await {
+                Ok(count) => set_resources_count.set(count),
+                Err(e) => had_error = Some(e),
+            }
+
+            match fetch_allocations_count().await {
+                Ok(count) => set_allocations_count.set(count),
+                Err(e) => had_error = Some(e),
+            }
+
+            match fetch_projects().await {
+                Ok(projects) => {
+                    let active = projects.iter().filter(|p| p.status == "active").count();
+                    set_active_projects_count.set(active);
+
+                    let today = chrono::Local::now().date_naive();
+                    let mut upcoming: Vec<ProjectSummary> = projects
+                        .into_iter()
+                        .filter(|p| parse_date(&p.end_date).map(|d| d >= today).unwrap_or(false))
+                        .collect();
+                    upcoming.sort_by(|a, b| a.end_date.cmp(&b.end_date));
+                    upcoming.truncate(5);
+                    set_upcoming_deadlines.set(upcoming);
+                }
+                Err(e) => had_error = Some(e),
+            }
+
+            match fetch_audit_logs().await {
+                Ok(entries) => set_recent_activity.set(entries),
+                Err(e) => had_error = Some(e),
+            }
+
+            set_dashboard_error.set(had_error);
+            set_loading.set(false);
+        });
+    });
 
     view! {
         <div class="min-h-screen flex flex-col bg-gray-50 dark:bg-gray-900">
@@ -67,7 +118,9 @@ pub fn Dashboard() -> impl IntoView {
                                 </div>
                                 <div class="ml-4">
                                     <h3 class="text-lg font-medium text-gray-900 dark:text-white">"Resources"</h3>
-                                    <p class="text-sm text-gray-500 dark:text-gray-400">"Manage team members and assets"</p>
+                                    <p class="text-2xl font-semibold text-gray-900 dark:text-white">
+                                        {move || resources_count.get().to_string()}
+                                    </p>
                                 </div>
                             </div>
                         </div>
@@ -80,8 +133,10 @@ pub fn Dashboard() -> impl IntoView {
                                     </svg>
                                 </div>
                                 <div class="ml-4">
-                                    <h3 class="text-lg font-medium text-gray-900 dark:text-white">"Projects"</h3>
-                                    <p class="text-sm text-gray-500 dark:text-gray-400">"View and manage projects"</p>
+                                    <h3 class="text-lg font-medium text-gray-900 dark:text-white">"Active Projects"</h3>
+                                    <p class="text-2xl font-semibold text-gray-900 dark:text-white">
+                                        {move || active_projects_count.get().to_string()}
+                                    </p>
                                 </div>
                             </div>
                         </div>
@@ -95,25 +150,191 @@ pub fn Dashboard() -> impl IntoView {
                                 </div>
                                 <div class="ml-4">
                                     <h3 class="text-lg font-medium text-gray-900 dark:text-white">"Allocations"</h3>
-                                    <p class="text-sm text-gray-500 dark:text-gray-400">"Schedule resources"</p>
+                                    <p class="text-2xl font-semibold text-gray-900 dark:text-white">
+                                        {move || allocations_count.get().to_string()}
+                                    </p>
                                 </div>
                             </div>
                         </div>
                     </div>
 
-                    <div class="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-6">
-                        <h3 class="text-lg font-medium text-blue-900 dark:text-blue-200 mb-2">"Coming Soon"</h3>
-                        <ul class="list-disc list-inside text-blue-800 dark:text-blue-300 space-y-1">
-                            <li>"Interactive Gantt charts"</li>
-                            <li>"Resource allocation interface"</li>
-                            <li>"Project management tools"</li>
-                            <li>"Team collaboration features"</li>
-                        </ul>
+                    {move || dashboard_error.get().map(|err| {
+                        view! {
+                            <div class="rounded-md bg-red-50 p-4 dark:bg-red-900/20">
+                                <div class="flex">
+                                    <div class="ml-3">
+                                        <h3 class="text-sm font-medium text-red-800 dark:text-red-200">
+                                            {err}
+                                        </h3>
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                    })}
+
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <div class="bg-white dark:bg-gray-800 shadow rounded-lg p-6">
+                            <div class="flex items-center justify-between mb-4">
+                                <h3 class="text-lg font-medium text-gray-900 dark:text-white">"Upcoming Deadlines"</h3>
+                                {move || {
+                                    if loading.get() {
+                                        view! { <span class="text-sm text-gray-500">"Loading..."</span> }.into_view()
+                                    } else {
+                                        view! { <span></span> }.into_view()
+                                    }
+                                }}
+                            </div>
+                            {move || {
+                                let items = upcoming_deadlines.get();
+                                if items.is_empty() {
+                                    view! { <p class="text-sm text-gray-500 dark:text-gray-400">"No upcoming deadlines."</p> }.into_view()
+                                } else {
+                                    view! {
+                                        <ul class="space-y-3">
+                                            {items.into_iter().map(|p| {
+                                                view! {
+                                                    <li class="flex items-center justify-between">
+                                                        <span class="text-sm font-medium text-gray-900 dark:text-white">{p.name}</span>
+                                                        <span class="text-sm text-gray-500 dark:text-gray-400">{p.end_date}</span>
+                                                    </li>
+                                                }
+                                            }).collect_view()}
+                                        </ul>
+                                    }.into_view()
+                                }
+                            }}
+                        </div>
+
+                        <div class="bg-white dark:bg-gray-800 shadow rounded-lg p-6">
+                            <div class="flex items-center justify-between mb-4">
+                                <h3 class="text-lg font-medium text-gray-900 dark:text-white">"Recent Activity"</h3>
+                                {move || {
+                                    if loading.get() {
+                                        view! { <span class="text-sm text-gray-500">"Loading..."</span> }.into_view()
+                                    } else {
+                                        view! { <span></span> }.into_view()
+                                    }
+                                }}
+                            </div>
+                            {move || {
+                                let items = recent_activity.get();
+                                if items.is_empty() {
+                                    view! { <p class="text-sm text-gray-500 dark:text-gray-400">"No recent activity."</p> }.into_view()
+                                } else {
+                                    view! {
+                                        <ul class="space-y-3">
+                                            {items.into_iter().map(|entry| {
+                                                let user_label = entry.user_name.unwrap_or_else(|| "System".to_string());
+                                                let date_label = entry
+                                                    .created_at
+                                                    .split('T')
+                                                    .next()
+                                                    .unwrap_or(&entry.created_at)
+                                                    .to_string();
+                                                let action_label = format!("{} {}", entry.action, entry.entity_type);
+                                                view! {
+                                                    <li class="flex items-center justify-between">
+                                                        <span class="text-sm text-gray-700 dark:text-gray-300">
+                                                            {format!("{} {}", user_label, action_label)}
+                                                        </span>
+                                                        <span class="text-xs text-gray-500 dark:text-gray-400">{date_label}</span>
+                                                    </li>
+                                                }
+                                            }).collect_view()}
+                                        </ul>
+                                    }.into_view()
+                                }
+                            }}
+                        </div>
                     </div>
                 </div>
             </main>
 
             <Footer/>
         </div>
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct ProjectSummary {
+    name: String,
+    end_date: String,
+    status: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct AuditLogEntry {
+    user_name: Option<String>,
+    action: String,
+    entity_type: String,
+    created_at: String,
+}
+
+fn parse_date(value: &str) -> Option<NaiveDate> {
+    NaiveDate::parse_from_str(value, "%Y-%m-%d").ok()
+}
+
+async fn fetch_resources_count() -> Result<usize, String> {
+    let response = reqwest::get("http://localhost:3000/api/v1/resources")
+        .await
+        .map_err(|e| format!("Failed to fetch resources: {}", e))?;
+
+    if response.status().is_success() {
+        let items: Vec<serde_json::Value> = response
+            .json()
+            .await
+            .map_err(|e| format!("Failed to parse resources: {}", e))?;
+        Ok(items.len())
+    } else {
+        Err(format!("Failed to fetch resources: {}", response.status()))
+    }
+}
+
+async fn fetch_allocations_count() -> Result<usize, String> {
+    let response = reqwest::get("http://localhost:3000/api/v1/allocations")
+        .await
+        .map_err(|e| format!("Failed to fetch allocations: {}", e))?;
+
+    if response.status().is_success() {
+        let items: Vec<serde_json::Value> = response
+            .json()
+            .await
+            .map_err(|e| format!("Failed to parse allocations: {}", e))?;
+        Ok(items.len())
+    } else {
+        Err(format!(
+            "Failed to fetch allocations: {}",
+            response.status()
+        ))
+    }
+}
+
+async fn fetch_projects() -> Result<Vec<ProjectSummary>, String> {
+    let response = reqwest::get("http://localhost:3000/api/v1/projects")
+        .await
+        .map_err(|e| format!("Failed to fetch projects: {}", e))?;
+
+    if response.status().is_success() {
+        response
+            .json::<Vec<ProjectSummary>>()
+            .await
+            .map_err(|e| format!("Failed to parse projects: {}", e))
+    } else {
+        Err(format!("Failed to fetch projects: {}", response.status()))
+    }
+}
+
+async fn fetch_audit_logs() -> Result<Vec<AuditLogEntry>, String> {
+    let response = reqwest::get("http://localhost:3000/api/v1/audit-logs?limit=10")
+        .await
+        .map_err(|e| format!("Failed to fetch audit logs: {}", e))?;
+
+    if response.status().is_success() {
+        response
+            .json::<Vec<AuditLogEntry>>()
+            .await
+            .map_err(|e| format!("Failed to parse audit logs: {}", e))
+    } else {
+        Err(format!("Failed to fetch audit logs: {}", response.status()))
     }
 }

@@ -46,6 +46,15 @@
 - [Deployment Guide](./deployment-guide.md) _(To be generated)_
 - [Containerization](./containerization.md) _(To be generated)_
 
+## Deep-Dive Documentation
+
+Detailed exhaustive analysis of specific areas:
+
+- [Auth & User Management Deep-Dive](./deep-dive-auth-user-management.md) - Comprehensive analysis of authentication and user management API routes (2 files, 435 LOC) - Generated 2026-02-01
+- [Resource & Department Management Deep-Dive](./deep-dive-resource-department-management.md) - Comprehensive analysis of resource and department management API routes with BigDecimal handling and audit patterns (2 files, 636 LOC) - Generated 2026-02-01
+- [Project & Allocation Management Deep-Dive](./deep-dive-project-allocation-management.md) - Core business logic analysis with complex capacity validation, holiday handling, and resource allocation algorithms (2 files, 1,058 LOC) - Generated 2026-02-01
+- [Settings & Audit System Deep-Dive](./deep-dive-settings-audit.md) - Holiday management and comprehensive audit logging infrastructure with JWT integration (3 files, 430 LOC) - Generated 2026-02-01
+
 ---
 
 ## Project Structure
@@ -119,6 +128,6 @@ Once implementation begins, the following documents will be auto-generated:
 ---
 
 *Generated: 2026-01-29*  
-*Last Updated: 2026-01-29*
-*Documents Generated: 4*  
-*Documentation Version: 1.0*
+*Last Updated: 2026-02-01*
+*Documents Generated: 5*  
+*Documentation Version: 1.1*
