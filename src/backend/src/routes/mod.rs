@@ -6,6 +6,7 @@ pub mod department;
 pub mod holiday;
 pub mod project;
 pub mod resource;
+pub mod team;
 pub mod thr;
 pub mod user;
 
@@ -17,5 +18,6 @@ pub use department::department_routes;
 pub use holiday::holiday_routes;
 pub use project::project_routes;
 pub use resource::resource_routes;
+pub use team::team_routes;
 pub use thr::thr_routes;
 pub use user::user_routes;

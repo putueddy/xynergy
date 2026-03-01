@@ -61,10 +61,14 @@ pub fn Header() -> impl IntoView {
                             let role = auth.user.get().map(|u| u.role).unwrap_or_default();
                             let is_hr = role == "hr";
                             let is_dept_head = role == "department_head";
+                            let is_admin = role == "admin";
 
                             if is_hr {
                                 view! {
                                     <>
+                                        <a href="/team" class="text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400">
+                                            "My Team"
+                                        </a>
                                         <a href="/ctc/completeness" class="text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400">
                                             "CTC Status"
                                         </a>
@@ -80,8 +84,20 @@ pub fn Header() -> impl IntoView {
                             } else if is_dept_head {
                                 view! {
                                     <>
+                                        <a href="/team" class="text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400">
+                                            "My Team"
+                                        </a>
                                         <a href="/ctc/completeness" class="text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400">
                                             "CTC Status"
+                                        </a>
+                                    </>
+                                }
+                                    .into_view()
+                            } else if is_admin {
+                                view! {
+                                    <>
+                                        <a href="/team" class="text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400">
+                                            "My Team"
                                         </a>
                                     </>
                                 }

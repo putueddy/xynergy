@@ -321,6 +321,7 @@ fn api_routes() -> Router<PgPool> {
         .merge(routes::audit_log_routes())
         .merge(routes::ctc_routes())
         .merge(routes::thr_routes())
+        .merge(routes::team_routes())
 }
 
 /// Run the server

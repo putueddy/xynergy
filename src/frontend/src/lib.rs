@@ -21,6 +21,7 @@ use pages::{
     projects::Projects,
     resources::Resources,
     settings::{SettingsDepartmentsPage, SettingsHolidaysPage, SettingsPage, SettingsUsersPage},
+    team::TeamPage,
     thr::ThrManagement,
 };
 
@@ -55,6 +56,7 @@ pub fn App() -> impl IntoView {
                     <Route path="/resources" view=Resources/>
                     <Route path="/projects" view=Projects/>
                     <Route path="/allocations" view=Allocations/>
+                    <Route path="/team" view=TeamPage/>
                     <Route path="/ctc" view=CtcManagement/>
                     <Route path="/ctc/completeness" view=CtcCompleteness/>
                     <Route path="/thr" view=ThrManagement/>
