@@ -9,6 +9,7 @@ pub mod not_found;
 pub mod projects;
 pub mod resources;
 pub mod settings;
+pub mod thr;
 pub mod users;
 
 pub use allocations::Allocations;
@@ -22,4 +23,5 @@ pub use not_found::NotFound;
 pub use projects::Projects;
 pub use resources::Resources;
 pub use settings::SettingsPage;
+pub use thr::ThrManagement;
 pub use users::UsersContent;

@@ -60,9 +60,14 @@ pub fn Header() -> impl IntoView {
                         {move || {
                             if auth.user.get().map(|u| u.role == "hr").unwrap_or(false) {
                                 view! {
-                                    <a href="/ctc" class="text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400">
-                                        "CTC"
-                                    </a>
+                                    <>
+                                        <a href="/ctc" class="text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400">
+                                            "CTC"
+                                        </a>
+                                        <a href="/thr" class="text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400">
+                                            "THR"
+                                        </a>
+                                    </>
                                 }
                                     .into_view()
                             } else {

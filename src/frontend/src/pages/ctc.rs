@@ -642,6 +642,7 @@ pub fn CtcManagement() -> impl IntoView {
                             <p class="text-gray-900 dark:text-white">{format!("BPJS Ketenagakerjaan Employee: {}", p["bpjs"]["ketenagakerjaan"]["employee"].as_i64().unwrap_or(0))}</p>
                             <p class="text-gray-900 dark:text-white">{format!("Total Monthly CTC: {}", p["total_monthly_ctc"].as_i64().unwrap_or(0))}</p>
                             <p class="text-gray-900 dark:text-white">{format!("Daily Rate: {:.2}", p["daily_rate"].as_f64().unwrap_or(0.0))}</p>
+                            <p class="text-gray-900 dark:text-white">{format!("THR Monthly Accrual: {}", p["thr_monthly_accrual"].as_i64().unwrap_or(0))}</p>
                         </div>
                     })}
 

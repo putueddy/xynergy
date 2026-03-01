@@ -2,6 +2,7 @@
 .env.local
 .env.*.local
 /target
+target/
 **/*.rs.bk
 Cargo.lock
 *.log
@@ -17,3 +18,5 @@ build/
 *.tar.gz
 *.zip
 db_data/
+*.png
+nohup.out
