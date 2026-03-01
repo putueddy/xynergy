@@ -692,6 +692,21 @@ async fn create_allocation(
     )
     .await?;
 
+    let ctc_exists = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM ctc_records WHERE resource_id = $1 AND status = 'Active')",
+    )
+    .bind(req.resource_id)
+    .fetch_one(&pool)
+    .await
+    .map_err(|e| AppError::Database(e.to_string()))?;
+
+    if !ctc_exists {
+        return Err(AppError::Validation(
+            "Cannot assign resource without CTC data. Contact HR to complete CTC entry for this employee."
+                .to_string(),
+        ));
+    }
+
     let audit_changes = audit_payload(
         None,
         Some(json!({

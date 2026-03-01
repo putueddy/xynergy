@@ -39,6 +39,10 @@ fn current_access_token(auth: &AuthContext) -> Option<String> {
 pub fn CtcManagement() -> impl IntoView {
     let auth = use_auth();
     let navigate = use_navigate();
+    let query_params = use_query_map();
+    let initial_resource_id = query_params.with(|params| {
+        params.get("resource_id").cloned().unwrap_or_default()
+    });
     let (auth_checked, set_auth_checked) = create_signal(false);
     let (auth_check_in_progress, set_auth_check_in_progress) = create_signal(false);
 
@@ -64,6 +68,22 @@ pub fn CtcManagement() -> impl IntoView {
     let (history, set_history) = create_signal(Vec::<Value>::new());
     let (show_history, set_show_history) = create_signal(false);
     let (history_loading, set_history_loading) = create_signal(false);
+
+    let (field_errors, set_field_errors) = create_signal(std::collections::HashMap::<String, String>::new());
+    let (server_field_errors, set_server_field_errors) =
+        create_signal(std::collections::HashMap::<String, String>::new());
+    let (server_validation_warnings, set_server_validation_warnings) = create_signal(Vec::<String>::new());
+    let (allowance_warning, set_allowance_warning) = create_signal(None::<String>);
+    let (merged_field_errors, set_merged_field_errors) =
+        create_signal(std::collections::HashMap::<String, String>::new());
+
+    create_effect(move |_| {
+        let mut merged = field_errors.get();
+        for (k, v) in server_field_errors.get() {
+            merged.entry(k).or_insert(v);
+        }
+        set_merged_field_errors.set(merged);
+    });
 
     {
         let navigate = navigate.clone();
@@ -114,6 +134,49 @@ pub fn CtcManagement() -> impl IntoView {
         });
     }
 
+    create_effect(move |_| {
+        set_server_field_errors.set(std::collections::HashMap::new());
+        let mut errs = std::collections::HashMap::new();
+
+        let parse_val = |input: &str, key: &str, e: &mut std::collections::HashMap<String, String>| -> i64 {
+            if input.is_empty() { return 0; }
+            if input.contains('.') {
+                e.insert(key.to_string(), "IDR amounts must be whole numbers".to_string());
+                return 0;
+            }
+            match input.parse::<i64>() {
+                Ok(v) if v < 0 => {
+                    e.insert(key.to_string(), "Must be non-negative".to_string());
+                    0
+                }
+                Ok(v) => v,
+                Err(_) => {
+                    e.insert(key.to_string(), "Invalid number".to_string());
+                    0
+                }
+            }
+        };
+
+        let base = parse_val(&base_salary.get(), "base_salary", &mut errs);
+        let hra = parse_val(&hra_allowance.get(), "hra_allowance", &mut errs);
+        let med = parse_val(&medical_allowance.get(), "medical_allowance", &mut errs);
+        let trans = parse_val(&transport_allowance.get(), "transport_allowance", &mut errs);
+        let meal = parse_val(&meal_allowance.get(), "meal_allowance", &mut errs);
+
+        if base > 0 {
+            let total_allowance = hra + med + trans + meal;
+            if total_allowance > base * 2 {
+                set_allowance_warning.set(Some("Total allowances exceed 200% of base salary".to_string()));
+            } else {
+                set_allowance_warning.set(None);
+            }
+        } else {
+            set_allowance_warning.set(None);
+        }
+
+        set_field_errors.set(errs);
+    });
+
     let is_hr = Signal::derive(move || {
         auth.user
             .get()
@@ -127,6 +190,7 @@ pub fn CtcManagement() -> impl IntoView {
                 return;
             }
             set_loading.set(true);
+            let initial_resource_id = initial_resource_id.clone();
             spawn_local(async move {
                 let loaded_resources = fetch_resources().await;
                 let loaded_departments = fetch_departments().await;
@@ -135,6 +199,34 @@ pub fn CtcManagement() -> impl IntoView {
                     (Ok(res), Ok(depts)) => {
                         set_resources.set(res);
                         set_departments.set(depts);
+
+                        let init_id = initial_resource_id.clone();
+                        if !init_id.is_empty() {
+                            set_selected_resource.set(init_id.clone());
+                            set_loading.set(true);
+                            spawn_local(async move {
+                                match fetch_existing_ctc(&init_id).await {
+                                    Ok(Some(existing)) => {
+                                        set_is_editing.set(true);
+                                        set_base_salary.set(existing.base_salary.to_string());
+                                        set_hra_allowance.set(existing.hra_allowance.to_string());
+                                        set_medical_allowance
+                                            .set(existing.medical_allowance.to_string());
+                                        set_transport_allowance
+                                            .set(existing.transport_allowance.to_string());
+                                        set_meal_allowance.set(existing.meal_allowance.to_string());
+                                    }
+                                    Ok(None) => {
+                                        set_is_editing.set(false);
+                                    }
+                                    Err(_) => {
+                                        set_is_editing.set(false);
+                                    }
+                                }
+                                set_loading.set(false);
+                            });
+                        }
+
                         set_error.set(None);
                     }
                     (Err(e), _) | (_, Err(e)) => set_error.set(Some(e)),
@@ -161,6 +253,7 @@ pub fn CtcManagement() -> impl IntoView {
     let calculate_bpjs = move |_| {
         set_error.set(None);
         set_success.set(None);
+        set_server_field_errors.set(std::collections::HashMap::new());
 
         if current_access_token(&auth).is_none() {
             set_error.set(Some("Please login again".to_string()));
@@ -231,8 +324,50 @@ pub fn CtcManagement() -> impl IntoView {
             });
 
             match calculate_bpjs_preview(payload).await {
-                Ok(data) => set_preview.set(Some(data)),
-                Err(e) => set_error.set(Some(e)),
+                Ok(data) => {
+                    set_preview.set(Some(data));
+                    set_server_validation_warnings.set(Vec::new());
+                }
+                Err(e) => {
+                    if let Ok(json) = serde_json::from_str::<Value>(&e) {
+                        if let Some(issues) = json.get("validation_issues").and_then(|v| v.as_array()) {
+                            let mut warns = Vec::new();
+                            let mut err_msgs = Vec::new();
+                            let mut field_errs = std::collections::HashMap::new();
+                            for issue in issues {
+                                let msg = issue.get("message").and_then(|m| m.as_str()).unwrap_or("").to_string();
+                                let field = issue.get("field").and_then(|f| f.as_str()).unwrap_or("").to_string();
+                                let severity = issue
+                                    .get("severity")
+                                    .or_else(|| issue.get("issue_type"))
+                                    .and_then(|t| t.as_str())
+                                    .unwrap_or("error");
+
+                                if severity == "warning" {
+                                    warns.push(msg);
+                                } else {
+                                    if !field.is_empty() {
+                                        field_errs.insert(field, msg.clone());
+                                    }
+                                    err_msgs.push(msg);
+                                }
+                            }
+                            set_server_field_errors.set(field_errs);
+                            if !warns.is_empty() {
+                                set_server_validation_warnings.set(warns);
+                            }
+                            if !err_msgs.is_empty() {
+                                set_error.set(Some(err_msgs.join(", ")));
+                            } else {
+                                set_error.set(Some("Validation failed".to_string()));
+                            }
+                        } else {
+                            set_error.set(Some(e));
+                        }
+                    } else {
+                        set_error.set(Some(e));
+                    }
+                }
             }
             set_loading.set(false);
         });
@@ -241,6 +376,7 @@ pub fn CtcManagement() -> impl IntoView {
     let save_ctc = move |_| {
         set_error.set(None);
         set_success.set(None);
+        set_server_field_errors.set(std::collections::HashMap::new());
 
         if current_access_token(&auth).is_none() {
             set_error.set(Some("Please login again".to_string()));
@@ -326,11 +462,51 @@ pub fn CtcManagement() -> impl IntoView {
                 match update_ctc_record(resource_id.clone(), payload).await {
                     Ok(_) => {
                         set_success.set(Some("CTC changes saved successfully".to_string()));
+                        set_server_validation_warnings.set(Vec::new());
                         if let Ok(hist) = fetch_ctc_history(&resource_id).await {
                             set_history.set(hist);
                         }
                     }
-                    Err(e) => set_error.set(Some(e)),
+                    Err(e) => {
+                        if let Ok(json) = serde_json::from_str::<Value>(&e) {
+                            if let Some(issues) = json.get("validation_issues").and_then(|v| v.as_array()) {
+                                let mut warns = Vec::new();
+                                let mut err_msgs = Vec::new();
+                                let mut field_errs = std::collections::HashMap::new();
+                                for issue in issues {
+                                    let msg = issue.get("message").and_then(|m| m.as_str()).unwrap_or("").to_string();
+                                    let field = issue.get("field").and_then(|f| f.as_str()).unwrap_or("").to_string();
+                                    let severity = issue
+                                        .get("severity")
+                                        .or_else(|| issue.get("issue_type"))
+                                        .and_then(|t| t.as_str())
+                                        .unwrap_or("error");
+
+                                    if severity == "warning" {
+                                        warns.push(msg);
+                                    } else {
+                                        if !field.is_empty() {
+                                            field_errs.insert(field, msg.clone());
+                                        }
+                                        err_msgs.push(msg);
+                                    }
+                                }
+                                set_server_field_errors.set(field_errs);
+                                if !warns.is_empty() {
+                                    set_server_validation_warnings.set(warns);
+                                }
+                                if !err_msgs.is_empty() {
+                                    set_error.set(Some(err_msgs.join(", ")));
+                                } else {
+                                    set_error.set(Some("Validation failed".to_string()));
+                                }
+                            } else {
+                                set_error.set(Some(e));
+                            }
+                        } else {
+                            set_error.set(Some(e));
+                        }
+                    }
                 }
             } else {
                 let payload = json!({
@@ -347,9 +523,45 @@ pub fn CtcManagement() -> impl IntoView {
                 match create_ctc_record(payload).await {
                     Ok(_) => {
                         set_success.set(Some("CTC record created with status Active".to_string()));
+                        set_server_validation_warnings.set(Vec::new());
                     }
                     Err(e) => {
-                        if e.contains("already exists") {
+                        if let Ok(json) = serde_json::from_str::<Value>(&e) {
+                            if let Some(issues) = json.get("validation_issues").and_then(|v| v.as_array()) {
+                                let mut warns = Vec::new();
+                                let mut err_msgs = Vec::new();
+                                let mut field_errs = std::collections::HashMap::new();
+                                for issue in issues {
+                                    let msg = issue.get("message").and_then(|m| m.as_str()).unwrap_or("").to_string();
+                                    let field = issue.get("field").and_then(|f| f.as_str()).unwrap_or("").to_string();
+                                    let severity = issue
+                                        .get("severity")
+                                        .or_else(|| issue.get("issue_type"))
+                                        .and_then(|t| t.as_str())
+                                        .unwrap_or("error");
+
+                                    if severity == "warning" {
+                                        warns.push(msg);
+                                    } else {
+                                        if !field.is_empty() {
+                                            field_errs.insert(field, msg.clone());
+                                        }
+                                        err_msgs.push(msg);
+                                    }
+                                }
+                                set_server_field_errors.set(field_errs);
+                                if !warns.is_empty() {
+                                    set_server_validation_warnings.set(warns);
+                                }
+                                if !err_msgs.is_empty() {
+                                    set_error.set(Some(err_msgs.join(", ")));
+                                } else {
+                                    set_error.set(Some("Validation failed".to_string()));
+                                }
+                            } else {
+                                set_error.set(Some(e));
+                            }
+                        } else if e.contains("already exists") {
                             set_is_editing.set(true);
                             set_error.set(Some(
                                 "CTC already exists for this employee. Switched to edit mode; add Change Reason and click Save again.".to_string(),
@@ -464,6 +676,7 @@ pub fn CtcManagement() -> impl IntoView {
                                     set_change_reason.set(String::new());
                                     set_show_history.set(false);
                                     set_history_loading.set(false);
+                                    set_server_validation_warnings.set(Vec::new());
                                     set_loading.set(true);
                                     spawn_local(async move {
                                         match fetch_existing_ctc(&selected_for_load).await {
@@ -544,11 +757,11 @@ pub fn CtcManagement() -> impl IntoView {
                         </div>
 
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <MoneyInput label="Base Salary" value=base_salary set_value=set_base_salary/>
-                            <MoneyInput label="HRA Allowance" value=hra_allowance set_value=set_hra_allowance/>
-                            <MoneyInput label="Medical Allowance" value=medical_allowance set_value=set_medical_allowance/>
-                            <MoneyInput label="Transport Allowance" value=transport_allowance set_value=set_transport_allowance/>
-                            <MoneyInput label="Meal Allowance" value=meal_allowance set_value=set_meal_allowance/>
+                            <MoneyInput label="Base Salary" value=base_salary set_value=set_base_salary field_name="base_salary".to_string() field_errors=merged_field_errors />
+                            <MoneyInput label="HRA Allowance" value=hra_allowance set_value=set_hra_allowance field_name="hra_allowance".to_string() field_errors=merged_field_errors />
+                            <MoneyInput label="Medical Allowance" value=medical_allowance set_value=set_medical_allowance field_name="medical_allowance".to_string() field_errors=merged_field_errors />
+                            <MoneyInput label="Transport Allowance" value=transport_allowance set_value=set_transport_allowance field_name="transport_allowance".to_string() field_errors=merged_field_errors />
+                            <MoneyInput label="Meal Allowance" value=meal_allowance set_value=set_meal_allowance field_name="meal_allowance".to_string() field_errors=merged_field_errors />
                             <div>
                                 <label class="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">"Risk Tier"</label>
                                 <select class="w-full border rounded px-3 py-2 bg-white dark:bg-gray-700"
@@ -570,6 +783,31 @@ pub fn CtcManagement() -> impl IntoView {
                             </div>
                         </div>
 
+
+                        {move || allowance_warning.get().map(|msg| view! {
+                            <div class="mt-2 text-sm text-yellow-600 dark:text-yellow-400 flex items-center gap-1">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                                    <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
+                                </svg>
+                                {msg}
+                            </div>
+                        })}
+
+                        {move || {
+                            let warnings = server_validation_warnings.get();
+                            if warnings.is_empty() {
+                                view! { <></> }.into_view()
+                            } else {
+                                view! {
+                                    <div class="mt-2 rounded-md bg-yellow-50 p-4 dark:bg-yellow-900/20 text-yellow-800 dark:text-yellow-200">
+                                        <h3 class="text-sm font-medium">"Validation Warnings:"</h3>
+                                        <ul class="list-disc pl-5 mt-1 text-sm">
+                                            {warnings.into_iter().map(|w| view! { <li>{w}</li> }).collect_view()}
+                                        </ul>
+                                    </div>
+                                }.into_view()
+                            }
+                        }}
                         {move || is_editing.get().then(|| view! {
                             <div class="space-y-4 pt-4 border-t border-gray-200 dark:border-gray-700">
                                 <h3 class="text-lg font-medium text-gray-900 dark:text-white">"Update Information"</h3>
@@ -739,16 +977,35 @@ fn MoneyInput(
     #[prop(into)] label: String,
     value: ReadSignal<String>,
     set_value: WriteSignal<String>,
+    field_name: String,
+    field_errors: ReadSignal<std::collections::HashMap<String, String>>,
 ) -> impl IntoView {
     view! {
         <div>
             <label class="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">{label}</label>
             <input
-                class="w-full border rounded px-3 py-2 bg-white dark:bg-gray-700"
+                class={
+                    let field_name_clone = field_name.clone();
+                    move || {
+                        let mut classes = "w-full border rounded px-3 py-2 bg-white dark:bg-gray-700".to_string();
+                        if field_errors.get().contains_key(&field_name_clone) {
+                            classes.push_str(" border-red-500 focus:ring-red-500 focus:border-red-500");
+                        }
+                        classes
+                    }
+                }
                 prop:value=value
                 on:input=move |ev| set_value.set(event_target_value(&ev))
                 placeholder="Whole number IDR"
             />
+            {move || {
+                let errs = field_errors.get();
+                if let Some(err) = errs.get(&field_name) {
+                    view! { <p class="mt-1 text-xs text-red-600 dark:text-red-400">{err.clone()}</p> }.into_view()
+                } else {
+                    view! { <></> }.into_view()
+                }
+            }}
         </div>
     }
 }

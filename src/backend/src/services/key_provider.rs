@@ -11,7 +11,7 @@ pub trait KeyProvider: Send + Sync {
     fn get_key_by_version(&self, version: &str) -> Result<Vec<u8>>;
 }
 
-/// A simple environment-based key provider for development/testing or 
+/// A simple environment-based key provider for development/testing or
 /// environments where a KMS/Vault is injected via env vars.
 pub struct EnvKeyProvider {
     /// The default version to use if none is specified or for new encryptions
@@ -23,7 +23,8 @@ impl EnvKeyProvider {
         // We use a simplified versioning scheme for the env provider.
         // It reads from CTC_ENCRYPTION_KEY_V1, CTC_ENCRYPTION_KEY_V2, etc.
         // And CTC_ACTIVE_KEY_VERSION defines the current active version.
-        let active_version = env::var("CTC_ACTIVE_KEY_VERSION").unwrap_or_else(|_| "v1".to_string());
+        let active_version =
+            env::var("CTC_ACTIVE_KEY_VERSION").unwrap_or_else(|_| "v1".to_string());
         Self { active_version }
     }
 
@@ -36,12 +37,14 @@ impl EnvKeyProvider {
             ))
         })?;
 
-        let key_bytes = general_purpose::STANDARD.decode(key_b64.trim()).map_err(|e| {
-            AppError::Internal(format!(
-                "Failed to decode base64 key for version {}: {}",
-                version, e
-            ))
-        })?;
+        let key_bytes = general_purpose::STANDARD
+            .decode(key_b64.trim())
+            .map_err(|e| {
+                AppError::Internal(format!(
+                    "Failed to decode base64 key for version {}: {}",
+                    version, e
+                ))
+            })?;
 
         if key_bytes.len() != 32 {
             return Err(AppError::Internal(format!(

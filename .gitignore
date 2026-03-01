@@ -20,3 +20,4 @@ build/
 db_data/
 *.png
 nohup.out
+.sisyphus/

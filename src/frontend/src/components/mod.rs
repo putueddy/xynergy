@@ -58,14 +58,30 @@ pub fn Header() -> impl IntoView {
                             "Allocations"
                         </a>
                         {move || {
-                            if auth.user.get().map(|u| u.role == "hr").unwrap_or(false) {
+                            let role = auth.user.get().map(|u| u.role).unwrap_or_default();
+                            let is_hr = role == "hr";
+                            let is_dept_head = role == "department_head";
+
+                            if is_hr {
                                 view! {
                                     <>
+                                        <a href="/ctc/completeness" class="text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400">
+                                            "CTC Status"
+                                        </a>
                                         <a href="/ctc" class="text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400">
                                             "CTC"
                                         </a>
                                         <a href="/thr" class="text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400">
                                             "THR"
+                                        </a>
+                                    </>
+                                }
+                                    .into_view()
+                            } else if is_dept_head {
+                                view! {
+                                    <>
+                                        <a href="/ctc/completeness" class="text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400">
+                                            "CTC Status"
                                         </a>
                                     </>
                                 }

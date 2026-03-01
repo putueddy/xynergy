@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::HeaderMap,
     routing::{get, post},
     Json, Router,
@@ -13,11 +13,14 @@ use uuid::Uuid;
 use validator::Validate;
 
 use crate::error::{AppError, Result};
-use crate::services::{
-    audit_log::user_claims_from_headers, calculate_ctc, log_audit, BpjsConfig, CtcComponents,
-};
 use crate::services::ctc_crypto::{CtcCryptoService, DefaultCtcCryptoService, EncryptedPayload};
 use crate::services::key_provider::EnvKeyProvider;
+use crate::services::{
+    audit_log::user_claims_from_headers, calculate_ctc, get_completeness_summary,
+    get_missing_employees, has_errors, log_audit, validate_bpjs_compliance, validate_ctc,
+    validate_monetary_whole_numbers, BpjsConfig, CompletenessReport, ComplianceReport,
+    CtcComponents, CtcValidationInput, MissingCtcEmployee,
+};
 
 async fn get_ctc_components(
     State(pool): State<PgPool>,
@@ -160,15 +163,18 @@ async fn get_ctc_components(
 
     if let Some(row) = row_result {
         use sqlx::Row;
-        let encrypted_components: Option<String> = row.try_get("encrypted_components").unwrap_or(None);
-        let encrypted_daily_rate: Option<String> = row.try_get("encrypted_daily_rate").unwrap_or(None);
-        
+        let encrypted_components: Option<String> =
+            row.try_get("encrypted_components").unwrap_or(None);
+        let encrypted_daily_rate: Option<String> =
+            row.try_get("encrypted_daily_rate").unwrap_or(None);
+
         if let Some(enc_str) = encrypted_components {
             if claims.role == "hr" {
                 let key_version: String = row.try_get("key_version").unwrap_or_default();
-                let encryption_version: String = row.try_get("encryption_version").unwrap_or_default();
+                let encryption_version: String =
+                    row.try_get("encryption_version").unwrap_or_default();
                 let algorithm: String = row.try_get("encryption_algorithm").unwrap_or_default();
-                
+
                 let payload = EncryptedPayload {
                     ciphertext: enc_str,
                     key_version: key_version.clone(),
@@ -176,7 +182,7 @@ async fn get_ctc_components(
                     algorithm: algorithm.clone(),
                     encrypted_at: chrono::Utc::now(), // Not strictly needed for decrypt
                 };
-                
+
                 let crypto_svc = DefaultCtcCryptoService::new(EnvKeyProvider::new());
                 let mut decrypted_components = crypto_svc.decrypt_components(&payload).await?;
 
@@ -189,7 +195,8 @@ async fn get_ctc_components(
                         encrypted_at: chrono::Utc::now(),
                     };
 
-                    let decrypted_daily_rate = crypto_svc.decrypt_components(&daily_payload).await?;
+                    let decrypted_daily_rate =
+                        crypto_svc.decrypt_components(&daily_payload).await?;
                     if let Some(daily_rate_value) = decrypted_daily_rate.get("daily_rate") {
                         if let Some(obj) = decrypted_components.as_object_mut() {
                             obj.insert("daily_rate".to_string(), daily_rate_value.clone());
@@ -260,9 +267,7 @@ async fn resolve_effective_date_policy(
 
     if let Some(policy) = db_policy {
         let normalized = normalize_effective_date_policy(policy.trim()).ok_or_else(|| {
-            AppError::Validation(
-                "Invalid ctc_effective_date_policy in global_settings".to_string(),
-            )
+            AppError::Validation("Invalid ctc_effective_date_policy in global_settings".to_string())
         })?;
         return Ok(normalized.to_string());
     }
@@ -304,6 +309,43 @@ async fn update_ctc_components(
 
     if claims.role != "hr" {
         return Err(AppError::Forbidden("Insufficient permissions".to_string()));
+    }
+
+    let whole_number_issues = validate_monetary_whole_numbers(&payload.components);
+    if has_errors(&whole_number_issues) {
+        return Err(AppError::Validation(format!(
+            "CTC validation failed: {}",
+            serde_json::to_string(&whole_number_issues).map_err(|e| AppError::Internal(format!(
+                "Failed to serialize validation issues: {}",
+                e
+            )))?
+        )));
+    }
+
+    let validation_input = build_validation_input_from_components(&payload.components)?;
+    let validation_issues = validate_ctc(&validation_input);
+    if has_errors(&validation_issues) {
+        return Err(AppError::Validation(format!(
+            "CTC validation failed: {}",
+            serde_json::to_string(&validation_issues).map_err(|e| AppError::Internal(format!(
+                "Failed to serialize validation issues: {}",
+                e
+            )))?
+        )));
+    }
+    if !validation_issues.is_empty() {
+        log_audit(
+            &pool,
+            Some(user_id),
+            "ctc_validation_warnings",
+            "ctc_components",
+            resource_id,
+            json!({
+                "issues": validation_issues,
+                "endpoint": "update_ctc_components"
+            }),
+        )
+        .await?;
     }
 
     let mut tx = crate::services::begin_rls_transaction(&pool, &headers).await?;
@@ -366,18 +408,16 @@ async fn update_ctc_components(
     .await
     .map_err(|e| AppError::Database(e.to_string()))?;
 
-    let requested_policy = payload
-        .effective_date_policy
-        .as_deref()
-        .or_else(|| {
-            payload
-                .components
-                .get("effective_date_policy")
-                .and_then(|v| v.as_str())
-        });
+    let requested_policy = payload.effective_date_policy.as_deref().or_else(|| {
+        payload
+            .components
+            .get("effective_date_policy")
+            .and_then(|v| v.as_str())
+    });
 
     let effective_date_policy = resolve_effective_date_policy(&mut tx, requested_policy).await?;
-    let applied_effective_date = apply_effective_date_policy(&effective_date_policy, Utc::now().date_naive());
+    let applied_effective_date =
+        apply_effective_date_policy(&effective_date_policy, Utc::now().date_naive());
 
     // If this is the first revision for a legacy CTC row, persist a baseline snapshot first
     // so the first user-visible change can diff against actual prior values instead of null.
@@ -488,7 +528,7 @@ async fn update_ctc_components(
             $7, $8,
             $9, $10, 22, 'Active',
             $11, $12, CURRENT_TIMESTAMP
-        )"
+        )",
     )
     .bind(resource_id)
     .bind(new_revision_number as i32)
@@ -631,6 +671,98 @@ fn extract_daily_rate_string(components: &serde_json::Value) -> Option<String> {
         Some(serde_json::Value::Number(n)) => Some(n.to_string()),
         _ => None,
     }
+}
+
+fn json_i64_field(value: &serde_json::Value, key: &str) -> Result<i64> {
+    let field_value = value
+        .get(key)
+        .ok_or_else(|| AppError::Validation(format!("Missing field: {}", key)))?;
+
+    if let Some(v) = field_value.as_i64() {
+        return Ok(v);
+    }
+
+    if let Some(v) = field_value.as_str() {
+        return v
+            .parse::<i64>()
+            .map_err(|_| AppError::Validation(format!("Invalid i64 for field: {}", key)));
+    }
+
+    Err(AppError::Validation(format!(
+        "Invalid numeric field: {}",
+        key
+    )))
+}
+
+fn json_i32_field_with_default(
+    value: &serde_json::Value,
+    key: &str,
+    default_value: i32,
+) -> Result<i32> {
+    let Some(field_value) = value.get(key) else {
+        return Ok(default_value);
+    };
+
+    if let Some(v) = field_value.as_i64() {
+        return i32::try_from(v)
+            .map_err(|_| AppError::Validation(format!("Invalid i32 for field: {}", key)));
+    }
+
+    if let Some(v) = field_value.as_str() {
+        return v
+            .parse::<i32>()
+            .map_err(|_| AppError::Validation(format!("Invalid i32 for field: {}", key)));
+    }
+
+    Err(AppError::Validation(format!(
+        "Invalid numeric field: {}",
+        key
+    )))
+}
+
+fn json_bool_field_with_default(value: &serde_json::Value, key: &str, default_value: bool) -> bool {
+    value
+        .get(key)
+        .and_then(|v| v.as_bool())
+        .unwrap_or(default_value)
+}
+
+fn json_decimal_field(value: &serde_json::Value, key: &str) -> Result<BigDecimal> {
+    let field_value = value
+        .get(key)
+        .ok_or_else(|| AppError::Validation(format!("Missing field: {}", key)))?;
+
+    match field_value {
+        serde_json::Value::String(s) => s
+            .parse::<BigDecimal>()
+            .map_err(|_| AppError::Validation(format!("Invalid decimal field: {}", key))),
+        serde_json::Value::Number(n) => n
+            .to_string()
+            .parse::<BigDecimal>()
+            .map_err(|_| AppError::Validation(format!("Invalid decimal field: {}", key))),
+        _ => Err(AppError::Validation(format!(
+            "Invalid decimal field: {}",
+            key
+        ))),
+    }
+}
+
+fn build_validation_input_from_components(value: &serde_json::Value) -> Result<CtcValidationInput> {
+    Ok(CtcValidationInput {
+        base_salary: json_i64_field(value, "base_salary")?,
+        hra_allowance: json_i64_field(value, "hra_allowance")?,
+        medical_allowance: json_i64_field(value, "medical_allowance")?,
+        transport_allowance: json_i64_field(value, "transport_allowance")?,
+        meal_allowance: json_i64_field(value, "meal_allowance")?,
+        bpjs_kesehatan_employer: json_i64_field(value, "bpjs_kesehatan_employer")?,
+        bpjs_ketenagakerjaan_employer: json_i64_field(value, "bpjs_ketenagakerjaan_employer")?,
+        thr_monthly_accrual: json_i64_field(value, "thr_monthly_accrual")?,
+        total_monthly_ctc: json_i64_field(value, "total_monthly_ctc")?,
+        daily_rate: json_decimal_field(value, "daily_rate")?,
+        working_days_per_month: json_i32_field_with_default(value, "working_days_per_month", 22)?,
+        risk_tier: json_i32_field_with_default(value, "risk_tier", 1)?,
+        thr_eligible: json_bool_field_with_default(value, "thr_eligible", true),
+    })
 }
 
 fn jkk_rate_for_tier(tier: i32) -> Result<BigDecimal> {
@@ -797,6 +929,46 @@ async fn create_ctc_record(
     let working_days = req.working_days_per_month.unwrap_or(22);
     let calculation = calculate_ctc(components, working_days, &config);
 
+    let validation_input = CtcValidationInput {
+        base_salary: req.base_salary,
+        hra_allowance: req.hra_allowance,
+        medical_allowance: req.medical_allowance,
+        transport_allowance: req.transport_allowance,
+        meal_allowance: req.meal_allowance,
+        bpjs_kesehatan_employer: bd_to_i64(&calculation.bpjs.kesehatan_employer),
+        bpjs_ketenagakerjaan_employer: bd_to_i64(&calculation.bpjs.ketenagakerjaan_employer),
+        thr_monthly_accrual: bd_to_i64(&calculation.thr_monthly_accrual),
+        total_monthly_ctc: bd_to_i64(&calculation.total_monthly_ctc),
+        daily_rate: calculation.daily_rate.clone(),
+        working_days_per_month: working_days,
+        risk_tier: req.risk_tier.unwrap_or(1),
+        thr_eligible: true,
+    };
+    let validation_issues = validate_ctc(&validation_input);
+    if has_errors(&validation_issues) {
+        return Err(AppError::Validation(format!(
+            "CTC validation failed: {}",
+            serde_json::to_string(&validation_issues).map_err(|e| AppError::Internal(format!(
+                "Failed to serialize validation issues: {}",
+                e
+            )))?
+        )));
+    }
+    if !validation_issues.is_empty() {
+        log_audit(
+            &pool,
+            Some(user_id),
+            "ctc_validation_warnings",
+            "ctc_record",
+            resource_id,
+            json!({
+                "issues": validation_issues,
+                "endpoint": "create_ctc_record"
+            }),
+        )
+        .await?;
+    }
+
     // Convert BigDecimal to i64 for storage
     let base_salary_i64: i64 = bd_to_i64(&calculation.components.base_salary);
     let hra_i64: i64 = bd_to_i64(&calculation.components.hra_allowance);
@@ -814,25 +986,30 @@ async fn create_ctc_record(
 
     // Insert CTC record
     let crypto_svc = DefaultCtcCryptoService::new(EnvKeyProvider::new());
-    let encrypted_payload = crypto_svc.encrypt_components(&json!({
-        "base_salary": base_salary_i64,
-        "hra_allowance": hra_i64,
-        "medical_allowance": medical_i64,
-        "transport_allowance": transport_i64,
-        "meal_allowance": meal_i64,
-        "bpjs_kesehatan_employer": bpjs_kes_employer,
-        "bpjs_kesehatan_employee": bpjs_kes_employee,
-        "bpjs_ketenagakerjaan_employer": bpjs_ket_employer,
-        "bpjs_ketenagakerjaan_employee": bpjs_ket_employee,
-        "thr_monthly_accrual": thr_monthly,
-        "total_monthly_ctc": total_ctc,
-    })).await?;
+    let encrypted_payload = crypto_svc
+        .encrypt_components(&json!({
+            "base_salary": base_salary_i64,
+            "hra_allowance": hra_i64,
+            "medical_allowance": medical_i64,
+            "transport_allowance": transport_i64,
+            "meal_allowance": meal_i64,
+            "bpjs_kesehatan_employer": bpjs_kes_employer,
+            "bpjs_kesehatan_employee": bpjs_kes_employee,
+            "bpjs_ketenagakerjaan_employer": bpjs_ket_employer,
+            "bpjs_ketenagakerjaan_employee": bpjs_ket_employee,
+            "thr_monthly_accrual": thr_monthly,
+            "total_monthly_ctc": total_ctc,
+        }))
+        .await?;
 
     let encrypted_daily_rate_payload = crypto_svc
         .encrypt_components(&json!({ "daily_rate": daily_rate_str }))
         .await?;
 
-    let mut tx = pool.begin().await.map_err(|e| AppError::Database(e.to_string()))?;
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|e| AppError::Database(e.to_string()))?;
 
     sqlx::query(
         "INSERT INTO ctc_records (
@@ -870,7 +1047,7 @@ async fn create_ctc_record(
             $6, $7,
             'pro_rata', CURRENT_DATE, $8, 'Active',
             $9, 'Initial CTC record creation', CURRENT_TIMESTAMP
-        )"
+        )",
     )
     .bind(resource_id)
     .bind(&encrypted_payload.key_version)
@@ -885,7 +1062,9 @@ async fn create_ctc_record(
     .await
     .map_err(|e| AppError::Database(e.to_string()))?;
 
-    tx.commit().await.map_err(|e| AppError::Database(e.to_string()))?;
+    tx.commit()
+        .await
+        .map_err(|e| AppError::Database(e.to_string()))?;
 
     // Log audit event
     // Plaintext values are not included in audit logs per AC #5
@@ -991,7 +1170,7 @@ async fn get_ctc_history(
         FROM ctc_revisions
         WHERE resource_id = $1
         ORDER BY revision_number ASC
-        "#
+        "#,
     )
     .bind(resource_id)
     .fetch_all(&pool)
@@ -1009,7 +1188,7 @@ async fn get_ctc_history(
         let rev_changed_by: Uuid = row.get("changed_by");
         let rev_reason: String = row.get("reason");
         let rev_effective_date_policy: String = row.get("effective_date_policy");
-        
+
         let encrypted_components: String = row.get("encrypted_components");
         let encrypted_daily_rate: Option<String> = row.get("encrypted_daily_rate");
         let key_version: String = row.get("key_version");
@@ -1024,11 +1203,11 @@ async fn get_ctc_history(
             algorithm: encryption_algorithm.clone(),
             encrypted_at,
         };
-        
+
         let mut current_state = crypto_svc.decrypt_components(&payload).await?;
 
         if let Some(enc_daily) = encrypted_daily_rate {
-             let daily_payload = EncryptedPayload {
+            let daily_payload = EncryptedPayload {
                 ciphertext: enc_daily,
                 key_version,
                 encryption_version,
@@ -1045,14 +1224,11 @@ async fn get_ctc_history(
 
         let mut diffs = Vec::new();
 
-        let current_obj = current_state
-            .as_object()
-            .cloned()
-            .unwrap_or_default();
+        let current_obj = current_state.as_object().cloned().unwrap_or_default();
 
         if let Some(prev) = &previous_state {
             let prev_obj = prev.as_object().cloned().unwrap_or_default();
-            
+
             // Check for changed or new fields
             for (k, v) in &current_obj {
                 let prev_v = prev_obj.get(k).cloned().unwrap_or(serde_json::Value::Null);
@@ -1093,10 +1269,116 @@ async fn get_ctc_history(
     })))
 }
 
+#[derive(Debug, Deserialize)]
+struct CompletenessQuery {
+    department_id: Option<Uuid>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ComplianceReportQuery {
+    start_date: NaiveDate,
+    end_date: NaiveDate,
+}
+
+async fn resolve_user_department(pool: &PgPool, user_id: Uuid) -> Result<Option<Uuid>> {
+    sqlx::query_scalar::<_, Option<Uuid>>("SELECT department_id FROM users WHERE id = $1")
+        .bind(user_id)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| AppError::Database(e.to_string()))
+        .map(|value| value.flatten())
+}
+
+async fn get_ctc_completeness(
+    State(pool): State<PgPool>,
+    headers: HeaderMap,
+    Query(query): Query<CompletenessQuery>,
+) -> Result<Json<CompletenessReport>> {
+    let claims = user_claims_from_headers(&headers)?
+        .ok_or_else(|| AppError::Authentication("Missing token".to_string()))?;
+    let user_id = Uuid::parse_str(&claims.sub)
+        .map_err(|_| AppError::Authentication("Invalid user ID in token".to_string()))?;
+
+    if claims.role != "hr" && claims.role != "department_head" {
+        return Err(AppError::Forbidden("Insufficient permissions".to_string()));
+    }
+
+    let department_filter = if claims.role == "department_head" {
+        resolve_user_department(&pool, user_id).await?
+    } else {
+        query.department_id
+    };
+
+    let report = get_completeness_summary(&pool, department_filter).await?;
+    Ok(Json(report))
+}
+
+async fn get_ctc_completeness_missing(
+    State(pool): State<PgPool>,
+    headers: HeaderMap,
+    Query(query): Query<CompletenessQuery>,
+) -> Result<Json<Vec<MissingCtcEmployee>>> {
+    let claims = user_claims_from_headers(&headers)?
+        .ok_or_else(|| AppError::Authentication("Missing token".to_string()))?;
+
+    if claims.role != "hr" {
+        return Err(AppError::Forbidden("Insufficient permissions".to_string()));
+    }
+
+    let missing = get_missing_employees(&pool, query.department_id).await?;
+    Ok(Json(missing))
+}
+
+async fn get_ctc_compliance_report(
+    State(pool): State<PgPool>,
+    headers: HeaderMap,
+    Query(query): Query<ComplianceReportQuery>,
+) -> Result<Json<ComplianceReport>> {
+    let claims = user_claims_from_headers(&headers)?
+        .ok_or_else(|| AppError::Authentication("Missing token".to_string()))?;
+    let user_id = Uuid::parse_str(&claims.sub)
+        .map_err(|_| AppError::Authentication("Invalid user ID in token".to_string()))?;
+
+    if claims.role != "hr" && claims.role != "finance" {
+        return Err(AppError::Forbidden("Insufficient permissions".to_string()));
+    }
+
+    if query.end_date < query.start_date {
+        return Err(AppError::Validation(
+            "end_date must be greater than or equal to start_date".to_string(),
+        ));
+    }
+
+    let report = validate_bpjs_compliance(&pool, query.start_date, query.end_date).await?;
+
+    log_audit(
+        &pool,
+        Some(user_id),
+        "compliance_report_generated",
+        "compliance_report",
+        user_id,
+        json!({
+            "start_date": query.start_date,
+            "end_date": query.end_date,
+            "total_validated": report.total_validated,
+            "total_discrepancies": report.total_discrepancies,
+        }),
+    )
+    .await?;
+
+    Ok(Json(report))
+}
+
 pub fn ctc_routes() -> Router<PgPool> {
     Router::new()
         .route("/ctc", post(create_ctc_record))
         .route("/ctc/calculate", post(calculate_bpjs_preview))
+        .route("/ctc/completeness", get(get_ctc_completeness))
+        .route(
+            "/ctc/completeness/missing",
+            get(get_ctc_completeness_missing),
+        )
+        .route("/ctc/compliance-report", get(get_ctc_compliance_report))
         .route("/ctc/:resource_id/components", get(get_ctc_components))
         .route(
             "/ctc/:resource_id/components",

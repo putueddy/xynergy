@@ -89,9 +89,15 @@ fn parse_basis(basis: &str) -> Result<ThrCalculationBasis> {
     })
 }
 
-fn json_value_to_big_decimal(value: Option<&serde_json::Value>, field_name: &str) -> Result<BigDecimal> {
+fn json_value_to_big_decimal(
+    value: Option<&serde_json::Value>,
+    field_name: &str,
+) -> Result<BigDecimal> {
     let v = value.ok_or_else(|| {
-        AppError::Validation(format!("Missing '{}' in encrypted CTC components", field_name))
+        AppError::Validation(format!(
+            "Missing '{}' in encrypted CTC components",
+            field_name
+        ))
     })?;
 
     match v {
@@ -115,9 +121,9 @@ fn json_value_to_big_decimal(value: Option<&serde_json::Value>, field_name: &str
 }
 
 fn amount_from_encrypted_json(payload: &serde_json::Value) -> Result<BigDecimal> {
-    let value = payload
-        .get("amount")
-        .ok_or_else(|| AppError::Validation("Missing 'amount' in encrypted THR payload".to_string()))?;
+    let value = payload.get("amount").ok_or_else(|| {
+        AppError::Validation("Missing 'amount' in encrypted THR payload".to_string())
+    })?;
     match value {
         serde_json::Value::String(s) => s.parse::<BigDecimal>().map_err(|_| {
             AppError::Validation("Invalid 'amount' value in encrypted THR payload".to_string())
@@ -164,7 +170,9 @@ async fn configure_thr(
         .map_err(|e| AppError::Database(e.to_string()))?;
 
     if ctc_exists.is_none() {
-        return Err(AppError::NotFound("CTC record not found for resource".to_string()));
+        return Err(AppError::NotFound(
+            "CTC record not found for resource".to_string(),
+        ));
     }
 
     sqlx::query(
@@ -193,13 +201,12 @@ async fn configure_thr(
         .map_err(|e| AppError::Database(e.to_string()))?;
     }
 
-    let employment_start_date: Option<NaiveDate> = sqlx::query_scalar(
-        "SELECT employment_start_date FROM resources WHERE id = $1",
-    )
-    .bind(resource_id)
-    .fetch_one(&pool)
-    .await
-    .map_err(|e| AppError::Database(e.to_string()))?;
+    let employment_start_date: Option<NaiveDate> =
+        sqlx::query_scalar("SELECT employment_start_date FROM resources WHERE id = $1")
+            .bind(resource_id)
+            .fetch_one(&pool)
+            .await
+            .map_err(|e| AppError::Database(e.to_string()))?;
 
     log_audit(
         &pool,
@@ -248,7 +255,8 @@ async fn get_thr_config(
     .await
     .map_err(|e| AppError::Database(e.to_string()))?;
 
-    let row = row.ok_or_else(|| AppError::NotFound("CTC record not found for resource".to_string()))?;
+    let row =
+        row.ok_or_else(|| AppError::NotFound("CTC record not found for resource".to_string()))?;
 
     use sqlx::Row;
     let thr_eligible: bool = row
@@ -325,13 +333,12 @@ async fn run_thr_accrual(
         .await
         .map_err(|e| AppError::Database(e.to_string()))?;
 
-    let existing_accruals: Vec<Uuid> = sqlx::query_scalar(
-        "SELECT resource_id FROM thr_accruals WHERE accrual_period = $1",
-    )
-    .bind(&normalized_period)
-    .fetch_all(&mut *tx)
-    .await
-    .map_err(|e| AppError::Database(e.to_string()))?;
+    let existing_accruals: Vec<Uuid> =
+        sqlx::query_scalar("SELECT resource_id FROM thr_accruals WHERE accrual_period = $1")
+            .bind(&normalized_period)
+            .fetch_all(&mut *tx)
+            .await
+            .map_err(|e| AppError::Database(e.to_string()))?;
     let existing_set: HashSet<Uuid> = existing_accruals.into_iter().collect();
 
     use sqlx::Row;
@@ -378,7 +385,8 @@ async fn run_thr_accrual(
         };
 
         let decrypted_ctc = crypto_svc.decrypt_components(&ctc_payload).await?;
-        let base_salary = json_value_to_big_decimal(decrypted_ctc.get("base_salary"), "base_salary")?;
+        let base_salary =
+            json_value_to_big_decimal(decrypted_ctc.get("base_salary"), "base_salary")?;
         let hra_allowance =
             json_value_to_big_decimal(decrypted_ctc.get("hra_allowance"), "hra_allowance")?;
         let medical_allowance =
@@ -477,7 +485,6 @@ async fn run_thr_accrual(
                 return Err(AppError::Database(e.to_string()));
             }
         }
-
     }
 
     tx.commit()
@@ -572,9 +579,11 @@ async fn get_thr_accrual_history(
             encrypted_at,
         };
 
-        let accrual_amount = amount_from_encrypted_json(&crypto_svc.decrypt_components(&accrual_payload).await?)?;
-        let annual_entitlement =
-            amount_from_encrypted_json(&crypto_svc.decrypt_components(&entitlement_payload).await?)?;
+        let accrual_amount =
+            amount_from_encrypted_json(&crypto_svc.decrypt_components(&accrual_payload).await?)?;
+        let annual_entitlement = amount_from_encrypted_json(
+            &crypto_svc.decrypt_components(&entitlement_payload).await?,
+        )?;
 
         accruals.push(json!({
             "period": period,
@@ -647,8 +656,16 @@ async fn get_thr_payout_report(
     .await
     .map_err(|e| AppError::Database(e.to_string()))?;
 
-    let mut accruals_by_resource: HashMap<Uuid, Vec<(String, String, String, String, chrono::DateTime<chrono::Utc>)>> =
-        HashMap::new();
+    let mut accruals_by_resource: HashMap<
+        Uuid,
+        Vec<(
+            String,
+            String,
+            String,
+            String,
+            chrono::DateTime<chrono::Utc>,
+        )>,
+    > = HashMap::new();
     for accrual_row in all_accrual_rows {
         let resource_id: Uuid = accrual_row
             .try_get("resource_id")
@@ -669,16 +686,13 @@ async fn get_thr_payout_report(
             .try_get("encrypted_at")
             .map_err(|e| AppError::Database(e.to_string()))?;
 
-        accruals_by_resource
-            .entry(resource_id)
-            .or_default()
-            .push((
-                encrypted_accrual_amount,
-                key_version,
-                encryption_version,
-                encryption_algorithm,
-                encrypted_at,
-            ));
+        accruals_by_resource.entry(resource_id).or_default().push((
+            encrypted_accrual_amount,
+            key_version,
+            encryption_version,
+            encryption_algorithm,
+            encrypted_at,
+        ));
     }
 
     use sqlx::Row;
@@ -717,7 +731,8 @@ async fn get_thr_payout_report(
         };
         let decrypted_ctc = crypto_svc.decrypt_components(&ctc_payload).await?;
 
-        let base_salary = json_value_to_big_decimal(decrypted_ctc.get("base_salary"), "base_salary")?;
+        let base_salary =
+            json_value_to_big_decimal(decrypted_ctc.get("base_salary"), "base_salary")?;
         let hra_allowance =
             json_value_to_big_decimal(decrypted_ctc.get("hra_allowance"), "hra_allowance")?;
         let medical_allowance =
@@ -756,18 +771,23 @@ async fn get_thr_payout_report(
 
         let mut accrued_to_date = BigDecimal::from(0i64);
         if let Some(accrual_rows) = accruals_by_resource.get(&resource_id) {
-            for (encrypted_accrual_amount, key_version, encryption_version, encryption_algorithm, encrypted_at) in
-                accrual_rows
+            for (
+                encrypted_accrual_amount,
+                key_version,
+                encryption_version,
+                encryption_algorithm,
+                encrypted_at,
+            ) in accrual_rows
             {
-            let payload = EncryptedPayload {
+                let payload = EncryptedPayload {
                     ciphertext: encrypted_accrual_amount.clone(),
                     key_version: key_version.clone(),
                     encryption_version: encryption_version.clone(),
                     algorithm: encryption_algorithm.clone(),
                     encrypted_at: *encrypted_at,
-            };
-            let amount_json = crypto_svc.decrypt_components(&payload).await?;
-            accrued_to_date += amount_from_encrypted_json(&amount_json)?;
+                };
+                let amount_json = crypto_svc.decrypt_components(&payload).await?;
+                accrued_to_date += amount_from_encrypted_json(&amount_json)?;
             }
         }
 

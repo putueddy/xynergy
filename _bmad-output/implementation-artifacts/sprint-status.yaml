@@ -54,7 +54,7 @@ development_status:
   2-1-employee-ctc-record-creation: done
   2-2-ctc-revision-management: done
   2-3-thr-management: done
-  2-4-ctc-validation-and-compliance: backlog
+  2-4-ctc-validation-and-compliance: done
   epic-2-retrospective: optional
   
   # Epic 3: Department Resource Assignment

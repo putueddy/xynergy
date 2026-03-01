@@ -62,7 +62,11 @@ async fn get_auth_token(app: &axum::Router, email: &str) -> String {
         ))
         .expect("request should be built");
 
-    let res = app.clone().oneshot(req).await.expect("login should return response");
+    let res = app
+        .clone()
+        .oneshot(req)
+        .await
+        .expect("login should return response");
     assert_eq!(res.status(), StatusCode::OK);
 
     let body = to_bytes(res.into_body(), usize::MAX).await.unwrap();
@@ -140,14 +144,16 @@ async fn hr_can_configure_thr(pool: PgPool) {
     assert_eq!(json["thr_calculation_basis"].as_str(), Some("full"));
     assert_eq!(json["employment_start_date"].as_str(), Some("2025-06-01"));
 
-    let start_date: Option<chrono::NaiveDate> = sqlx::query_scalar(
-        "SELECT employment_start_date FROM resources WHERE id = $1",
-    )
-    .bind(resource_id)
-    .fetch_one(&pool)
-    .await
-    .expect("resource employment_start_date should be readable");
-    assert_eq!(start_date.map(|d| d.to_string()), Some("2025-06-01".to_string()));
+    let start_date: Option<chrono::NaiveDate> =
+        sqlx::query_scalar("SELECT employment_start_date FROM resources WHERE id = $1")
+            .bind(resource_id)
+            .fetch_one(&pool)
+            .await
+            .expect("resource employment_start_date should be readable");
+    assert_eq!(
+        start_date.map(|d| d.to_string()),
+        Some("2025-06-01".to_string())
+    );
 }
 
 #[sqlx::test(migrations = "../../migrations")]
@@ -361,7 +367,9 @@ async fn thr_accrual_is_idempotent(pool: PgPool) {
     let first_run_res = app.clone().oneshot(first_run_req).await.unwrap();
     assert_eq!(first_run_res.status(), StatusCode::OK);
 
-    let first_body = to_bytes(first_run_res.into_body(), usize::MAX).await.unwrap();
+    let first_body = to_bytes(first_run_res.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let first_json: Value = serde_json::from_slice(&first_body).unwrap();
     assert!(first_json["processed"].as_i64().unwrap_or_default() >= 1);
 
@@ -381,7 +389,9 @@ async fn thr_accrual_is_idempotent(pool: PgPool) {
     let second_run_res = app.clone().oneshot(second_run_req).await.unwrap();
     assert_eq!(second_run_res.status(), StatusCode::OK);
 
-    let second_body = to_bytes(second_run_res.into_body(), usize::MAX).await.unwrap();
+    let second_body = to_bytes(second_run_res.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let second_json: Value = serde_json::from_slice(&second_body).unwrap();
     assert_eq!(second_json["processed"].as_i64().unwrap_or_default(), 0);
     assert!(second_json["skipped"].as_i64().unwrap_or_default() >= 1);
@@ -516,7 +526,9 @@ async fn hr_can_get_thr_payout_report(pool: PgPool) {
 
     let body = to_bytes(report_res.into_body(), usize::MAX).await.unwrap();
     let json: Value = serde_json::from_slice(&body).unwrap();
-    let entries = json["entries"].as_array().expect("entries should be an array");
+    let entries = json["entries"]
+        .as_array()
+        .expect("entries should be an array");
     assert!(!entries.is_empty(), "entries should not be empty");
 
     let first = &entries[0];
@@ -622,5 +634,8 @@ async fn thr_accrual_stores_encrypted_values(pool: PgPool) {
         !encrypted_entitlement.parse::<i64>().is_ok(),
         "Entitlement should be encrypted, not plaintext"
     );
-    assert!(encrypted_accrual.len() > 20, "Encrypted value should be substantial length");
+    assert!(
+        encrypted_accrual.len() > 20,
+        "Encrypted value should be substantial length"
+    );
 }

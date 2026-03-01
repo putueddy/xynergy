@@ -7,7 +7,9 @@ use sqlx::{PgPool, Row};
 use tower::ServiceExt;
 use uuid::Uuid;
 
-use xynergy_backend::services::ctc_crypto::{backfill_plaintext_ctc_records, CtcCryptoService, DefaultCtcCryptoService, EncryptedPayload};
+use xynergy_backend::services::ctc_crypto::{
+    backfill_plaintext_ctc_records, CtcCryptoService, DefaultCtcCryptoService, EncryptedPayload,
+};
 use xynergy_backend::services::key_provider::EnvKeyProvider;
 
 fn test_email() -> String {
@@ -72,7 +74,9 @@ async fn get_auth_token(app: &axum::Router, email: &str) -> String {
         .unwrap();
 
     let login_response = app.clone().oneshot(login_request).await.unwrap();
-    let bytes = to_bytes(login_response.into_body(), usize::MAX).await.unwrap();
+    let bytes = to_bytes(login_response.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let login_json: Value = serde_json::from_slice(&bytes).unwrap();
     login_json["token"].as_str().unwrap().to_string()
 }
@@ -89,8 +93,7 @@ async fn test_create_and_read_ctc_encrypts_data(pool: PgPool) {
 
     let hr_email = test_email();
     let dept_id = create_test_department(&pool, "HR Dept").await;
-    let _hr_id =
-        create_test_user_with_role_and_dept(&pool, &hr_email, "hr", Some(dept_id)).await;
+    let _hr_id = create_test_user_with_role_and_dept(&pool, &hr_email, "hr", Some(dept_id)).await;
     let hr_token = get_auth_token(&app, &hr_email).await;
 
     let resource_id = create_test_resource_in_dept(&pool, "Encrypted Engineer", dept_id).await;
@@ -128,7 +131,7 @@ async fn test_create_and_read_ctc_encrypts_data(pool: PgPool) {
     .unwrap();
 
     let components: serde_json::Value = row.try_get("components").unwrap();
-    assert_eq!(components, json!({})); // Empty plaintext JSON body 
+    assert_eq!(components, json!({})); // Empty plaintext JSON body
 
     let encrypted_components: String = row.try_get("encrypted_components").unwrap();
     assert!(!encrypted_components.is_empty());
@@ -156,14 +159,20 @@ async fn test_create_and_read_ctc_encrypts_data(pool: PgPool) {
 
     let get_body = to_bytes(get_res.into_body(), usize::MAX).await.unwrap();
     let get_json: Value = serde_json::from_slice(&get_body).unwrap();
-    
+
     assert_eq!(get_json["components"]["base_salary"], 15000000);
 }
 
 #[tokio::test]
 async fn test_key_version_metadata_and_rotation_compatibility() {
-    std::env::set_var("CTC_ENCRYPTION_KEY_V1", "QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE=");
-    std::env::set_var("CTC_ENCRYPTION_KEY_V2", "QkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkI=");
+    std::env::set_var(
+        "CTC_ENCRYPTION_KEY_V1",
+        "QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE=",
+    );
+    std::env::set_var(
+        "CTC_ENCRYPTION_KEY_V2",
+        "QkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkI=",
+    );
 
     let v1_service = DefaultCtcCryptoService::new(EnvKeyProvider {
         active_version: "v1".to_string(),
@@ -208,7 +217,7 @@ async fn test_plaintext_backfill(pool: PgPool) {
          ) VALUES (
              $1, $2, $3, $3, 'Legacy insert', 
              654321.12, 22, CURRENT_DATE, 'Active', CURRENT_TIMESTAMP
-         )"
+         )",
     )
     .bind(resource_id)
     .bind(json!({
@@ -220,9 +229,13 @@ async fn test_plaintext_backfill(pool: PgPool) {
     .unwrap();
 
     // Verify it's unencrypted
-    let pre = sqlx::query("SELECT encrypted_components, components FROM ctc_records WHERE resource_id = $1")
-        .bind(resource_id)
-        .fetch_one(&pool).await.unwrap();
+    let pre = sqlx::query(
+        "SELECT encrypted_components, components FROM ctc_records WHERE resource_id = $1",
+    )
+    .bind(resource_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
 
     let pre_enc: Option<String> = pre.try_get("encrypted_components").unwrap();
     assert!(pre_enc.is_none());
@@ -232,7 +245,9 @@ async fn test_plaintext_backfill(pool: PgPool) {
 
     // 2. Run Backfill
     let crypto_svc = DefaultCtcCryptoService::new(EnvKeyProvider::new());
-    let backfilled_count = backfill_plaintext_ctc_records(&pool, &crypto_svc).await.unwrap();
+    let backfilled_count = backfill_plaintext_ctc_records(&pool, &crypto_svc)
+        .await
+        .unwrap();
     assert_eq!(backfilled_count, 1);
 
     // 3. Verify it is now encrypted
@@ -253,25 +268,35 @@ async fn test_plaintext_backfill(pool: PgPool) {
     assert!(!post_enc_daily_rate.is_empty());
 
     // 4. Decrypt via service to verify equivalence
-    let key_version: String = post.try_get("key_version").unwrap_or_else(|_| "v1".to_string());
-    let decrypted = crypto_svc.decrypt_components(&EncryptedPayload {
-        ciphertext: post_enc,
-        key_version,
-        encryption_version: "v1".to_string(),
-        algorithm: "AES-256-GCM".to_string(),
-        encrypted_at: chrono::Utc::now()
-    }).await.unwrap();
+    let key_version: String = post
+        .try_get("key_version")
+        .unwrap_or_else(|_| "v1".to_string());
+    let decrypted = crypto_svc
+        .decrypt_components(&EncryptedPayload {
+            ciphertext: post_enc,
+            key_version,
+            encryption_version: "v1".to_string(),
+            algorithm: "AES-256-GCM".to_string(),
+            encrypted_at: chrono::Utc::now(),
+        })
+        .await
+        .unwrap();
 
     assert_eq!(decrypted["base_salary"], 9999999);
 
-    let decrypted_daily_rate = crypto_svc.decrypt_components(&EncryptedPayload {
-        ciphertext: post_enc_daily_rate,
-        key_version: "v1".to_string(),
-        encryption_version: "v1".to_string(),
-        algorithm: "AES-256-GCM".to_string(),
-        encrypted_at: chrono::Utc::now(),
-    }).await.unwrap();
+    let decrypted_daily_rate = crypto_svc
+        .decrypt_components(&EncryptedPayload {
+            ciphertext: post_enc_daily_rate,
+            key_version: "v1".to_string(),
+            encryption_version: "v1".to_string(),
+            algorithm: "AES-256-GCM".to_string(),
+            encrypted_at: chrono::Utc::now(),
+        })
+        .await
+        .unwrap();
 
-    let decrypted_daily_rate_str = decrypted_daily_rate["daily_rate"].as_str().unwrap_or_default();
+    let decrypted_daily_rate_str = decrypted_daily_rate["daily_rate"]
+        .as_str()
+        .unwrap_or_default();
     assert!(decrypted_daily_rate_str.starts_with("654321.12"));
 }

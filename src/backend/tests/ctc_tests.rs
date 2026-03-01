@@ -24,7 +24,7 @@ fn set_ctc_crypto_env() {
 async fn create_test_user_with_role(pool: &PgPool, email: &str, role: &str) -> Uuid {
     let password_hash = xynergy_backend::routes::auth::hash_password("Password123!")
         .expect("password hashing should succeed in tests");
-    
+
     sqlx::query_scalar::<_, Uuid>(
         "INSERT INTO users (email, password_hash, first_name, last_name, role)
          VALUES ($1, $2, 'Test', 'User', $3)
@@ -64,7 +64,11 @@ async fn get_auth_token(app: &axum::Router, email: &str) -> String {
         ))
         .expect("request should be built");
 
-    let res = app.clone().oneshot(req).await.expect("login should return response");
+    let res = app
+        .clone()
+        .oneshot(req)
+        .await
+        .expect("login should return response");
     assert_eq!(res.status(), StatusCode::OK);
 
     let body = to_bytes(res.into_body(), usize::MAX).await.unwrap();
@@ -107,14 +111,25 @@ async fn hr_can_create_ctc_record(pool: PgPool) {
         ))
         .expect("request should be built");
 
-    let res = app.clone().oneshot(req).await.expect("create should return response");
-    assert_eq!(res.status(), StatusCode::OK, "HR should be able to create CTC record");
+    let res = app
+        .clone()
+        .oneshot(req)
+        .await
+        .expect("create should return response");
+    assert_eq!(
+        res.status(),
+        StatusCode::OK,
+        "HR should be able to create CTC record"
+    );
 
     let body = to_bytes(res.into_body(), usize::MAX).await.unwrap();
     let json: Value = serde_json::from_slice(&body).unwrap();
 
     // Verify response structure
-    assert_eq!(json["resource_id"].as_str().unwrap(), resource_id.to_string());
+    assert_eq!(
+        json["resource_id"].as_str().unwrap(),
+        resource_id.to_string()
+    );
     assert_eq!(json["base_salary"].as_i64().unwrap(), 15000000);
     assert!(json["total_monthly_ctc"].as_i64().unwrap() > 0);
     assert!(json["daily_rate"].as_f64().unwrap() > 0.0);
@@ -123,8 +138,18 @@ async fn hr_can_create_ctc_record(pool: PgPool) {
     // Verify BPJS calculations are present
     assert!(json["bpjs"]["kesehatan"]["employer"].as_i64().unwrap() >= 0);
     assert!(json["bpjs"]["kesehatan"]["employee"].as_i64().unwrap() >= 0);
-    assert!(json["bpjs"]["ketenagakerjaan"]["employer"].as_i64().unwrap() >= 0);
-    assert!(json["bpjs"]["ketenagakerjaan"]["employee"].as_i64().unwrap() >= 0);
+    assert!(
+        json["bpjs"]["ketenagakerjaan"]["employer"]
+            .as_i64()
+            .unwrap()
+            >= 0
+    );
+    assert!(
+        json["bpjs"]["ketenagakerjaan"]["employee"]
+            .as_i64()
+            .unwrap()
+            >= 0
+    );
 
     // Verify record was created in database
     let record_exists = sqlx::query("SELECT resource_id FROM ctc_records WHERE resource_id = $1")
@@ -132,7 +157,10 @@ async fn hr_can_create_ctc_record(pool: PgPool) {
         .fetch_optional(&pool)
         .await
         .unwrap();
-    assert!(record_exists.is_some(), "CTC record should exist in database");
+    assert!(
+        record_exists.is_some(),
+        "CTC record should exist in database"
+    );
 
     // Verify audit log entry
     let audit_count = sqlx::query_scalar::<_, i64>(
@@ -179,8 +207,16 @@ async fn non_hr_cannot_create_ctc_record(pool: PgPool) {
         ))
         .expect("request should be built");
 
-    let res = app.clone().oneshot(req).await.expect("create should return response");
-    assert_eq!(res.status(), StatusCode::FORBIDDEN, "Non-HR should be denied");
+    let res = app
+        .clone()
+        .oneshot(req)
+        .await
+        .expect("create should return response");
+    assert_eq!(
+        res.status(),
+        StatusCode::FORBIDDEN,
+        "Non-HR should be denied"
+    );
 }
 
 #[sqlx::test(migrations = "../../migrations")]
@@ -213,8 +249,16 @@ async fn admin_cannot_create_ctc_record(pool: PgPool) {
         ))
         .expect("request should be built");
 
-    let res = app.clone().oneshot(req).await.expect("create should return response");
-    assert_eq!(res.status(), StatusCode::FORBIDDEN, "Admin should be denied for HR-only endpoint");
+    let res = app
+        .clone()
+        .oneshot(req)
+        .await
+        .expect("create should return response");
+    assert_eq!(
+        res.status(),
+        StatusCode::FORBIDDEN,
+        "Admin should be denied for HR-only endpoint"
+    );
 }
 
 #[sqlx::test(migrations = "../../migrations")]
@@ -247,8 +291,16 @@ async fn create_ctc_rejects_negative_values(pool: PgPool) {
         ))
         .expect("request should be built");
 
-    let res = app.clone().oneshot(req).await.expect("create should return response");
-    assert_eq!(res.status(), StatusCode::BAD_REQUEST, "Negative values should be rejected");
+    let res = app
+        .clone()
+        .oneshot(req)
+        .await
+        .expect("create should return response");
+    assert_eq!(
+        res.status(),
+        StatusCode::BAD_REQUEST,
+        "Negative values should be rejected"
+    );
 }
 
 #[sqlx::test(migrations = "../../migrations")]
@@ -305,7 +357,11 @@ async fn create_ctc_rejects_duplicate_resource(pool: PgPool) {
         .expect("request should be built");
 
     let res2 = app.clone().oneshot(req2).await.unwrap();
-    assert_eq!(res2.status(), StatusCode::BAD_REQUEST, "Duplicate CTC record should be rejected");
+    assert_eq!(
+        res2.status(),
+        StatusCode::BAD_REQUEST,
+        "Duplicate CTC record should be rejected"
+    );
 }
 
 #[sqlx::test(migrations = "../../migrations")]
@@ -349,14 +405,23 @@ async fn calculate_bpjs_preview_works(pool: PgPool) {
     // Verify calculations
     // Basis: 10M + 2M + 1M + 500K + 500K = 14M
     // Kesehatan capped at 12M: employer = 480K, employee = 120K
-    assert_eq!(json["bpjs"]["kesehatan"]["employer"].as_i64().unwrap(), 480000);
-    assert_eq!(json["bpjs"]["kesehatan"]["employee"].as_i64().unwrap(), 120000);
-    
+    assert_eq!(
+        json["bpjs"]["kesehatan"]["employer"].as_i64().unwrap(),
+        480000
+    );
+    assert_eq!(
+        json["bpjs"]["kesehatan"]["employee"].as_i64().unwrap(),
+        120000
+    );
+
     // Verify total CTC is calculated
     assert!(json["total_monthly_ctc"].as_i64().unwrap() > 0);
-    
+
     // Verify daily rate = total / 22
     let total = json["total_monthly_ctc"].as_i64().unwrap() as f64;
     let daily = json["daily_rate"].as_f64().unwrap();
-    assert!((daily - (total / 22.0)).abs() < 1.0, "Daily rate should equal total / working_days");
+    assert!(
+        (daily - (total / 22.0)).abs() < 1.0,
+        "Daily rate should equal total / working_days"
+    );
 }

@@ -4,11 +4,11 @@ use axum::{
     body::{to_bytes, Body},
     http::{Request, StatusCode},
 };
+use chrono::{Datelike, Utc};
 use serde_json::{json, Value};
 use sqlx::PgPool;
 use tower::ServiceExt;
 use uuid::Uuid;
-use chrono::{Datelike, Utc};
 
 fn test_email() -> String {
     format!("ctc-rev-test-{}@example.com", Uuid::new_v4())
@@ -25,7 +25,7 @@ fn set_ctc_crypto_env() {
 async fn create_test_user_with_role(pool: &PgPool, email: &str, role: &str) -> Uuid {
     let password_hash = xynergy_backend::routes::auth::hash_password("Password123!")
         .expect("password hashing should succeed");
-    
+
     sqlx::query_scalar::<_, Uuid>(
         "INSERT INTO users (email, password_hash, first_name, last_name, role)
          VALUES ($1, $2, 'Test', 'User', $3)
@@ -56,7 +56,9 @@ async fn get_auth_token(app: &axum::Router, email: &str) -> String {
         .method("POST")
         .uri("/api/v1/auth/login")
         .header("content-type", "application/json")
-        .body(Body::from(json!({"email": email, "password": "Password123!"}).to_string()))
+        .body(Body::from(
+            json!({"email": email, "password": "Password123!"}).to_string(),
+        ))
         .unwrap();
 
     let res = app.clone().oneshot(req).await.unwrap();
@@ -73,20 +75,23 @@ async fn create_ctc_record(app: &axum::Router, hr_token: &str, resource_id: Uuid
         .uri("/api/v1/ctc")
         .header("content-type", "application/json")
         .header("Authorization", format!("Bearer {}", hr_token))
-        .body(Body::from(json!({
-            "resource_id": resource_id.to_string(),
-            "base_salary": 15000000,
-            "hra_allowance": 3000000,
-            "medical_allowance": 1000000,
-            "transport_allowance": 500000,
-            "meal_allowance": 500000,
-            "working_days_per_month": 22
-        }).to_string()))
+        .body(Body::from(
+            json!({
+                "resource_id": resource_id.to_string(),
+                "base_salary": 15000000,
+                "hra_allowance": 3000000,
+                "medical_allowance": 1000000,
+                "transport_allowance": 500000,
+                "meal_allowance": 500000,
+                "working_days_per_month": 22
+            })
+            .to_string(),
+        ))
         .unwrap();
 
     let res = app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    
+
     let body = to_bytes(res.into_body(), usize::MAX).await.unwrap();
     serde_json::from_slice(&body).unwrap()
 }
@@ -110,37 +115,47 @@ async fn test_update_ctc_creates_revision(pool: PgPool) {
         .uri(format!("/api/v1/ctc/{}/components", resource_id))
         .header("content-type", "application/json")
         .header("Authorization", format!("Bearer {}", hr_token))
-        .body(Body::from(json!({
-            "components": {
-                "base_salary": 20000000,
-                "hra_allowance": 3000000,
-                "medical_allowance": 1000000,
-                "transport_allowance": 500000,
-                "meal_allowance": 500000,
-                "daily_rate": "800000"
-            },
-            "reason": "Promoted to Senior level",
-            "effective_date_policy": "pro_rata"
-        }).to_string()))
+        .body(Body::from(
+            json!({
+                "components": {
+                    "base_salary": 20000000,
+                    "hra_allowance": 3000000,
+                    "medical_allowance": 1000000,
+                    "transport_allowance": 500000,
+                    "meal_allowance": 500000,
+                    "daily_rate": "800000"
+                },
+                "reason": "Promoted to Senior level",
+                "effective_date_policy": "pro_rata"
+            })
+            .to_string(),
+        ))
         .unwrap();
 
     let res = app.clone().oneshot(req).await.unwrap();
     let status = res.status();
     let body_bytes = to_bytes(res.into_body(), usize::MAX).await.unwrap();
     let body_str = String::from_utf8(body_bytes.to_vec()).unwrap();
-    assert_eq!(status, StatusCode::OK, "Update should succeed, got: {}", body_str);
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "Update should succeed, got: {}",
+        body_str
+    );
 
     // Verify revision was created
-    let revision_count = sqlx::query_scalar::<_, i64>(
-        "SELECT COUNT(*) FROM ctc_revisions WHERE resource_id = $1"
-    )
-    .bind(resource_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    
+    let revision_count =
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM ctc_revisions WHERE resource_id = $1")
+            .bind(resource_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+
     // There should be 2 revisions: the initial creation and the update.
-    assert_eq!(revision_count, 2, "Revisions should be persisted for creates and updates");
+    assert_eq!(
+        revision_count, 2,
+        "Revisions should be persisted for creates and updates"
+    );
 }
 
 #[sqlx::test(migrations = "../../migrations")]
@@ -165,14 +180,23 @@ async fn test_ctc_history_endpoint(pool: PgPool) {
         .unwrap();
 
     let res = app.clone().oneshot(req).await.unwrap();
-    assert_eq!(res.status(), StatusCode::OK, "History endpoint should exist and return OK");
-    
+    assert_eq!(
+        res.status(),
+        StatusCode::OK,
+        "History endpoint should exist and return OK"
+    );
+
     let body = to_bytes(res.into_body(), usize::MAX).await.unwrap();
     let history: Value = serde_json::from_slice(&body).unwrap();
-    
-    let entries = history["history"].as_array().expect("Expected history array");
+
+    let entries = history["history"]
+        .as_array()
+        .expect("Expected history array");
     assert_eq!(entries.len(), 1, "Should have one entry from create");
-    assert_eq!(entries[0]["reason"].as_str().unwrap(), "Initial CTC record creation");
+    assert_eq!(
+        entries[0]["reason"].as_str().unwrap(),
+        "Initial CTC record creation"
+    );
 }
 
 #[sqlx::test(migrations = "../../migrations")]
@@ -197,13 +221,16 @@ async fn test_non_hr_cannot_update_or_view_history(pool: PgPool) {
         .uri(format!("/api/v1/ctc/{}/components", resource_id))
         .header("content-type", "application/json")
         .header("Authorization", format!("Bearer {}", non_hr_token))
-        .body(Body::from(json!({
-            "components": {
-                "base_salary": 21000000,
-                "daily_rate": "840000"
-            },
-            "reason": "Unauthorized change"
-        }).to_string()))
+        .body(Body::from(
+            json!({
+                "components": {
+                    "base_salary": 21000000,
+                    "daily_rate": "840000"
+                },
+                "reason": "Unauthorized change"
+            })
+            .to_string(),
+        ))
         .unwrap();
 
     let res_update = app.clone().oneshot(req_update).await.unwrap();
@@ -238,17 +265,20 @@ async fn test_revision_storage_is_ciphertext_not_plaintext(pool: PgPool) {
         .uri(format!("/api/v1/ctc/{}/components", resource_id))
         .header("content-type", "application/json")
         .header("Authorization", format!("Bearer {}", hr_token))
-        .body(Body::from(json!({
-            "components": {
-                "base_salary": 22000000,
-                "hra_allowance": 4000000,
-                "medical_allowance": 1000000,
-                "transport_allowance": 600000,
-                "meal_allowance": 600000,
-                "daily_rate": "900000"
-            },
-            "reason": "Comp review update"
-        }).to_string()))
+        .body(Body::from(
+            json!({
+                "components": {
+                    "base_salary": 22000000,
+                    "hra_allowance": 4000000,
+                    "medical_allowance": 1000000,
+                    "transport_allowance": 600000,
+                    "meal_allowance": 600000,
+                    "daily_rate": "900000"
+                },
+                "reason": "Comp review update"
+            })
+            .to_string(),
+        ))
         .unwrap();
 
     let res_update = app.clone().oneshot(req_update).await.unwrap();
@@ -274,7 +304,8 @@ async fn test_revision_storage_is_ciphertext_not_plaintext(pool: PgPool) {
     assert!(!encrypted_components.contains("22000000"));
     assert!(!encrypted_components.contains("4000000"));
 
-    let encrypted_daily_rate = encrypted_daily_rate.expect("encrypted_daily_rate should be present");
+    let encrypted_daily_rate =
+        encrypted_daily_rate.expect("encrypted_daily_rate should be present");
     assert!(!encrypted_daily_rate.is_empty());
     assert!(!encrypted_daily_rate.contains("900000"));
 }
@@ -297,14 +328,17 @@ async fn test_effective_date_policy_is_configurable_and_applied(pool: PgPool) {
         .uri(format!("/api/v1/ctc/{}/components", resource_id))
         .header("content-type", "application/json")
         .header("Authorization", format!("Bearer {}", hr_token))
-        .body(Body::from(json!({
-            "components": {
-                "base_salary": 20000000,
-                "daily_rate": "810000"
-            },
-            "reason": "Policy behavior verification",
-            "effective_date_policy": "effective_first_of_month"
-        }).to_string()))
+        .body(Body::from(
+            json!({
+                "components": {
+                    "base_salary": 20000000,
+                    "daily_rate": "810000"
+                },
+                "reason": "Policy behavior verification",
+                "effective_date_policy": "effective_first_of_month"
+            })
+            .to_string(),
+        ))
         .unwrap();
 
     let res_update = app.clone().oneshot(req_update).await.unwrap();

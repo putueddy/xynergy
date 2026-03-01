@@ -135,14 +135,15 @@ async fn test_valid_deterministic_hash_chain(pool: PgPool) {
 async fn test_ctc_view_and_mutation_audit(pool: PgPool) {
     std::env::set_var("JWT_SECRET", "test-secret");
     std::env::set_var("CTC_ACTIVE_KEY_VERSION", "v1");
-    std::env::set_var("CTC_ENCRYPTION_KEY_V1", "QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE=");
+    std::env::set_var(
+        "CTC_ENCRYPTION_KEY_V1",
+        "QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE=",
+    );
     let app = xynergy_backend::create_app(pool.clone());
 
     let hr_email = test_email();
     let dept_id = create_test_department(&pool, "Finance").await;
-    let _hr_id =
-        create_test_user_with_role_and_dept(&pool, &hr_email, "hr", Some(dept_id))
-            .await;
+    let _hr_id = create_test_user_with_role_and_dept(&pool, &hr_email, "hr", Some(dept_id)).await;
     let hr_token = get_auth_token(&app, &hr_email).await;
     let resource_id = create_test_resource_in_dept(&pool, "Fin Resource", dept_id).await;
 

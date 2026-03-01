@@ -13,6 +13,7 @@ use auth::provide_auth_context;
 use pages::{
     allocations::Allocations,
     ctc::CtcManagement,
+    ctc_completeness::CtcCompleteness,
     dashboard::Dashboard,
     home::Home,
     login::Login,
@@ -55,6 +56,7 @@ pub fn App() -> impl IntoView {
                     <Route path="/projects" view=Projects/>
                     <Route path="/allocations" view=Allocations/>
                     <Route path="/ctc" view=CtcManagement/>
+                    <Route path="/ctc/completeness" view=CtcCompleteness/>
                     <Route path="/thr" view=ThrManagement/>
                     <Route path="/settings" view=SettingsPage>
                         <Route path="/holidays" view=SettingsHolidaysPage/>

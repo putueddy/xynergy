@@ -1,4 +1,6 @@
-use xynergy_backend::services::ctc_crypto::{backfill_plaintext_ctc_records, DefaultCtcCryptoService};
+use xynergy_backend::services::ctc_crypto::{
+    backfill_plaintext_ctc_records, DefaultCtcCryptoService,
+};
 use xynergy_backend::services::key_provider::EnvKeyProvider;
 use xynergy_backend::Database;
 
