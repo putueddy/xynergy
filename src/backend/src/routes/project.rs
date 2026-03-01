@@ -48,6 +48,16 @@ pub struct UpdateProjectRequest {
     pub project_manager_id: Option<Uuid>,
 }
 
+/// Assignable project response (minimal fields for assignment dropdown)
+#[derive(Debug, Serialize)]
+pub struct AssignableProjectResponse {
+    pub id: Uuid,
+    pub name: String,
+    pub start_date: NaiveDate,
+    pub end_date: NaiveDate,
+    pub status: String,
+}
+
 /// Get all projects
 async fn get_projects(
     State(pool): State<PgPool>,
@@ -74,6 +84,68 @@ async fn get_projects(
             ProjectResponse,
             "SELECT id, name, description, start_date, end_date, status, project_manager_id 
              FROM projects ORDER BY start_date DESC"
+        )
+        .fetch_all(&pool)
+        .await
+        .map_err(|e| AppError::Database(e.to_string()))?
+    };
+
+    Ok(Json(projects))
+}
+
+/// Get assignable projects for assignment form dropdown
+/// Role matrix: project_manager sees only active projects they manage;
+/// department_head and admin see all active projects.
+async fn get_assignable_projects(
+    State(pool): State<PgPool>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<AssignableProjectResponse>>> {
+    let claims = user_claims_from_headers(&headers)?
+        .ok_or_else(|| AppError::Authentication("Missing token".to_string()))?;
+    let user_id = Uuid::parse_str(&claims.sub)
+        .map_err(|_| AppError::Authentication("Invalid user ID in token".to_string()))?;
+
+    let can_assign = matches!(
+        claims.role.as_str(),
+        "admin" | "department_head" | "project_manager"
+    );
+    if !can_assign {
+        log_audit(
+            &pool,
+            Some(user_id),
+            "ACCESS_DENIED",
+            "project",
+            Uuid::nil(),
+            serde_json::json!({
+                "reason": "insufficient_permissions",
+                "attempted_role": claims.role,
+                "action": "get_assignable_projects",
+            }),
+        )
+        .await
+        .ok();
+        return Err(AppError::Forbidden("Insufficient permissions".to_string()));
+    }
+
+    let projects = if claims.role == "project_manager" {
+        sqlx::query_as!(
+            AssignableProjectResponse,
+            "SELECT id, name, start_date, end_date, status
+             FROM projects
+             WHERE status = 'Active' AND project_manager_id = $1
+             ORDER BY name ASC",
+            user_id
+        )
+        .fetch_all(&pool)
+        .await
+        .map_err(|e| AppError::Database(e.to_string()))?
+    } else {
+        sqlx::query_as!(
+            AssignableProjectResponse,
+            "SELECT id, name, start_date, end_date, status
+             FROM projects
+             WHERE status = 'Active'
+             ORDER BY name ASC"
         )
         .fetch_all(&pool)
         .await
@@ -307,6 +379,7 @@ async fn delete_project(
 pub fn project_routes() -> Router<PgPool> {
     Router::new()
         .route("/projects", get(get_projects).post(create_project))
+        .route("/projects/assignable", get(get_assignable_projects))
         .route(
             "/projects/:id",
             get(get_project).put(update_project).delete(delete_project),

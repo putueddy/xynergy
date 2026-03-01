@@ -1,19 +1,22 @@
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::HeaderMap,
     routing::{get, put},
     Json, Router,
 };
-use chrono::{Datelike, NaiveDate, Weekday};
+use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use sqlx::PgPool;
-use std::collections::HashMap;
+use sqlx::{types::BigDecimal, PgPool, Row};
+use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 
 use crate::error::{AppError, Result};
 use crate::services::{
     audit_log::user_claims_from_headers, audit_payload, log_audit, user_id_from_headers,
+    cost_preview::{calculate_cost_preview, is_weekend, MonthlyBucket},
+    ctc_crypto::{CtcCryptoService, DefaultCtcCryptoService, EncryptedPayload},
+    key_provider::EnvKeyProvider,
 };
 
 fn required_uuid(value: Option<Uuid>, field: &str) -> Result<Uuid> {
@@ -123,6 +126,38 @@ pub struct UpdateAllocationRequest {
     pub include_weekend: Option<bool>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct CostPreviewQuery {
+    pub resource_id: Uuid,
+    pub project_id: Uuid,
+    pub start_date: NaiveDate,
+    pub end_date: NaiveDate,
+    pub allocation_percentage: f64,
+    pub include_weekend: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct BudgetImpact {
+    pub department_budget_total_idr: i64,
+    pub current_committed_idr: i64,
+    pub projected_committed_idr: i64,
+    pub remaining_after_assignment_idr: i64,
+    pub utilization_percentage: f64,
+    pub budget_health: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CostPreviewResponse {
+    pub daily_rate_idr: i64,
+    pub working_days: i32,
+    pub allocation_percentage: f64,
+    pub total_cost_idr: i64,
+    pub monthly_breakdown: Vec<MonthlyBucket>,
+    pub budget_impact: Option<BudgetImpact>,
+    pub warning: Option<String>,
+    pub requires_approval: bool,
+}
+
 /// Daily allocation info for validation
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -150,10 +185,372 @@ fn f64_to_bigdecimal(f: f64) -> sqlx::types::BigDecimal {
     sqlx::types::BigDecimal::try_from(f).unwrap_or_default()
 }
 
-/// Check if date is a weekend (Saturday or Sunday)
-fn is_weekend(date: NaiveDate) -> bool {
-    matches!(date.weekday(), Weekday::Sat | Weekday::Sun)
+fn bigdecimal_to_i64_trunc(value: &BigDecimal) -> Result<i64> {
+    value
+        .to_string()
+        .split('.')
+        .next()
+        .unwrap_or("0")
+        .parse::<i64>()
+        .map_err(|_| AppError::Internal("Failed to convert decimal to i64".to_string()))
 }
+
+fn parse_json_decimal(value: &serde_json::Value, field: &str) -> Result<BigDecimal> {
+    match value {
+        serde_json::Value::String(s) => s.parse::<BigDecimal>().map_err(|_| {
+            AppError::Internal(format!("Failed to parse '{}' from decrypted payload", field))
+        }),
+        serde_json::Value::Number(n) => n.to_string().parse::<BigDecimal>().map_err(|_| {
+            AppError::Internal(format!("Failed to parse '{}' from decrypted payload", field))
+        }),
+        _ => Err(AppError::Internal(format!(
+            "Invalid '{}' value in decrypted payload",
+            field
+        ))),
+    }
+}
+
+async fn get_active_ctc_daily_rate(pool: &PgPool, resource_id: Uuid) -> Result<i64> {
+    let row = sqlx::query(
+        "SELECT daily_rate, encrypted_daily_rate, key_version, encryption_version, encryption_algorithm, encrypted_at
+         FROM ctc_records
+         WHERE resource_id = $1 AND status = 'Active'
+         ORDER BY effective_date DESC, updated_at DESC
+         LIMIT 1",
+    )
+    .bind(resource_id)
+    .fetch_optional(pool)
+    .await
+    .map_err(|e| AppError::Database(e.to_string()))?
+    .ok_or_else(|| {
+        AppError::Validation(
+            "Cannot assign resource without CTC data. Contact HR to complete CTC entry for this employee."
+                .to_string(),
+        )
+    })?;
+
+    let encrypted_daily_rate: Option<String> = row
+        .try_get("encrypted_daily_rate")
+        .map_err(|e| AppError::Database(e.to_string()))?;
+
+    if let Some(ciphertext) = encrypted_daily_rate {
+        let key_version: String = row
+            .try_get("key_version")
+            .map_err(|e| AppError::Database(e.to_string()))?;
+        let encryption_version: String = row
+            .try_get("encryption_version")
+            .map_err(|e| AppError::Database(e.to_string()))?;
+        let algorithm: String = row
+            .try_get("encryption_algorithm")
+            .map_err(|e| AppError::Database(e.to_string()))?;
+        let encrypted_at: Option<DateTime<Utc>> = row
+            .try_get("encrypted_at")
+            .map_err(|e| AppError::Database(e.to_string()))?;
+
+        let payload = EncryptedPayload {
+            ciphertext,
+            key_version,
+            encryption_version,
+            algorithm,
+            encrypted_at: encrypted_at.unwrap_or_else(Utc::now),
+        };
+
+        let crypto_svc = DefaultCtcCryptoService::new(EnvKeyProvider::new());
+        let decrypted = crypto_svc.decrypt_components(&payload).await?;
+        let daily_rate_value = decrypted.get("daily_rate").ok_or_else(|| {
+            AppError::Internal("Missing daily_rate in decrypted CTC payload".to_string())
+        })?;
+        let daily_rate_bd = parse_json_decimal(daily_rate_value, "daily_rate")?;
+        return bigdecimal_to_i64_trunc(&daily_rate_bd);
+    }
+
+    let plaintext_daily_rate: Option<BigDecimal> = row
+        .try_get("daily_rate")
+        .map_err(|e| AppError::Database(e.to_string()))?;
+
+    if let Some(daily_rate) = plaintext_daily_rate {
+        return bigdecimal_to_i64_trunc(&daily_rate);
+    }
+
+    Err(AppError::Validation(
+        "Cannot assign resource without CTC data. Contact HR to complete CTC entry for this employee."
+            .to_string(),
+    ))
+}
+
+#[derive(Debug)]
+struct BudgetComputation {
+    budget_impact: Option<BudgetImpact>,
+    warning: Option<String>,
+    requires_approval: bool,
+}
+
+fn format_idr_millions(value: i64) -> String {
+    format!("{:.1}", value as f64 / 1_000_000.0)
+}
+
+async fn extract_daily_rate_from_allocation_row(row: &sqlx::postgres::PgRow, crypto_svc: &DefaultCtcCryptoService<EnvKeyProvider>) -> Result<Option<i64>> {
+    let encrypted_daily_rate: Option<String> = row
+        .try_get("encrypted_daily_rate")
+        .map_err(|e| AppError::Database(e.to_string()))?;
+
+    if let Some(ciphertext) = encrypted_daily_rate {
+        let key_version: Option<String> = row
+            .try_get("key_version")
+            .map_err(|e| AppError::Database(e.to_string()))?;
+        let encryption_version: Option<String> = row
+            .try_get("encryption_version")
+            .map_err(|e| AppError::Database(e.to_string()))?;
+        let algorithm: Option<String> = row
+            .try_get("encryption_algorithm")
+            .map_err(|e| AppError::Database(e.to_string()))?;
+        let encrypted_at: Option<DateTime<Utc>> = row
+            .try_get("encrypted_at")
+            .map_err(|e| AppError::Database(e.to_string()))?;
+
+        if let (Some(key_version), Some(encryption_version), Some(algorithm)) =
+            (key_version, encryption_version, algorithm)
+        {
+            let payload = EncryptedPayload {
+                ciphertext,
+                key_version,
+                encryption_version,
+                algorithm,
+                encrypted_at: encrypted_at.unwrap_or_else(Utc::now),
+            };
+            let decrypted = crypto_svc.decrypt_components(&payload).await?;
+            if let Some(daily_rate_value) = decrypted.get("daily_rate") {
+                let daily_rate_bd = parse_json_decimal(daily_rate_value, "daily_rate")?;
+                return Ok(Some(bigdecimal_to_i64_trunc(&daily_rate_bd)?));
+            }
+        }
+    }
+
+    let plaintext_daily_rate: Option<BigDecimal> = row
+        .try_get("daily_rate")
+        .map_err(|e| AppError::Database(e.to_string()))?;
+
+    if let Some(daily_rate) = plaintext_daily_rate {
+        return Ok(Some(bigdecimal_to_i64_trunc(&daily_rate)?));
+    }
+
+    Ok(None)
+}
+
+async fn compute_budget_impact(
+    pool: &PgPool,
+    headers: &HeaderMap,
+    resource_id: Uuid,
+    project_id: Uuid,
+    start_date: NaiveDate,
+    end_date: NaiveDate,
+    monthly_breakdown: &[MonthlyBucket],
+    holidays: &[NaiveDate],
+) -> Result<BudgetComputation> {
+    let department_id: Option<Uuid> =
+        sqlx::query_scalar("SELECT department_id FROM resources WHERE id = $1")
+            .bind(resource_id)
+            .fetch_optional(pool)
+            .await
+            .map_err(|e| AppError::Database(e.to_string()))?
+            .flatten();
+
+    let Some(department_id) = department_id else {
+        return Ok(BudgetComputation {
+            budget_impact: None,
+            warning: None,
+            requires_approval: false,
+        });
+    };
+
+    let budget_periods = monthly_breakdown
+        .iter()
+        .map(|bucket| bucket.month.clone())
+        .collect::<Vec<_>>();
+
+    if budget_periods.is_empty() {
+        return Ok(BudgetComputation {
+            budget_impact: None,
+            warning: None,
+            requires_approval: false,
+        });
+    }
+
+    let budget_rows = sqlx::query(
+        "SELECT budget_period, total_budget_idr
+         FROM department_budgets
+         WHERE department_id = $1
+           AND budget_period = ANY($2)",
+    )
+    .bind(department_id)
+    .bind(&budget_periods)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| AppError::Database(e.to_string()))?;
+
+    if budget_rows.len() != budget_periods.len() {
+        return Ok(BudgetComputation {
+            budget_impact: None,
+            warning: None,
+            requires_approval: false,
+        });
+    }
+
+    let mut budget_by_period: HashMap<String, i64> = HashMap::new();
+    for row in budget_rows {
+        let period: String = row
+            .try_get("budget_period")
+            .map_err(|e| AppError::Database(e.to_string()))?;
+        let total: i64 = row
+            .try_get("total_budget_idr")
+            .map_err(|e| AppError::Database(e.to_string()))?;
+        budget_by_period.insert(period, total);
+    }
+
+    let department_budget_total_idr = budget_periods
+        .iter()
+        .map(|period| budget_by_period.get(period).copied().unwrap_or(0))
+        .sum::<i64>();
+
+    let allocation_rows = sqlx::query(
+        "SELECT a.resource_id, a.start_date, a.end_date, a.allocation_percentage, a.include_weekend,
+                c.daily_rate, c.encrypted_daily_rate, c.key_version, c.encryption_version,
+                c.encryption_algorithm, c.encrypted_at
+         FROM allocations a
+         JOIN resources r ON r.id = a.resource_id
+         LEFT JOIN LATERAL (
+            SELECT daily_rate, encrypted_daily_rate, key_version, encryption_version,
+                   encryption_algorithm, encrypted_at
+            FROM ctc_records c
+            WHERE c.resource_id = a.resource_id AND c.status = 'Active'
+            ORDER BY c.effective_date DESC, c.updated_at DESC
+            LIMIT 1
+         ) c ON TRUE
+         WHERE r.department_id = $1
+           AND a.start_date <= $3
+           AND a.end_date >= $2",
+    )
+    .bind(department_id)
+    .bind(start_date)
+    .bind(end_date)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| AppError::Database(e.to_string()))?;
+
+    let budget_period_set: HashSet<String> = budget_periods.iter().cloned().collect();
+    let mut current_committed_idr = 0i64;
+    let crypto_svc = DefaultCtcCryptoService::new(EnvKeyProvider::new());
+
+    for row in allocation_rows {
+        let allocation_start: NaiveDate = row
+            .try_get("start_date")
+            .map_err(|e| AppError::Database(e.to_string()))?;
+        let allocation_end: NaiveDate = row
+            .try_get("end_date")
+            .map_err(|e| AppError::Database(e.to_string()))?;
+        let include_weekend: bool = row
+            .try_get("include_weekend")
+            .map_err(|e| AppError::Database(e.to_string()))?;
+        let allocation_percentage_bd: BigDecimal = row
+            .try_get("allocation_percentage")
+            .map_err(|e| AppError::Database(e.to_string()))?;
+
+        let overlap_start = std::cmp::max(allocation_start, start_date);
+        let overlap_end = std::cmp::min(allocation_end, end_date);
+        if overlap_start > overlap_end {
+            continue;
+        }
+
+        let Some(daily_rate_idr) = extract_daily_rate_from_allocation_row(&row, &crypto_svc).await? else {
+            continue;
+        };
+
+        let allocation_cost = calculate_cost_preview(
+            daily_rate_idr,
+            overlap_start,
+            overlap_end,
+            bigdecimal_to_f64(allocation_percentage_bd),
+            include_weekend,
+            holidays,
+        );
+
+        current_committed_idr += allocation_cost
+            .monthly_breakdown
+            .iter()
+            .filter(|bucket| budget_period_set.contains(&bucket.month))
+            .map(|bucket| bucket.cost_idr)
+            .sum::<i64>();
+    }
+
+    let this_assignment_cost = monthly_breakdown.iter().map(|b| b.cost_idr).sum::<i64>();
+    let projected_committed_idr = current_committed_idr + this_assignment_cost;
+    let remaining_after_assignment_idr = department_budget_total_idr - projected_committed_idr;
+    let utilization_percentage = if department_budget_total_idr <= 0 {
+        0.0
+    } else {
+        (projected_committed_idr as f64 / department_budget_total_idr as f64) * 100.0
+    };
+
+    let budget_health = if utilization_percentage < 50.0 {
+        "healthy"
+    } else if utilization_percentage <= 80.0 {
+        "warning"
+    } else {
+        "critical"
+    }
+    .to_string();
+
+    let requires_approval = budget_health == "critical"
+        && std::env::var("BUDGET_OVERRUN_POLICY")
+            .unwrap_or_else(|_| "warn".to_string())
+            .eq_ignore_ascii_case("block");
+
+    let warning = if budget_health == "critical" {
+        Some(format!(
+            "This assignment consumes Rp {}M of your Rp {}M budget ({:.1}% utilized)",
+            format_idr_millions(this_assignment_cost),
+            format_idr_millions(department_budget_total_idr),
+            utilization_percentage
+        ))
+    } else {
+        None
+    };
+
+    if budget_health == "critical" {
+        let user_id = user_id_from_headers(headers)?;
+        log_audit(
+            pool,
+            user_id,
+            "budget_preview_critical",
+            "allocation",
+            project_id,
+            json!({
+                "resource_id": resource_id,
+                "department_id": department_id,
+                "projected_committed_idr": projected_committed_idr,
+                "department_budget_total_idr": department_budget_total_idr,
+                "utilization_percentage": utilization_percentage,
+            }),
+        )
+        .await
+        .ok();
+    }
+
+    Ok(BudgetComputation {
+        budget_impact: Some(BudgetImpact {
+            department_budget_total_idr,
+            current_committed_idr,
+            projected_committed_idr,
+            remaining_after_assignment_idr,
+            utilization_percentage,
+            budget_health,
+        }),
+        warning,
+        requires_approval,
+    })
+}
+
+// is_weekend imported from crate::services::cost_preview
 
 /// Get holidays within date range
 async fn get_holidays_in_range(
@@ -677,6 +1074,70 @@ async fn get_allocations_by_resource(
     Ok(Json(response))
 }
 
+async fn cost_preview(
+    State(pool): State<PgPool>,
+    headers: HeaderMap,
+    Query(query): Query<CostPreviewQuery>,
+) -> Result<Json<CostPreviewResponse>> {
+    ensure_allocation_access(
+        &pool,
+        &headers,
+        "cost_preview",
+        query.project_id,
+        Some(query.project_id),
+    )
+    .await?;
+
+    if query.allocation_percentage <= 0.0 || query.allocation_percentage > 100.0 {
+        return Err(AppError::Validation(
+            "Allocation percentage must be greater than 0 and at most 100.".to_string(),
+        ));
+    }
+
+    if query.start_date > query.end_date {
+        return Err(AppError::Validation(
+            "Start date cannot be after end date.".to_string(),
+        ));
+    }
+
+    validate_allocation_dates(&pool, query.project_id, query.start_date, query.end_date).await?;
+
+    let daily_rate_idr = get_active_ctc_daily_rate(&pool, query.resource_id).await?;
+    let holidays = get_holidays_in_range(&pool, query.start_date, query.end_date).await?;
+
+    let preview_result = calculate_cost_preview(
+        daily_rate_idr,
+        query.start_date,
+        query.end_date,
+        query.allocation_percentage,
+        query.include_weekend,
+        &holidays,
+    );
+
+    let budget = compute_budget_impact(
+        &pool,
+        &headers,
+        query.resource_id,
+        query.project_id,
+        query.start_date,
+        query.end_date,
+        &preview_result.monthly_breakdown,
+        &holidays,
+    )
+    .await?;
+
+    Ok(Json(CostPreviewResponse {
+        daily_rate_idr,
+        working_days: preview_result.working_days,
+        allocation_percentage: query.allocation_percentage,
+        total_cost_idr: preview_result.total_cost_idr,
+        monthly_breakdown: preview_result.monthly_breakdown,
+        budget_impact: budget.budget_impact,
+        warning: budget.warning,
+        requires_approval: budget.requires_approval,
+    }))
+}
+
 /// Create a new allocation
 async fn create_allocation(
     State(pool): State<PgPool>,
@@ -691,6 +1152,20 @@ async fn create_allocation(
         Some(req.project_id),
     )
     .await?;
+
+    // Validate allocation percentage bounds
+    if req.allocation_percentage <= 0.0 || req.allocation_percentage > 100.0 {
+        return Err(AppError::Validation(
+            "Allocation percentage must be greater than 0 and at most 100.".to_string(),
+        ));
+    }
+
+    // Validate date ordering
+    if req.start_date > req.end_date {
+        return Err(AppError::Validation(
+            "Start date cannot be after end date.".to_string(),
+        ));
+    }
 
     let ctc_exists = sqlx::query_scalar::<_, bool>(
         "SELECT EXISTS(SELECT 1 FROM ctc_records WHERE resource_id = $1 AND status = 'Active')",
@@ -829,6 +1304,20 @@ async fn update_allocation(
     let existing_percentage = bigdecimal_to_f64(existing.allocation_percentage);
     let new_percentage = req.allocation_percentage.unwrap_or(existing_percentage);
     let include_weekend = req.include_weekend.unwrap_or(existing.include_weekend);
+
+    // Validate allocation percentage bounds
+    if new_percentage <= 0.0 || new_percentage > 100.0 {
+        return Err(AppError::Validation(
+            "Allocation percentage must be greater than 0 and at most 100.".to_string(),
+        ));
+    }
+
+    // Validate date ordering
+    if start_date > end_date {
+        return Err(AppError::Validation(
+            "Start date cannot be after end date.".to_string(),
+        ));
+    }
 
     // Validate dates are within project dates
     validate_allocation_dates(&pool, project_id, start_date, end_date).await?;
@@ -980,6 +1469,7 @@ async fn delete_allocation(
 pub fn allocation_routes() -> Router<PgPool> {
     Router::new()
         .route("/allocations", get(get_allocations).post(create_allocation))
+        .route("/allocations/cost-preview", get(cost_preview))
         .route(
             "/allocations/:id",
             put(update_allocation).delete(delete_allocation),

@@ -51,8 +51,8 @@ development_status:
   epic-2-retrospective: optional
   epic-3: in-progress
   3-1-team-view-with-blended-rates: done
-  3-2-resource-assignment-interface: ready-for-dev
-  3-3-cost-impact-preview: backlog
+  3-2-resource-assignment-interface: done
+  3-3-cost-impact-preview: done
   3-4-overallocation-warnings: backlog
   3-5-department-budget-utilization: backlog
   epic-3-retrospective: optional

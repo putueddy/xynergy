@@ -1,6 +1,7 @@
 pub mod allocation_service;
 pub mod audit_log;
 pub mod compliance_report;
+pub mod cost_preview;
 pub mod ctc_calculator;
 pub mod ctc_completeness;
 pub mod ctc_crypto;
