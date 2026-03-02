@@ -13,6 +13,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::cell::RefCell;
 use std::rc::Rc;
+use wasm_bindgen::JsCast;
+use web_sys::{HtmlElement, KeyboardEvent};
 
 #[derive(Clone, Debug, PartialEq)]
 struct AssignmentInfo {
@@ -116,6 +118,60 @@ struct CostPreviewResponse {
     budget_impact: Option<CostPreviewBudgetImpact>,
     warning: Option<String>,
     requires_approval: bool,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+struct DepartmentBudgetSummary {
+    department_id: String,
+    department_name: String,
+    budget_period: String,
+    total_budget_idr: i64,
+    total_committed_idr: i64,
+    spent_actual_idr: i64,
+    spent_actual_source: String,
+    remaining_idr: i64,
+    utilization_percentage: f64,
+    budget_health: String,
+    alert_threshold_pct: i32,
+    budget_configured: bool,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+struct EmployeeBudgetEntry {
+    resource_id: String,
+    resource_name: String,
+    daily_rate_idr: Option<i64>,
+    allocation_count: i32,
+    working_days: i32,
+    committed_cost_idr: i64,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+struct ProjectBudgetEntry {
+    project_id: String,
+    project_name: String,
+    resource_count: i32,
+    committed_cost_idr: i64,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+struct PeriodBudgetEntry {
+    period: String,
+    total_budget_idr: i64,
+    committed_idr: i64,
+    remaining_idr: i64,
+    utilization_percentage: f64,
+    budget_health: String,
+    budget_configured: bool,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+struct BudgetBreakdownResponse {
+    department_id: String,
+    period: String,
+    by_employee: Vec<EmployeeBudgetEntry>,
+    by_project: Vec<ProjectBudgetEntry>,
+    by_period: Vec<PeriodBudgetEntry>,
 }
 
 fn current_access_token(auth: &AuthContext) -> Option<String> {
@@ -373,6 +429,48 @@ async fn fetch_capacity_report(
         .map_err(|e| format!("Failed to parse capacity report: {}", e))
 }
 
+fn current_month_string() -> String {
+    let now = Date::new_0();
+    format!("{:04}-{:02}", now.get_full_year(), now.get_month() as u32 + 1)
+}
+
+async fn fetch_budget_summary(period: &str) -> Result<DepartmentBudgetSummary, String> {
+    let url = format!("/api/v1/team/budget?period={}", period);
+    let response = authenticated_get(&url).await.map_err(|e| format!("Failed: {}", e))?;
+    if !response.status().is_success() {
+        let body: Value = response.json().await.unwrap_or_default();
+        let msg = body.pointer("/error/message").and_then(|v| v.as_str()).unwrap_or("Failed to fetch budget summary.");
+        return Err(msg.to_string());
+    }
+    response.json::<DepartmentBudgetSummary>().await.map_err(|e| format!("Failed to parse: {}", e))
+}
+
+async fn fetch_budget_breakdown(period: &str) -> Result<BudgetBreakdownResponse, String> {
+    let url = format!("/api/v1/team/budget/breakdown?period={}", period);
+    let response = authenticated_get(&url).await.map_err(|e| format!("Failed: {}", e))?;
+    if !response.status().is_success() {
+        let body: Value = response.json().await.unwrap_or_default();
+        let msg = body.pointer("/error/message").and_then(|v| v.as_str()).unwrap_or("Failed to fetch breakdown.");
+        return Err(msg.to_string());
+    }
+    response.json::<BudgetBreakdownResponse>().await.map_err(|e| format!("Failed to parse: {}", e))
+}
+
+async fn set_budget(period: &str, total_budget_idr: i64, alert_threshold_pct: i32) -> Result<Value, String> {
+    let body = serde_json::json!({
+        "budget_period": period,
+        "total_budget_idr": total_budget_idr,
+        "alert_threshold_pct": alert_threshold_pct,
+    });
+    let response = authenticated_post_json("/api/v1/team/budget", &body).await.map_err(|e| format!("Failed: {}", e))?;
+    if !response.status().is_success() {
+        let body: Value = response.json().await.unwrap_or_default();
+        let msg = body.pointer("/error/message").and_then(|v| v.as_str()).unwrap_or("Failed to set budget.");
+        return Err(msg.to_string());
+    }
+    response.json::<Value>().await.map_err(|e| format!("Failed to parse: {}", e))
+}
+
 fn format_idr(amount: i64) -> String {
     let s = amount.to_string();
     let mut result = String::new();
@@ -441,6 +539,91 @@ fn budget_health_text_color(health: &str) -> &'static str {
     }
 }
 
+fn activate_on_enter_or_space(event: KeyboardEvent) -> bool {
+    let key = event.key();
+    if key == "Enter" || key == " " {
+        event.prevent_default();
+        return true;
+    }
+    false
+}
+
+fn focus_budget_modal_primary_input() {
+    let Some(document) = web_sys::window().and_then(|window| window.document()) else {
+        return;
+    };
+
+    let Ok(Some(element)) = document.query_selector("[data-budget-modal-input='true']") else {
+        return;
+    };
+
+    if let Ok(input) = element.dyn_into::<HtmlElement>() {
+        let _ = input.focus();
+    }
+}
+
+fn trap_focus_within_budget_modal(event: KeyboardEvent) {
+    if event.key() != "Tab" {
+        return;
+    }
+
+    let Some(document) = web_sys::window().and_then(|window| window.document()) else {
+        return;
+    };
+
+    let Ok(Some(modal)) = document.query_selector("[data-budget-modal='true']") else {
+        return;
+    };
+
+    let Ok(nodes) = modal.query_selector_all(
+        "button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])",
+    ) else {
+        return;
+    };
+
+    let mut focusable = Vec::<HtmlElement>::new();
+    for idx in 0..nodes.length() {
+        if let Some(node) = nodes.get(idx) {
+            if let Ok(element) = node.dyn_into::<HtmlElement>() {
+                if element.tab_index() >= 0 {
+                    focusable.push(element);
+                }
+            }
+        }
+    }
+
+    if focusable.is_empty() {
+        return;
+    }
+
+    let active = document
+        .active_element()
+        .and_then(|element| element.dyn_into::<HtmlElement>().ok());
+
+    let first = focusable.first().cloned();
+    let last = focusable.last().cloned();
+
+    match (first, last, active) {
+        (Some(first), Some(last), Some(active)) => {
+            let is_first = active.is_same_node(Some(first.as_ref()));
+            let is_last = active.is_same_node(Some(last.as_ref()));
+
+            if event.shift_key() && is_first {
+                event.prevent_default();
+                let _ = last.focus();
+            } else if !event.shift_key() && is_last {
+                event.prevent_default();
+                let _ = first.focus();
+            }
+        }
+        (Some(first), _, _) => {
+            event.prevent_default();
+            let _ = first.focus();
+        }
+        _ => {}
+    }
+}
+
 #[component]
 pub fn TeamPage() -> impl IntoView {
     let auth = use_auth();
@@ -483,6 +666,29 @@ pub fn TeamPage() -> impl IntoView {
     let (capacity_error, set_capacity_error) = create_signal(None::<String>);
     let (capacity_report, set_capacity_report) = create_signal(None::<CapacityReportResponse>);
 
+    // Budget section signals
+    let (budget_summary, set_budget_summary) = create_signal(None::<DepartmentBudgetSummary>);
+    let (budget_breakdown, set_budget_breakdown) = create_signal(None::<BudgetBreakdownResponse>);
+    let (budget_period, set_budget_period) = create_signal(current_month_string());
+    let (show_budget_edit, set_show_budget_edit) = create_signal(false);
+    let (budget_loading, set_budget_loading) = create_signal(false);
+    let (budget_error, set_budget_error) = create_signal(None::<String>);
+    let (breakdown_tab, set_breakdown_tab) = create_signal("employee".to_string());
+    let (budget_edit_amount, set_budget_edit_amount) = create_signal(String::new());
+    let (budget_edit_threshold, set_budget_edit_threshold) = create_signal("80".to_string());
+    let (budget_edit_error, set_budget_edit_error) = create_signal(None::<String>);
+    let (budget_edit_submitting, set_budget_edit_submitting) = create_signal(false);
+    let (budget_refresh_nonce, set_budget_refresh_nonce) = create_signal(0u64);
+    {
+        create_effect(move |_| {
+            if show_budget_edit.get() {
+                Timeout::new(0, move || {
+                    focus_budget_modal_primary_input();
+                })
+                .forget();
+            }
+        });
+    }
     let preview_timer: Rc<RefCell<Option<Timeout>>> = Rc::new(RefCell::new(None));
     {
         let preview_timer = preview_timer.clone();
@@ -580,6 +786,78 @@ pub fn TeamPage() -> impl IntoView {
             });
 
             *capacity_timer.borrow_mut() = Some(timeout);
+        });
+    }
+
+    let budget_timer: Rc<RefCell<Option<Timeout>>> = Rc::new(RefCell::new(None));
+    let budget_request_seq: Rc<RefCell<u64>> = Rc::new(RefCell::new(0));
+    {
+        let budget_timer = budget_timer.clone();
+        let budget_request_seq = budget_request_seq.clone();
+        create_effect(move |_| {
+            let token_present = auth.token.get().is_some();
+            let period = budget_period.get();
+            let _refresh_nonce = budget_refresh_nonce.get();
+
+            budget_timer.borrow_mut().take();
+            {
+                let mut seq = budget_request_seq.borrow_mut();
+                *seq += 1;
+            }
+            let request_id = *budget_request_seq.borrow();
+
+            if !token_present || period.is_empty() {
+                set_budget_summary.set(None);
+                set_budget_breakdown.set(None);
+                set_budget_error.set(None);
+                set_budget_loading.set(false);
+                return;
+            }
+
+            set_budget_loading.set(true);
+            set_budget_error.set(None);
+            set_budget_summary.set(None);
+            set_budget_breakdown.set(None);
+            let budget_timer_inner = budget_timer.clone();
+            let budget_request_seq_inner = budget_request_seq.clone();
+            let period_clone = period.clone();
+            let timeout = Timeout::new(300, move || {
+                budget_timer_inner.borrow_mut().take();
+                let budget_request_seq_task = budget_request_seq_inner.clone();
+                let period_for_fetch = period_clone.clone();
+                spawn_local(async move {
+                    let summary_result = fetch_budget_summary(&period_for_fetch).await;
+                    let breakdown_result = fetch_budget_breakdown(&period_for_fetch).await;
+
+                    if *budget_request_seq_task.borrow() != request_id {
+                        return;
+                    }
+
+                    match summary_result {
+                        Ok(data) => {
+                            set_budget_summary.set(Some(data));
+                        }
+                        Err(e) => {
+                            set_budget_summary.set(None);
+                            set_budget_error.set(Some(e));
+                        }
+                    }
+
+                    match breakdown_result {
+                        Ok(data) => {
+                            set_budget_breakdown.set(Some(data));
+                        }
+                        Err(e) => {
+                            set_budget_breakdown.set(None);
+                            if budget_error.get_untracked().is_none() {
+                                set_budget_error.set(Some(e));
+                            }
+                        }
+                    }
+                    set_budget_loading.set(false);
+                });
+            });
+            *budget_timer.borrow_mut() = Some(timeout);
         });
     }
 
@@ -1376,6 +1654,329 @@ pub fn TeamPage() -> impl IntoView {
                         </div>
                     }.into_view()
                 }}
+
+                // Department Budget Section
+                {move || auth_checked.get().then(|| view! {
+                    <div class="bg-white dark:bg-gray-800 shadow rounded-lg p-6 space-y-6 mt-6">
+                        <div class="flex flex-col md:flex-row md:items-end md:justify-between gap-3">
+                            <div>
+                                <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
+                                    "Department Budget"
+                                </h2>
+                                <p class="text-sm text-gray-500 dark:text-gray-400">
+                                    "Budget utilization and breakdown by employee, project, and period"
+                                </p>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <select
+                                    class="border rounded px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                                    prop:value=budget_period
+                                    on:change=move |ev| set_budget_period.set(event_target_value(&ev))
+                                >
+                                    {(|| {
+                                        let now = Date::new_0();
+                                        let cur_year = now.get_full_year() as i32;
+                                        let cur_month = now.get_month() as i32 + 1;
+                                        let mut options = Vec::new();
+                                        for offset in -6..=6i32 {
+                                            let mut m = cur_month + offset;
+                                            let mut y = cur_year;
+                                            while m < 1 { m += 12; y -= 1; }
+                                            while m > 12 { m -= 12; y += 1; }
+                                            let val = format!("{:04}-{:02}", y, m);
+                                            options.push(val);
+                                        }
+                                        options.into_iter().map(|v| {
+                                            let v2 = v.clone();
+                                            view! { <option value=v>{v2}</option> }
+                                        }).collect::<Vec<_>>()
+                                    })()}
+                                </select>
+                                <button
+                                    class="px-4 py-2 text-sm font-medium rounded bg-blue-600 text-white hover:bg-blue-700"
+                                    on:click=move |_| {
+                                        set_show_budget_edit.set(true);
+                                        set_budget_edit_error.set(None);
+                                        if let Some(s) = budget_summary.get() {
+                                            if s.budget_configured {
+                                                set_budget_edit_amount.set(s.total_budget_idr.to_string());
+                                                set_budget_edit_threshold.set(s.alert_threshold_pct.to_string());
+                                            } else {
+                                                set_budget_edit_amount.set(String::new());
+                                                set_budget_edit_threshold.set("80".to_string());
+                                            }
+                                        }
+                                    }
+                                >
+                                    "Set Budget"
+                                </button>
+                            </div>
+                        </div>
+
+                        // Alert Banner
+                        {move || budget_summary.get().and_then(|s| {
+                            let util = s.utilization_percentage;
+                            let threshold = s.alert_threshold_pct as f64;
+                            if util >= threshold && s.budget_configured {
+                                let (bg, badge_text) = if util >= 80.0 {
+                                    ("bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800", "Critical")
+                                } else {
+                                    ("bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800", "Warning")
+                                };
+                                let remaining_str = format_idr(s.remaining_idr);
+                                let budget_str = format_idr(s.total_budget_idr);
+                                Some(view! {
+                                    <div class=format!("rounded-md border p-4 flex items-center gap-3 {}", bg)>
+                                        <span class=format!("inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {}",
+                                            if util >= 80.0 { "bg-red-100 text-red-800 dark:bg-red-800 dark:text-red-100" }
+                                            else { "bg-yellow-100 text-yellow-800 dark:bg-yellow-800 dark:text-yellow-100" }
+                                        )>
+                                            {badge_text}
+                                        </span>
+                                        <span class="text-sm text-gray-700 dark:text-gray-300">
+                                            {format!("Department budget utilization at {:.1}% \u{2014} {} remaining of {} budget", util, remaining_str, budget_str)}
+                                        </span>
+                                    </div>
+                                })
+                            } else {
+                                None
+                            }
+                        })}
+
+                        {move || budget_error.get().map(|err| view! {
+                            <div class="rounded-md bg-red-50 p-3 dark:bg-red-900/20 text-red-800 dark:text-red-200 text-sm">{err}</div>
+                        })}
+
+                        {move || budget_loading.get().then(|| view! {
+                            <div class="text-sm text-gray-500 dark:text-gray-400">"Loading budget data..."</div>
+                        })}
+
+                        // Budget Summary Cards
+                        {move || budget_summary.get().map(|s| {
+                            let health_color = budget_health_text_color(&s.budget_health);
+                            view! {
+                                <div class="space-y-4">
+                                    {(!s.budget_configured).then(|| view! {
+                                        <div class="text-sm text-gray-500 dark:text-gray-400 italic">"Budget not configured for this period"</div>
+                                    })}
+                                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+                                        <div class="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4">
+                                            <div class="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">"Total Budget"</div>
+                                            <div class="font-mono text-lg text-blue-600 dark:text-blue-400">{format_idr(s.total_budget_idr)}</div>
+                                        </div>
+                                        <div class="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4">
+                                            <div class="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">"Committed"</div>
+                                            <div class="font-mono text-lg text-gray-900 dark:text-gray-100">{format_idr(s.total_committed_idr)}</div>
+                                        </div>
+                                        <div class="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4">
+                                            <div class="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">"Spent (Actual)"</div>
+                                            <div class="font-mono text-lg text-gray-900 dark:text-gray-100">{format_idr(s.spent_actual_idr)}</div>
+                                            <div class="text-xs text-gray-400 dark:text-gray-500 mt-1">"Epic 3 proxy: mirrors committed"</div>
+                                        </div>
+                                        <div class="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4">
+                                            <div class="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">"Remaining"</div>
+                                            <div class=format!("font-mono text-lg {}", if s.remaining_idr >= 0 { "text-green-600 dark:text-green-400" } else { "text-red-600 dark:text-red-400" })>
+                                                {format_idr(s.remaining_idr)}
+                                            </div>
+                                        </div>
+                                        <div class="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4">
+                                            <div class="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">"Utilization"</div>
+                                            <div class="flex items-center gap-2">
+                                                <span class="font-mono text-lg text-gray-900 dark:text-gray-100">{format!("{:.1}%", s.utilization_percentage)}</span>
+                                                <span class=format!("inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium {}", health_color)>
+                                                    {s.budget_health.clone()}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    // Utilization Gauge
+                                    <div class="space-y-1">
+                                        <div
+                                            class="relative w-full h-6 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden"
+                                            role="progressbar"
+                                            aria-label=format!("Budget utilization: {:.1}% - {}", s.utilization_percentage, s.budget_health)
+                                            aria-valuenow=s.utilization_percentage.to_string()
+                                            aria-valuemin="0"
+                                            aria-valuemax="100"
+                                        >
+                                            <div
+                                                class=format!("h-full rounded-full transition-all duration-300 {}", budget_health_color(&s.budget_health))
+                                                style=format!("width: {}%", s.utilization_percentage.min(100.0))
+                                            ></div>
+                                            <div
+                                                class="absolute top-0 bottom-0 w-0.5 bg-gray-800 dark:bg-gray-200"
+                                                style=format!("left: {}%", s.alert_threshold_pct)
+                                                title=format!("Alert threshold: {}%", s.alert_threshold_pct)
+                                            ></div>
+                                        </div>
+                                        <div class="text-xs text-gray-500 dark:text-gray-400">
+                                            {format!("Utilization: {:.1}% \u{2014} Health: {} \u{2014} Alert threshold: {}%", s.utilization_percentage, s.budget_health, s.alert_threshold_pct)}
+                                        </div>
+                                    </div>
+                                </div>
+                            }
+                        })}
+
+                        // Breakdown Tabs
+                        {move || budget_breakdown.get().map(|bd| {
+                            let tab = breakdown_tab.get();
+                            view! {
+                                <div class="space-y-4">
+                                    <div class="flex border-b border-gray-200 dark:border-gray-700">
+                                        <button
+                                            class=move || format!("px-4 py-2 text-sm font-medium border-b-2 rounded-t-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 {}",
+                                                if breakdown_tab.get() == "employee" { "bg-blue-600 text-white border-blue-600" } else { "border-transparent text-gray-500 dark:text-gray-300 hover:text-gray-700 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-700" }
+                                            )
+                                            on:click=move |_| set_breakdown_tab.set("employee".to_string())
+                                            on:keydown=move |ev| {
+                                                if activate_on_enter_or_space(ev) {
+                                                    set_breakdown_tab.set("employee".to_string());
+                                                }
+                                            }
+                                            tabindex=0
+                                        >
+                                            "By Employee"
+                                        </button>
+                                        <button
+                                            class=move || format!("px-4 py-2 text-sm font-medium border-b-2 rounded-t-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 {}",
+                                                if breakdown_tab.get() == "project" { "bg-blue-600 text-white border-blue-600" } else { "border-transparent text-gray-500 dark:text-gray-300 hover:text-gray-700 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-700" }
+                                            )
+                                            on:click=move |_| set_breakdown_tab.set("project".to_string())
+                                            on:keydown=move |ev| {
+                                                if activate_on_enter_or_space(ev) {
+                                                    set_breakdown_tab.set("project".to_string());
+                                                }
+                                            }
+                                            tabindex=0
+                                        >
+                                            "By Project"
+                                        </button>
+                                        <button
+                                            class=move || format!("px-4 py-2 text-sm font-medium border-b-2 rounded-t-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 {}",
+                                                if breakdown_tab.get() == "period" { "bg-blue-600 text-white border-blue-600" } else { "border-transparent text-gray-500 dark:text-gray-300 hover:text-gray-700 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-700" }
+                                            )
+                                            on:click=move |_| set_breakdown_tab.set("period".to_string())
+                                            on:keydown=move |ev| {
+                                                if activate_on_enter_or_space(ev) {
+                                                    set_breakdown_tab.set("period".to_string());
+                                                }
+                                            }
+                                            tabindex=0
+                                        >
+                                            "By Period"
+                                        </button>
+                                    </div>
+
+                                    // Employee Tab
+                                    {(tab == "employee").then(|| {
+                                        let employees = bd.by_employee.clone();
+                                        view! {
+                                            <div class="overflow-x-auto">
+                                                <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                                                    <thead class="bg-gray-50 dark:bg-gray-700">
+                                                        <tr>
+                                                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">"Name"</th>
+                                                            <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">"Daily Rate"</th>
+                                                            <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">"Allocations"</th>
+                                                            <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">"Working Days"</th>
+                                                            <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">"Committed Cost"</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+                                                        {employees.into_iter().map(|emp| {
+                                                            view! {
+                                                                <tr>
+                                                                    <td class="px-4 py-2 text-sm text-gray-900 dark:text-gray-100">{emp.resource_name}</td>
+                                                                    <td class="px-4 py-2 text-sm text-right font-mono text-gray-700 dark:text-gray-300">
+                                                                        {emp.daily_rate_idr.map(format_idr).unwrap_or_else(|| "N/A".to_string())}
+                                                                    </td>
+                                                                    <td class="px-4 py-2 text-sm text-right text-gray-700 dark:text-gray-300">{emp.allocation_count}</td>
+                                                                    <td class="px-4 py-2 text-sm text-right text-gray-700 dark:text-gray-300">{emp.working_days}</td>
+                                                                    <td class="px-4 py-2 text-sm text-right font-mono text-gray-900 dark:text-gray-100">{format_idr(emp.committed_cost_idr)}</td>
+                                                                </tr>
+                                                            }
+                                                        }).collect::<Vec<_>>()}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        }
+                                    })}
+
+                                    // Project Tab
+                                    {(tab == "project").then(|| {
+                                        let projects = bd.by_project.clone();
+                                        view! {
+                                            <div class="overflow-x-auto">
+                                                <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                                                    <thead class="bg-gray-50 dark:bg-gray-700">
+                                                        <tr>
+                                                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">"Project"</th>
+                                                            <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">"Resources"</th>
+                                                            <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">"Committed Cost"</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+                                                        {projects.into_iter().map(|proj| {
+                                                            view! {
+                                                                <tr>
+                                                                    <td class="px-4 py-2 text-sm text-gray-900 dark:text-gray-100">{proj.project_name}</td>
+                                                                    <td class="px-4 py-2 text-sm text-right text-gray-700 dark:text-gray-300">{proj.resource_count}</td>
+                                                                    <td class="px-4 py-2 text-sm text-right font-mono text-gray-900 dark:text-gray-100">{format_idr(proj.committed_cost_idr)}</td>
+                                                                </tr>
+                                                            }
+                                                        }).collect::<Vec<_>>()}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        }
+                                    })}
+
+                                    // Period Tab
+                                    {(tab == "period").then(|| {
+                                        let periods = bd.by_period.clone();
+                                        view! {
+                                            <div class="overflow-x-auto">
+                                                <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                                                    <thead class="bg-gray-50 dark:bg-gray-700">
+                                                        <tr>
+                                                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">"Month"</th>
+                                                            <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">"Budget"</th>
+                                                            <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">"Committed"</th>
+                                                            <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">"Remaining"</th>
+                                                            <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">"Utilization"</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+                                                        {periods.into_iter().map(|p| {
+                                                            let health_color = budget_health_text_color(&p.budget_health);
+                                                            view! {
+                                                                <tr>
+                                                                    <td class="px-4 py-2 text-sm text-gray-900 dark:text-gray-100">{p.period}</td>
+                                                                    <td class="px-4 py-2 text-sm text-right font-mono text-gray-700 dark:text-gray-300">{format_idr(p.total_budget_idr)}</td>
+                                                                    <td class="px-4 py-2 text-sm text-right font-mono text-gray-700 dark:text-gray-300">{format_idr(p.committed_idr)}</td>
+                                                                    <td class="px-4 py-2 text-sm text-right font-mono text-gray-700 dark:text-gray-300">{format_idr(p.remaining_idr)}</td>
+                                                                    <td class="px-4 py-2 text-sm text-right">
+                                                                        <span class=format!("font-mono {}", health_color)>{format!("{:.1}%", p.utilization_percentage)}</span>
+                                                                        " "
+                                                                        <span class=format!("inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium {}", health_color)>
+                                                                            {p.budget_health.clone()}
+                                                                        </span>
+                                                                    </td>
+                                                                </tr>
+                                                            }
+                                                        }).collect::<Vec<_>>()}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        }
+                                    })}
+                                </div>
+                            }
+                        })}
+                    </div>
+                })}
+
             </main>
 
             // Assignment Modal
@@ -1756,6 +2357,120 @@ pub fn TeamPage() -> impl IntoView {
                     </div>
                 }
             })}
+
+            // Budget Edit Modal
+            {move || show_budget_edit.get().then(|| {
+                let period_display = budget_period.get();
+                view! {
+                    <div
+                        class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+                        on:keydown=move |ev| {
+                            if ev.key() == "Escape" {
+                                set_show_budget_edit.set(false);
+                                return;
+                            }
+                            trap_focus_within_budget_modal(ev);
+                        }
+                    >
+                        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-md mx-4 p-6 space-y-4" data-budget-modal="true" tabindex="-1" on:click=move |ev| ev.stop_propagation()>
+                            <div class="flex items-center justify-between">
+                                <h2 class="text-xl font-bold text-gray-900 dark:text-white">
+                                    "Set Department Budget"
+                                </h2>
+                                <button
+                                    class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                                    on:click=move |_| set_show_budget_edit.set(false)
+                                >
+                                    "\u{2715}"
+                                </button>
+                            </div>
+
+                            {move || budget_edit_error.get().map(|err| view! {
+                                <div class="rounded-md bg-red-50 p-3 dark:bg-red-900/20 text-red-800 dark:text-red-200 text-sm">{err}</div>
+                            })}
+
+                            <div class="space-y-3">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">"Period"</label>
+                                    <div class="text-sm text-gray-900 dark:text-white font-mono bg-gray-50 dark:bg-gray-700 px-3 py-2 rounded">{period_display}</div>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">"Total Budget (IDR)"</label>
+                                    <input
+                                        type="number"
+                                        min="1"
+                                        step="1"
+                                        class="w-full border rounded px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                                        placeholder="e.g. 100000000"
+                                        data-budget-modal-input="true"
+                                        prop:value=budget_edit_amount
+                                        on:input=move |ev| set_budget_edit_amount.set(event_target_value(&ev))
+                                    />
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">"Alert Threshold (%)"</label>
+                                    <input
+                                        type="number"
+                                        min="50"
+                                        max="100"
+                                        class="w-full border rounded px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                                        prop:value=budget_edit_threshold
+                                        on:input=move |ev| set_budget_edit_threshold.set(event_target_value(&ev))
+                                    />
+                                    <p class="text-xs text-gray-400 mt-1">"50\u{2013}100. Alert fires when utilization reaches this %"</p>
+                                </div>
+                            </div>
+
+                            <div class="flex justify-end gap-2">
+                                <button
+                                    class="px-4 py-2 text-sm font-medium rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
+                                    on:click=move |_| set_show_budget_edit.set(false)
+                                >
+                                    "Cancel"
+                                </button>
+                                <button
+                                    class="px-4 py-2 text-sm font-medium rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                                    prop:disabled=move || budget_edit_submitting.get()
+                                    on:click=move |_| {
+                                        let amount: i64 = match budget_edit_amount.get().parse() {
+                                            Ok(v) if v > 0 => v,
+                                            _ => {
+                                                set_budget_edit_error.set(Some("Budget amount must be a positive whole number.".to_string()));
+                                                return;
+                                            }
+                                        };
+                                        let threshold: i32 = match budget_edit_threshold.get().parse() {
+                                            Ok(v) if (50..=100).contains(&v) => v,
+                                            _ => {
+                                                set_budget_edit_error.set(Some("Threshold must be between 50 and 100.".to_string()));
+                                                return;
+                                            }
+                                        };
+                                        let period = budget_period.get_untracked();
+                                        set_budget_edit_submitting.set(true);
+                                        set_budget_edit_error.set(None);
+                                        spawn_local(async move {
+                                            match set_budget(&period, amount, threshold).await {
+                                                Ok(_) => {
+                                                    set_show_budget_edit.set(false);
+                                                    set_budget_refresh_nonce.update(|nonce| *nonce += 1);
+                                                }
+                                                Err(e) => {
+                                                    set_budget_edit_error.set(Some(e));
+                                                }
+                                            }
+                                            set_budget_edit_submitting.set(false);
+                                        });
+                                    }
+                                >
+                                    {move || if budget_edit_submitting.get() { "Saving..." } else { "Save Budget" }}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                }
+            })}
+
 
             // Timeline Modal
             {move || show_timeline_modal.get().then(|| view! {
