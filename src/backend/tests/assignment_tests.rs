@@ -183,8 +183,7 @@ async fn assignable_projects_dept_head_sees_all_active(pool: PgPool) {
 
     let dept_id = create_test_department(&pool, "Engineering").await;
     let dept_head_email = test_email();
-    let dept_head_id =
-        create_test_user_with_role(&pool, &dept_head_email, "department_head").await;
+    let dept_head_id = create_test_user_with_role(&pool, &dept_head_email, "department_head").await;
     assign_user_to_department(&pool, dept_head_id, dept_id).await;
 
     let _active_project = create_test_project(&pool, "Active Project").await;
@@ -381,8 +380,7 @@ async fn capacity_exact_100_percent_allowed(pool: PgPool) {
     let dept_id = create_test_department(&pool, "Engineering").await;
     let admin_email = test_email();
     let admin_id = create_test_user_with_role(&pool, &admin_email, "admin").await;
-    let resource_id =
-        create_test_resource_in_dept(&pool, "Full Capacity Resource", dept_id).await;
+    let resource_id = create_test_resource_in_dept(&pool, "Full Capacity Resource", dept_id).await;
     create_ctc_for_resource(&pool, resource_id, admin_id).await;
     let project_id = create_test_project(&pool, "Capacity Project").await;
 
@@ -419,7 +417,7 @@ async fn capacity_exact_100_percent_allowed(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "../../migrations")]
-async fn capacity_over_100_percent_rejected(pool: PgPool) {
+async fn capacity_over_100_percent_returns_warning(pool: PgPool) {
     set_test_env();
     let app = xynergy_backend::create_app(pool.clone());
     let (sd, ed) = allocation_dates();
@@ -427,8 +425,7 @@ async fn capacity_over_100_percent_rejected(pool: PgPool) {
     let dept_id = create_test_department(&pool, "Engineering").await;
     let admin_email = test_email();
     let admin_id = create_test_user_with_role(&pool, &admin_email, "admin").await;
-    let resource_id =
-        create_test_resource_in_dept(&pool, "Over Capacity Resource", dept_id).await;
+    let resource_id = create_test_resource_in_dept(&pool, "Over Capacity Resource", dept_id).await;
     create_ctc_for_resource(&pool, resource_id, admin_id).await;
     let project_a = create_test_project(&pool, "Project A").await;
     let project_b = create_test_project(&pool, "Project B").await;
@@ -460,7 +457,6 @@ async fn capacity_over_100_percent_rejected(pool: PgPool) {
         "first allocation should succeed"
     );
 
-    // Second allocation at 50% — total 110% should be rejected
     let req = Request::builder()
         .method("POST")
         .uri("/api/v1/allocations")
@@ -482,16 +478,21 @@ async fn capacity_over_100_percent_rejected(pool: PgPool) {
 
     assert_eq!(
         resp.status(),
-        StatusCode::BAD_REQUEST,
-        "combined allocation >100% should be rejected"
+        StatusCode::OK,
+        "combined allocation >100% should return warning response"
     );
 
     let bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
-    let body = String::from_utf8(bytes.to_vec()).unwrap();
-    assert!(
-        body.contains("over-allocated"),
-        "rejection message should mention over-allocation: {}",
-        body
+    let body: Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(
+        body["status"].as_str(),
+        Some("overallocation_warning"),
+        "status should indicate overallocation warning"
+    );
+    assert_eq!(
+        body["projected_allocation_percentage"].as_f64(),
+        Some(110.0),
+        "projected allocation should be 110%"
     );
 }
 
@@ -620,7 +621,11 @@ async fn capacity_decimal_edge_case(pool: PgPool) {
         ))
         .expect("request should be built");
     let resp = app.clone().oneshot(req).await.expect("response");
-    assert_eq!(resp.status(), StatusCode::OK, "second 33.33% should succeed");
+    assert_eq!(
+        resp.status(),
+        StatusCode::OK,
+        "second 33.33% should succeed"
+    );
 
     // 33.34% — total 100.00 — should succeed
     let req = Request::builder()
@@ -661,8 +666,7 @@ async fn dept_head_can_create_assignment(pool: PgPool) {
 
     let dept_id = create_test_department(&pool, "Engineering").await;
     let dept_head_email = test_email();
-    let dept_head_id =
-        create_test_user_with_role(&pool, &dept_head_email, "department_head").await;
+    let dept_head_id = create_test_user_with_role(&pool, &dept_head_email, "department_head").await;
     assign_user_to_department(&pool, dept_head_id, dept_id).await;
 
     let resource_id = create_test_resource_in_dept(&pool, "Eng Dev", dept_id).await;
@@ -698,8 +702,9 @@ async fn dept_head_can_create_assignment(pool: PgPool) {
 
     let bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
     let body: Value = serde_json::from_slice(&bytes).unwrap();
-    assert_eq!(body["allocation_percentage"], 50.0);
-    assert_eq!(body["resource_id"], resource_id.to_string());
+    assert_eq!(body["status"], "created");
+    assert_eq!(body["allocation"]["allocation_percentage"], 50.0);
+    assert_eq!(body["allocation"]["resource_id"], resource_id.to_string());
 }
 
 #[sqlx::test(migrations = "../../migrations")]

@@ -1,6 +1,6 @@
 use crate::auth::{
-    AuthContext, authenticated_get, authenticated_post_json, auth_token, clear_auth_storage,
-    use_auth, validate_token,
+    auth_token, authenticated_get, authenticated_post_json, clear_auth_storage, use_auth,
+    validate_token, AuthContext,
 };
 use crate::components::{Footer, Header};
 use chrono::DateTime;
@@ -40,9 +40,8 @@ pub fn CtcManagement() -> impl IntoView {
     let auth = use_auth();
     let navigate = use_navigate();
     let query_params = use_query_map();
-    let initial_resource_id = query_params.with(|params| {
-        params.get("resource_id").cloned().unwrap_or_default()
-    });
+    let initial_resource_id =
+        query_params.with(|params| params.get("resource_id").cloned().unwrap_or_default());
     let (auth_checked, set_auth_checked) = create_signal(false);
     let (auth_check_in_progress, set_auth_check_in_progress) = create_signal(false);
 
@@ -64,15 +63,18 @@ pub fn CtcManagement() -> impl IntoView {
 
     let (is_editing, set_is_editing) = create_signal(false);
     let (change_reason, set_change_reason) = create_signal(String::new());
-    let (effective_date_policy, set_effective_date_policy) = create_signal(String::from("pro_rata"));
+    let (effective_date_policy, set_effective_date_policy) =
+        create_signal(String::from("pro_rata"));
     let (history, set_history) = create_signal(Vec::<Value>::new());
     let (show_history, set_show_history) = create_signal(false);
     let (history_loading, set_history_loading) = create_signal(false);
 
-    let (field_errors, set_field_errors) = create_signal(std::collections::HashMap::<String, String>::new());
+    let (field_errors, set_field_errors) =
+        create_signal(std::collections::HashMap::<String, String>::new());
     let (server_field_errors, set_server_field_errors) =
         create_signal(std::collections::HashMap::<String, String>::new());
-    let (server_validation_warnings, set_server_validation_warnings) = create_signal(Vec::<String>::new());
+    let (server_validation_warnings, set_server_validation_warnings) =
+        create_signal(Vec::<String>::new());
     let (allowance_warning, set_allowance_warning) = create_signal(None::<String>);
     let (merged_field_errors, set_merged_field_errors) =
         create_signal(std::collections::HashMap::<String, String>::new());
@@ -138,24 +140,30 @@ pub fn CtcManagement() -> impl IntoView {
         set_server_field_errors.set(std::collections::HashMap::new());
         let mut errs = std::collections::HashMap::new();
 
-        let parse_val = |input: &str, key: &str, e: &mut std::collections::HashMap<String, String>| -> i64 {
-            if input.is_empty() { return 0; }
-            if input.contains('.') {
-                e.insert(key.to_string(), "IDR amounts must be whole numbers".to_string());
-                return 0;
-            }
-            match input.parse::<i64>() {
-                Ok(v) if v < 0 => {
-                    e.insert(key.to_string(), "Must be non-negative".to_string());
-                    0
+        let parse_val =
+            |input: &str, key: &str, e: &mut std::collections::HashMap<String, String>| -> i64 {
+                if input.is_empty() {
+                    return 0;
                 }
-                Ok(v) => v,
-                Err(_) => {
-                    e.insert(key.to_string(), "Invalid number".to_string());
-                    0
+                if input.contains('.') {
+                    e.insert(
+                        key.to_string(),
+                        "IDR amounts must be whole numbers".to_string(),
+                    );
+                    return 0;
                 }
-            }
-        };
+                match input.parse::<i64>() {
+                    Ok(v) if v < 0 => {
+                        e.insert(key.to_string(), "Must be non-negative".to_string());
+                        0
+                    }
+                    Ok(v) => v,
+                    Err(_) => {
+                        e.insert(key.to_string(), "Invalid number".to_string());
+                        0
+                    }
+                }
+            };
 
         let base = parse_val(&base_salary.get(), "base_salary", &mut errs);
         let hra = parse_val(&hra_allowance.get(), "hra_allowance", &mut errs);
@@ -166,7 +174,9 @@ pub fn CtcManagement() -> impl IntoView {
         if base > 0 {
             let total_allowance = hra + med + trans + meal;
             if total_allowance > base * 2 {
-                set_allowance_warning.set(Some("Total allowances exceed 200% of base salary".to_string()));
+                set_allowance_warning.set(Some(
+                    "Total allowances exceed 200% of base salary".to_string(),
+                ));
             } else {
                 set_allowance_warning.set(None);
             }
@@ -177,12 +187,7 @@ pub fn CtcManagement() -> impl IntoView {
         set_field_errors.set(errs);
     });
 
-    let is_hr = Signal::derive(move || {
-        auth.user
-            .get()
-            .map(|u| u.role == "hr")
-            .unwrap_or(false)
-    });
+    let is_hr = Signal::derive(move || auth.user.get().map(|u| u.role == "hr").unwrap_or(false));
 
     create_effect(move |_| {
         if auth.token.get().is_some() {
@@ -292,7 +297,8 @@ pub fn CtcManagement() -> impl IntoView {
                 return;
             }
         };
-        let transport = match parse_whole_number("Transport allowance", &transport_allowance.get()) {
+        let transport = match parse_whole_number("Transport allowance", &transport_allowance.get())
+        {
             Ok(v) => v,
             Err(e) => {
                 set_error.set(Some(e));
@@ -330,13 +336,23 @@ pub fn CtcManagement() -> impl IntoView {
                 }
                 Err(e) => {
                     if let Ok(json) = serde_json::from_str::<Value>(&e) {
-                        if let Some(issues) = json.get("validation_issues").and_then(|v| v.as_array()) {
+                        if let Some(issues) =
+                            json.get("validation_issues").and_then(|v| v.as_array())
+                        {
                             let mut warns = Vec::new();
                             let mut err_msgs = Vec::new();
                             let mut field_errs = std::collections::HashMap::new();
                             for issue in issues {
-                                let msg = issue.get("message").and_then(|m| m.as_str()).unwrap_or("").to_string();
-                                let field = issue.get("field").and_then(|f| f.as_str()).unwrap_or("").to_string();
+                                let msg = issue
+                                    .get("message")
+                                    .and_then(|m| m.as_str())
+                                    .unwrap_or("")
+                                    .to_string();
+                                let field = issue
+                                    .get("field")
+                                    .and_then(|f| f.as_str())
+                                    .unwrap_or("")
+                                    .to_string();
                                 let severity = issue
                                     .get("severity")
                                     .or_else(|| issue.get("issue_type"))
@@ -415,7 +431,8 @@ pub fn CtcManagement() -> impl IntoView {
                 return;
             }
         };
-        let transport = match parse_whole_number("Transport allowance", &transport_allowance.get()) {
+        let transport = match parse_whole_number("Transport allowance", &transport_allowance.get())
+        {
             Ok(v) => v,
             Err(e) => {
                 set_error.set(Some(e));
@@ -469,13 +486,23 @@ pub fn CtcManagement() -> impl IntoView {
                     }
                     Err(e) => {
                         if let Ok(json) = serde_json::from_str::<Value>(&e) {
-                            if let Some(issues) = json.get("validation_issues").and_then(|v| v.as_array()) {
+                            if let Some(issues) =
+                                json.get("validation_issues").and_then(|v| v.as_array())
+                            {
                                 let mut warns = Vec::new();
                                 let mut err_msgs = Vec::new();
                                 let mut field_errs = std::collections::HashMap::new();
                                 for issue in issues {
-                                    let msg = issue.get("message").and_then(|m| m.as_str()).unwrap_or("").to_string();
-                                    let field = issue.get("field").and_then(|f| f.as_str()).unwrap_or("").to_string();
+                                    let msg = issue
+                                        .get("message")
+                                        .and_then(|m| m.as_str())
+                                        .unwrap_or("")
+                                        .to_string();
+                                    let field = issue
+                                        .get("field")
+                                        .and_then(|f| f.as_str())
+                                        .unwrap_or("")
+                                        .to_string();
                                     let severity = issue
                                         .get("severity")
                                         .or_else(|| issue.get("issue_type"))
@@ -527,13 +554,23 @@ pub fn CtcManagement() -> impl IntoView {
                     }
                     Err(e) => {
                         if let Ok(json) = serde_json::from_str::<Value>(&e) {
-                            if let Some(issues) = json.get("validation_issues").and_then(|v| v.as_array()) {
+                            if let Some(issues) =
+                                json.get("validation_issues").and_then(|v| v.as_array())
+                            {
                                 let mut warns = Vec::new();
                                 let mut err_msgs = Vec::new();
                                 let mut field_errs = std::collections::HashMap::new();
                                 for issue in issues {
-                                    let msg = issue.get("message").and_then(|m| m.as_str()).unwrap_or("").to_string();
-                                    let field = issue.get("field").and_then(|f| f.as_str()).unwrap_or("").to_string();
+                                    let msg = issue
+                                        .get("message")
+                                        .and_then(|m| m.as_str())
+                                        .unwrap_or("")
+                                        .to_string();
+                                    let field = issue
+                                        .get("field")
+                                        .and_then(|f| f.as_str())
+                                        .unwrap_or("")
+                                        .to_string();
                                     let severity = issue
                                         .get("severity")
                                         .or_else(|| issue.get("issue_type"))
@@ -578,10 +615,7 @@ pub fn CtcManagement() -> impl IntoView {
 
     let selected_resource_view = Signal::derive(move || {
         let selected_id = selected_resource.get();
-        resources
-            .get()
-            .into_iter()
-            .find(|r| r.id == selected_id)
+        resources.get().into_iter().find(|r| r.id == selected_id)
     });
 
     view! {
@@ -657,7 +691,7 @@ pub fn CtcManagement() -> impl IntoView {
                                         set_meal_allowance.set(String::from("0"));
                                         set_risk_tier.set(String::from("1"));
                                         set_working_days.set(String::from("22"));
-                                        
+
                                         set_is_editing.set(false);
                                         set_change_reason.set(String::new());
                                         set_history.set(Vec::new());
@@ -689,7 +723,7 @@ pub fn CtcManagement() -> impl IntoView {
                                                 set_transport_allowance
                                                     .set(existing.transport_allowance.to_string());
                                                 set_meal_allowance.set(existing.meal_allowance.to_string());
-                                                
+
                                                 // History is fetched on demand when user clicks "View History"
                                                 set_history.set(Vec::new());
                                             }
@@ -811,7 +845,7 @@ pub fn CtcManagement() -> impl IntoView {
                         {move || is_editing.get().then(|| view! {
                             <div class="space-y-4 pt-4 border-t border-gray-200 dark:border-gray-700">
                                 <h3 class="text-lg font-medium text-gray-900 dark:text-white">"Update Information"</h3>
-                                
+
                                 <div>
                                     <label class="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">"Change Reason (Required)"</label>
                                     <textarea
@@ -822,7 +856,7 @@ pub fn CtcManagement() -> impl IntoView {
                                         on:input=move |ev| set_change_reason.set(event_target_value(&ev))
                                     ></textarea>
                                 </div>
-                                
+
                                 <div>
                                     <label class="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">"Effective Date Policy"</label>
                                     <select class="w-full border rounded px-3 py-2 bg-white dark:bg-gray-700"
@@ -842,7 +876,7 @@ pub fn CtcManagement() -> impl IntoView {
                             <button class="btn-primary" disabled=loading on:click=save_ctc>
                                 "Save"
                             </button>
-                            
+
                             {move || is_editing.get().then(|| view! {
                                 <button class="ml-auto text-blue-600 dark:text-blue-400 font-medium hover:underline text-sm"
                                     on:click=move |_| {
@@ -902,9 +936,9 @@ pub fn CtcManagement() -> impl IntoView {
                                         let reason = h["reason"].as_str().unwrap_or("No reason provided").to_string();
                                         let policy = h["policy"].as_str().unwrap_or("").to_string();
                                         let rev_num = h["revision_number"].as_i64().unwrap_or(0);
-                                        
+
                                         let diffs = h["diffs"].as_array().cloned().unwrap_or_default();
-                                        
+
                                         view! {
                                             <div class="mb-8 ml-6">
                                                 <div class="flex justify-between items-start mb-2">
@@ -1045,7 +1079,10 @@ async fn fetch_departments() -> Result<Vec<(String, String)>, String> {
         .map_err(|e| format!("Failed to fetch departments: {}", e))?;
 
     if !response.status().is_success() {
-        return Err(format!("Failed to fetch departments: {}", response.status()));
+        return Err(format!(
+            "Failed to fetch departments: {}",
+            response.status()
+        ));
     }
 
     let values: Vec<Value> = response
@@ -1084,9 +1121,10 @@ async fn calculate_bpjs_preview(payload: Value) -> Result<Value, String> {
 }
 
 async fn create_ctc_record(payload: Value) -> Result<(), String> {
-    let response = crate::auth::authenticated_post_json("http://localhost:3000/api/v1/ctc", &payload)
-        .await
-        .map_err(|e| format!("Failed to create CTC record: {}", e))?;
+    let response =
+        crate::auth::authenticated_post_json("http://localhost:3000/api/v1/ctc", &payload)
+            .await
+            .map_err(|e| format!("Failed to create CTC record: {}", e))?;
 
     if response.status().is_success() {
         Ok(())
@@ -1100,9 +1138,15 @@ async fn create_ctc_record(payload: Value) -> Result<(), String> {
 }
 
 async fn update_ctc_record(resource_id: String, payload: Value) -> Result<(), String> {
-    let response = crate::auth::authenticated_put_json(&format!("http://localhost:3000/api/v1/ctc/{}/components", resource_id), &payload)
-        .await
-        .map_err(|e| format!("Failed to update CTC record: {}", e))?;
+    let response = crate::auth::authenticated_put_json(
+        &format!(
+            "http://localhost:3000/api/v1/ctc/{}/components",
+            resource_id
+        ),
+        &payload,
+    )
+    .await
+    .map_err(|e| format!("Failed to update CTC record: {}", e))?;
 
     if response.status().is_success() {
         Ok(())
@@ -1116,9 +1160,12 @@ async fn update_ctc_record(resource_id: String, payload: Value) -> Result<(), St
 }
 
 async fn fetch_ctc_history(resource_id: &str) -> Result<Vec<Value>, String> {
-    let response = crate::auth::authenticated_get(&format!("http://localhost:3000/api/v1/ctc/{}/history", resource_id))
-        .await
-        .map_err(|e| format!("Failed to fetch history: {}", e))?;
+    let response = crate::auth::authenticated_get(&format!(
+        "http://localhost:3000/api/v1/ctc/{}/history",
+        resource_id
+    ))
+    .await
+    .map_err(|e| format!("Failed to fetch history: {}", e))?;
 
     if !response.status().is_success() {
         return Err(format!("Failed to fetch history: {}", response.status()));
@@ -1173,12 +1220,18 @@ fn value_to_i64(value: &Value) -> Option<i64> {
 }
 
 async fn fetch_existing_ctc(resource_id: &str) -> Result<Option<ExistingCtcValues>, String> {
-    let response = authenticated_get(&format!("http://localhost:3000/api/v1/ctc/{}/components", resource_id))
-        .await
-        .map_err(|e| format!("Failed to fetch CTC details: {}", e))?;
+    let response = authenticated_get(&format!(
+        "http://localhost:3000/api/v1/ctc/{}/components",
+        resource_id
+    ))
+    .await
+    .map_err(|e| format!("Failed to fetch CTC details: {}", e))?;
 
     if !response.status().is_success() {
-        return Err(format!("Failed to fetch CTC details: {}", response.status()));
+        return Err(format!(
+            "Failed to fetch CTC details: {}",
+            response.status()
+        ));
     }
 
     let body: Value = response
@@ -1186,14 +1239,9 @@ async fn fetch_existing_ctc(resource_id: &str) -> Result<Option<ExistingCtcValue
         .await
         .map_err(|e| format!("Failed to parse CTC details: {}", e))?;
 
-    let components = body
-        .get("components")
-        .cloned()
-        .unwrap_or_else(|| json!({}));
+    let components = body.get("components").cloned().unwrap_or_else(|| json!({}));
 
-    let base_salary = components
-        .get("base_salary")
-        .and_then(value_to_i64);
+    let base_salary = components.get("base_salary").and_then(value_to_i64);
 
     if base_salary.is_none() {
         return Ok(None);

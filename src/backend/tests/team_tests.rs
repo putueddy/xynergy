@@ -148,10 +148,10 @@ fn find_resource<'a>(body: &'a [Value], resource_id: Uuid) -> &'a Value {
 async fn dept_head_sees_own_department_only(pool: PgPool) {
     std::env::set_var("JWT_SECRET", "test-secret");
     std::env::set_var("CTC_ACTIVE_KEY_VERSION", "v1");
-        std::env::set_var(
-            "CTC_ENCRYPTION_KEY_V1",
-            "QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE=",
-        );
+    std::env::set_var(
+        "CTC_ENCRYPTION_KEY_V1",
+        "QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE=",
+    );
 
     let app = xynergy_backend::create_app(pool.clone());
 
@@ -159,8 +159,7 @@ async fn dept_head_sees_own_department_only(pool: PgPool) {
     let marketing_id = create_test_department(&pool, "Marketing").await;
 
     let dept_head_email = test_email();
-    let dept_head_id =
-        create_test_user_with_role(&pool, &dept_head_email, "department_head").await;
+    let dept_head_id = create_test_user_with_role(&pool, &dept_head_email, "department_head").await;
     assign_user_to_department(&pool, dept_head_id, engineering_id).await;
 
     let engineering_resource_id =
@@ -192,7 +191,11 @@ async fn dept_head_sees_own_department_only(pool: PgPool) {
     let body: Vec<Value> =
         serde_json::from_slice(&bytes).expect("team response should be an array payload");
 
-    assert_eq!(body.len(), 1, "department head should only see one department");
+    assert_eq!(
+        body.len(),
+        1,
+        "department head should only see one department"
+    );
     let only_member = body.first().expect("response should contain one member");
     assert_eq!(only_member["department_name"], "Engineering");
     assert_eq!(
@@ -207,10 +210,10 @@ async fn dept_head_sees_own_department_only(pool: PgPool) {
 async fn hr_sees_all_departments(pool: PgPool) {
     std::env::set_var("JWT_SECRET", "test-secret");
     std::env::set_var("CTC_ACTIVE_KEY_VERSION", "v1");
-        std::env::set_var(
-            "CTC_ENCRYPTION_KEY_V1",
-            "QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE=",
-        );
+    std::env::set_var(
+        "CTC_ENCRYPTION_KEY_V1",
+        "QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE=",
+    );
 
     let app = xynergy_backend::create_app(pool.clone());
 
@@ -247,11 +250,13 @@ async fn hr_sees_all_departments(pool: PgPool) {
 
     // Verify our specific test resources are visible to HR (across departments)
     assert!(
-        body.iter().any(|item| item["resource_id"].as_str() == Some(eng_resource_id.to_string().as_str())),
+        body.iter()
+            .any(|item| item["resource_id"].as_str() == Some(eng_resource_id.to_string().as_str())),
         "HR should see Engineering resource"
     );
     assert!(
-        body.iter().any(|item| item["resource_id"].as_str() == Some(mkt_resource_id.to_string().as_str())),
+        body.iter()
+            .any(|item| item["resource_id"].as_str() == Some(mkt_resource_id.to_string().as_str())),
         "HR should see Marketing resource"
     );
 
@@ -278,10 +283,10 @@ async fn hr_sees_all_departments(pool: PgPool) {
 async fn pm_gets_403_forbidden(pool: PgPool) {
     std::env::set_var("JWT_SECRET", "test-secret");
     std::env::set_var("CTC_ACTIVE_KEY_VERSION", "v1");
-        std::env::set_var(
-            "CTC_ENCRYPTION_KEY_V1",
-            "QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE=",
-        );
+    std::env::set_var(
+        "CTC_ENCRYPTION_KEY_V1",
+        "QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE=",
+    );
 
     let app = xynergy_backend::create_app(pool.clone());
     let pm_email = test_email();
@@ -307,20 +312,20 @@ async fn pm_gets_403_forbidden(pool: PgPool) {
 async fn response_includes_daily_rate_for_ctc_active(pool: PgPool) {
     std::env::set_var("JWT_SECRET", "test-secret");
     std::env::set_var("CTC_ACTIVE_KEY_VERSION", "v1");
-        std::env::set_var(
-            "CTC_ENCRYPTION_KEY_V1",
-            "QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE=",
-        );
+    std::env::set_var(
+        "CTC_ENCRYPTION_KEY_V1",
+        "QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE=",
+    );
 
     let app = xynergy_backend::create_app(pool.clone());
 
     let engineering_id = create_test_department(&pool, "Engineering").await;
     let dept_head_email = test_email();
-    let dept_head_id =
-        create_test_user_with_role(&pool, &dept_head_email, "department_head").await;
+    let dept_head_id = create_test_user_with_role(&pool, &dept_head_email, "department_head").await;
     assign_user_to_department(&pool, dept_head_id, engineering_id).await;
 
-    let resource_id = create_test_resource_in_dept(&pool, "CTC Enabled Member", engineering_id).await;
+    let resource_id =
+        create_test_resource_in_dept(&pool, "CTC Enabled Member", engineering_id).await;
     create_ctc_for_resource(&pool, resource_id, dept_head_id).await;
 
     let token = get_auth_token(&app, &dept_head_email).await;
@@ -351,7 +356,9 @@ async fn response_includes_daily_rate_for_ctc_active(pool: PgPool) {
         "daily_rate should be present for active CTC"
     );
     assert_eq!(
-        resource["ctc_status"].as_str().expect("ctc_status should be string"),
+        resource["ctc_status"]
+            .as_str()
+            .expect("ctc_status should be string"),
         "Active"
     );
 }
@@ -360,17 +367,16 @@ async fn response_includes_daily_rate_for_ctc_active(pool: PgPool) {
 async fn response_shows_missing_for_no_ctc(pool: PgPool) {
     std::env::set_var("JWT_SECRET", "test-secret");
     std::env::set_var("CTC_ACTIVE_KEY_VERSION", "v1");
-        std::env::set_var(
-            "CTC_ENCRYPTION_KEY_V1",
-            "QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE=",
-        );
+    std::env::set_var(
+        "CTC_ENCRYPTION_KEY_V1",
+        "QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE=",
+    );
 
     let app = xynergy_backend::create_app(pool.clone());
 
     let engineering_id = create_test_department(&pool, "Engineering").await;
     let dept_head_email = test_email();
-    let dept_head_id =
-        create_test_user_with_role(&pool, &dept_head_email, "department_head").await;
+    let dept_head_id = create_test_user_with_role(&pool, &dept_head_email, "department_head").await;
     assign_user_to_department(&pool, dept_head_id, engineering_id).await;
 
     let resource_id = create_test_resource_in_dept(&pool, "No CTC Member", engineering_id).await;
@@ -402,7 +408,9 @@ async fn response_shows_missing_for_no_ctc(pool: PgPool) {
         "daily_rate should be null when CTC is missing"
     );
     assert_eq!(
-        resource["ctc_status"].as_str().expect("ctc_status should be string"),
+        resource["ctc_status"]
+            .as_str()
+            .expect("ctc_status should be string"),
         "Missing"
     );
 }
@@ -411,20 +419,20 @@ async fn response_shows_missing_for_no_ctc(pool: PgPool) {
 async fn response_does_not_contain_sensitive_ctc_fields(pool: PgPool) {
     std::env::set_var("JWT_SECRET", "test-secret");
     std::env::set_var("CTC_ACTIVE_KEY_VERSION", "v1");
-        std::env::set_var(
-            "CTC_ENCRYPTION_KEY_V1",
-            "QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE=",
-        );
+    std::env::set_var(
+        "CTC_ENCRYPTION_KEY_V1",
+        "QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE=",
+    );
 
     let app = xynergy_backend::create_app(pool.clone());
 
     let engineering_id = create_test_department(&pool, "Engineering").await;
     let dept_head_email = test_email();
-    let dept_head_id =
-        create_test_user_with_role(&pool, &dept_head_email, "department_head").await;
+    let dept_head_id = create_test_user_with_role(&pool, &dept_head_email, "department_head").await;
     assign_user_to_department(&pool, dept_head_id, engineering_id).await;
 
-    let resource_id = create_test_resource_in_dept(&pool, "Security Test Member", engineering_id).await;
+    let resource_id =
+        create_test_resource_in_dept(&pool, "Security Test Member", engineering_id).await;
     create_ctc_for_resource(&pool, resource_id, dept_head_id).await;
     let token = get_auth_token(&app, &dept_head_email).await;
 
@@ -473,20 +481,20 @@ async fn response_does_not_contain_sensitive_ctc_fields(pool: PgPool) {
 async fn allocation_aggregation_correct(pool: PgPool) {
     std::env::set_var("JWT_SECRET", "test-secret");
     std::env::set_var("CTC_ACTIVE_KEY_VERSION", "v1");
-        std::env::set_var(
-            "CTC_ENCRYPTION_KEY_V1",
-            "QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE=",
-        );
+    std::env::set_var(
+        "CTC_ENCRYPTION_KEY_V1",
+        "QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE=",
+    );
 
     let app = xynergy_backend::create_app(pool.clone());
 
     let engineering_id = create_test_department(&pool, "Engineering").await;
     let dept_head_email = test_email();
-    let dept_head_id =
-        create_test_user_with_role(&pool, &dept_head_email, "department_head").await;
+    let dept_head_id = create_test_user_with_role(&pool, &dept_head_email, "department_head").await;
     assign_user_to_department(&pool, dept_head_id, engineering_id).await;
 
-    let resource_id = create_test_resource_in_dept(&pool, "Allocation Member", engineering_id).await;
+    let resource_id =
+        create_test_resource_in_dept(&pool, "Allocation Member", engineering_id).await;
     create_ctc_for_resource(&pool, resource_id, dept_head_id).await;
 
     let project_a_id = create_test_project(&pool, "Project A").await;
@@ -562,10 +570,10 @@ async fn allocation_aggregation_correct(pool: PgPool) {
 async fn ctc_guard_rejects_allocation_without_ctc(pool: PgPool) {
     std::env::set_var("JWT_SECRET", "test-secret");
     std::env::set_var("CTC_ACTIVE_KEY_VERSION", "v1");
-        std::env::set_var(
-            "CTC_ENCRYPTION_KEY_V1",
-            "QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE=",
-        );
+    std::env::set_var(
+        "CTC_ENCRYPTION_KEY_V1",
+        "QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE=",
+    );
 
     let app = xynergy_backend::create_app(pool.clone());
 
@@ -620,17 +628,16 @@ async fn ctc_guard_rejects_allocation_without_ctc(pool: PgPool) {
 async fn daily_rate_value_matches_encrypted_input(pool: PgPool) {
     std::env::set_var("JWT_SECRET", "test-secret");
     std::env::set_var("CTC_ACTIVE_KEY_VERSION", "v1");
-        std::env::set_var(
-            "CTC_ENCRYPTION_KEY_V1",
-            "QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE=",
-        );
+    std::env::set_var(
+        "CTC_ENCRYPTION_KEY_V1",
+        "QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE=",
+    );
 
     let app = xynergy_backend::create_app(pool.clone());
 
     let dept_id = create_test_department(&pool, "Engineering").await;
     let dept_head_email = test_email();
-    let dept_head_id =
-        create_test_user_with_role(&pool, &dept_head_email, "department_head").await;
+    let dept_head_id = create_test_user_with_role(&pool, &dept_head_email, "department_head").await;
     assign_user_to_department(&pool, dept_head_id, dept_id).await;
 
     let resource_id = create_test_resource_in_dept(&pool, "Rate Check Member", dept_id).await;
@@ -672,17 +679,16 @@ async fn daily_rate_value_matches_encrypted_input(pool: PgPool) {
 async fn plaintext_daily_rate_fallback_works(pool: PgPool) {
     std::env::set_var("JWT_SECRET", "test-secret");
     std::env::set_var("CTC_ACTIVE_KEY_VERSION", "v1");
-        std::env::set_var(
-            "CTC_ENCRYPTION_KEY_V1",
-            "QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE=",
-        );
+    std::env::set_var(
+        "CTC_ENCRYPTION_KEY_V1",
+        "QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE=",
+    );
 
     let app = xynergy_backend::create_app(pool.clone());
 
     let dept_id = create_test_department(&pool, "Engineering").await;
     let dept_head_email = test_email();
-    let dept_head_id =
-        create_test_user_with_role(&pool, &dept_head_email, "department_head").await;
+    let dept_head_id = create_test_user_with_role(&pool, &dept_head_email, "department_head").await;
     assign_user_to_department(&pool, dept_head_id, dept_id).await;
 
     let resource_id = create_test_resource_in_dept(&pool, "Plaintext Rate Member", dept_id).await;
@@ -728,7 +734,9 @@ async fn plaintext_daily_rate_fallback_works(pool: PgPool) {
         "plaintext daily_rate fallback should return 950000"
     );
     assert_eq!(
-        resource["ctc_status"].as_str().expect("ctc_status should be string"),
+        resource["ctc_status"]
+            .as_str()
+            .expect("ctc_status should be string"),
         "Active"
     );
 }

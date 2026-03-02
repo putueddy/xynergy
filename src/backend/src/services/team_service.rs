@@ -1,8 +1,8 @@
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Datelike, NaiveDate, Utc};
 use serde::Serialize;
-use sqlx::{PgPool, Postgres, Row, Transaction};
 use sqlx::types::BigDecimal;
-use std::collections::HashMap;
+use sqlx::{PgPool, Postgres, Row, Transaction};
+use std::collections::{BTreeSet, HashMap};
 use uuid::Uuid;
 
 use crate::error::{AppError, Result};
@@ -26,7 +26,31 @@ pub struct TeamMemberResponse {
     pub daily_rate: Option<i64>,
     pub ctc_status: String,
     pub total_allocation_pct: f64,
+    pub current_allocation_percentage: f64,
+    pub is_overallocated: bool,
     pub active_assignments: Vec<AssignmentSummary>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CapacityPeriod {
+    pub period: String,
+    pub total_allocation_percentage: f64,
+    pub is_overallocated: bool,
+    pub allocation_count: i32,
+}
+
+#[derive(Debug, Serialize)]
+pub struct EmployeeCapacity {
+    pub resource_id: Uuid,
+    pub resource_name: String,
+    pub periods: Vec<CapacityPeriod>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CapacityReportResponse {
+    pub start_date: String,
+    pub end_date: String,
+    pub employees: Vec<EmployeeCapacity>,
 }
 
 fn bd_to_i64_safe(bd: &BigDecimal) -> Result<i64> {
@@ -40,10 +64,16 @@ fn bd_to_i64_safe(bd: &BigDecimal) -> Result<i64> {
 fn parse_json_decimal(value: &serde_json::Value, field: &str) -> Result<BigDecimal> {
     match value {
         serde_json::Value::String(s) => s.parse::<BigDecimal>().map_err(|_| {
-            AppError::Internal(format!("Failed to parse '{}' from decrypted payload", field))
+            AppError::Internal(format!(
+                "Failed to parse '{}' from decrypted payload",
+                field
+            ))
         }),
         serde_json::Value::Number(n) => n.to_string().parse::<BigDecimal>().map_err(|_| {
-            AppError::Internal(format!("Failed to parse '{}' from decrypted payload", field))
+            AppError::Internal(format!(
+                "Failed to parse '{}' from decrypted payload",
+                field
+            ))
         }),
         _ => Err(AppError::Internal(format!(
             "Invalid '{}' value in decrypted payload",
@@ -80,7 +110,9 @@ where
         FROM resources r
         LEFT JOIN departments d ON d.id = r.department_id
         LEFT JOIN ctc_records c ON c.resource_id = r.id AND c.status = 'Active'
-        LEFT JOIN allocations a ON a.resource_id = r.id AND (a.end_date >= CURRENT_DATE OR a.end_date IS NULL)
+        LEFT JOIN allocations a ON a.resource_id = r.id
+            AND a.start_date <= CURRENT_DATE
+            AND (a.end_date >= CURRENT_DATE OR a.end_date IS NULL)
         LEFT JOIN projects p ON p.id = a.project_id
         WHERE r.resource_type = 'human'
           AND ($1::uuid IS NULL OR r.department_id = $1)
@@ -164,6 +196,8 @@ where
                 daily_rate,
                 ctc_status,
                 total_allocation_pct: 0.0,
+                current_allocation_percentage: 0.0,
+                is_overallocated: false,
                 active_assignments: Vec::new(),
             })
         };
@@ -173,12 +207,12 @@ where
             .map_err(|e| AppError::Database(e.to_string()))?;
 
         if let Some(allocation_pct_bd) = allocation_pct_bd {
-            let allocation_pct = allocation_pct_bd
-                .to_string()
-                .parse::<f64>()
-                .map_err(|_| AppError::Internal("Failed to parse allocation percentage".to_string()))?;
+            let allocation_pct = allocation_pct_bd.to_string().parse::<f64>().map_err(|_| {
+                AppError::Internal("Failed to parse allocation percentage".to_string())
+            })?;
 
             member.total_allocation_pct += allocation_pct;
+            member.current_allocation_percentage += allocation_pct;
 
             let project_name: Option<String> = row
                 .try_get("project_name")
@@ -190,9 +224,7 @@ where
                 .try_get("end_date")
                 .map_err(|e| AppError::Database(e.to_string()))?;
 
-            if let (Some(project_name), Some(start_date)) =
-                (project_name, start_date)
-            {
+            if let (Some(project_name), Some(start_date)) = (project_name, start_date) {
                 member.active_assignments.push(AssignmentSummary {
                     project_name,
                     allocation_pct,
@@ -204,6 +236,9 @@ where
     }
 
     let mut team_members: Vec<TeamMemberResponse> = grouped.into_values().collect();
+    for member in &mut team_members {
+        member.is_overallocated = member.current_allocation_percentage > 100.0;
+    }
     team_members.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
 
     Ok(team_members)
@@ -223,6 +258,181 @@ pub async fn get_team_members_in_transaction(
     user_role: &str,
 ) -> Result<Vec<TeamMemberResponse>> {
     query_team_members(&mut **tx, department_id, user_role).await
+}
+
+fn month_key(date: NaiveDate) -> String {
+    format!("{:04}-{:02}", date.year(), date.month())
+}
+
+fn month_start(date: NaiveDate) -> Result<NaiveDate> {
+    NaiveDate::from_ymd_opt(date.year(), date.month(), 1)
+        .ok_or_else(|| AppError::Internal("Invalid month start date".to_string()))
+}
+
+fn next_month(date: NaiveDate) -> Result<NaiveDate> {
+    let (year, month) = if date.month() == 12 {
+        (date.year() + 1, 1)
+    } else {
+        (date.year(), date.month() + 1)
+    };
+    NaiveDate::from_ymd_opt(year, month, 1)
+        .ok_or_else(|| AppError::Internal("Invalid next month date".to_string()))
+}
+
+async fn query_capacity_report_with_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    department_id: Option<Uuid>,
+    start_date: NaiveDate,
+    end_date: NaiveDate,
+) -> Result<CapacityReportResponse> {
+    let resources = sqlx::query(
+        r#"
+        SELECT r.id AS resource_id, r.name AS resource_name
+        FROM resources r
+        WHERE r.resource_type = 'human'
+          AND ($1::uuid IS NULL OR r.department_id = $1)
+        ORDER BY r.name ASC
+        "#,
+    )
+    .bind(department_id)
+    .fetch_all(&mut **tx)
+    .await
+    .map_err(|e| AppError::Database(e.to_string()))?;
+
+    if resources.is_empty() {
+        return Ok(CapacityReportResponse {
+            start_date: start_date.to_string(),
+            end_date: end_date.to_string(),
+            employees: Vec::new(),
+        });
+    }
+
+    let mut month_starts = Vec::new();
+    let mut cursor = month_start(start_date)?;
+    let last_month = month_start(end_date)?;
+    while cursor <= last_month {
+        month_starts.push(cursor);
+        cursor = next_month(cursor)?;
+    }
+
+    let resource_ids = resources
+        .iter()
+        .map(|row| {
+            row.try_get::<Uuid, _>("resource_id")
+                .map_err(|e| AppError::Database(e.to_string()))
+        })
+        .collect::<Result<Vec<_>>>()?;
+
+    let allocation_rows = sqlx::query(
+        r#"
+        SELECT resource_id, start_date, end_date, allocation_percentage
+        FROM allocations
+        WHERE resource_id = ANY($1)
+          AND start_date <= $2
+          AND end_date >= $3
+        "#,
+    )
+    .bind(&resource_ids)
+    .bind(end_date)
+    .bind(start_date)
+    .fetch_all(&mut **tx)
+    .await
+    .map_err(|e| AppError::Database(e.to_string()))?;
+
+    let mut by_resource_month: HashMap<Uuid, HashMap<String, (f64, i32)>> = HashMap::new();
+
+    for row in allocation_rows {
+        let resource_id: Uuid = row
+            .try_get("resource_id")
+            .map_err(|e| AppError::Database(e.to_string()))?;
+        let allocation_start: NaiveDate = row
+            .try_get("start_date")
+            .map_err(|e| AppError::Database(e.to_string()))?;
+        let allocation_end: NaiveDate = row
+            .try_get("end_date")
+            .map_err(|e| AppError::Database(e.to_string()))?;
+        let allocation_percentage_bd: BigDecimal = row
+            .try_get("allocation_percentage")
+            .map_err(|e| AppError::Database(e.to_string()))?;
+
+        let allocation_percentage = allocation_percentage_bd
+            .to_string()
+            .parse::<f64>()
+            .map_err(|_| AppError::Internal("Failed to parse allocation percentage".to_string()))?;
+
+        let overlap_start = std::cmp::max(allocation_start, start_date);
+        let overlap_end = std::cmp::min(allocation_end, end_date);
+        if overlap_start > overlap_end {
+            continue;
+        }
+
+        for month in &month_starts {
+            let period_start = *month;
+            let next = next_month(*month)?;
+            let period_end = next
+                .pred_opt()
+                .ok_or_else(|| AppError::Internal("Invalid month end date".to_string()))?;
+            if overlap_start <= period_end && overlap_end >= period_start {
+                let period = month_key(*month);
+                let entry = by_resource_month
+                    .entry(resource_id)
+                    .or_default()
+                    .entry(period)
+                    .or_insert((0.0, 0));
+                entry.0 += allocation_percentage;
+                entry.1 += 1;
+            }
+        }
+    }
+
+    let month_set: BTreeSet<String> = month_starts.iter().map(|m| month_key(*m)).collect();
+
+    let mut employees = Vec::new();
+    for row in resources {
+        let resource_id: Uuid = row
+            .try_get("resource_id")
+            .map_err(|e| AppError::Database(e.to_string()))?;
+        let resource_name: String = row
+            .try_get("resource_name")
+            .map_err(|e| AppError::Database(e.to_string()))?;
+
+        let mut periods = Vec::new();
+        for period in &month_set {
+            let (total_allocation_percentage, allocation_count) = by_resource_month
+                .get(&resource_id)
+                .and_then(|m| m.get(period))
+                .copied()
+                .unwrap_or((0.0, 0));
+
+            periods.push(CapacityPeriod {
+                period: period.clone(),
+                total_allocation_percentage,
+                is_overallocated: total_allocation_percentage > 100.0,
+                allocation_count,
+            });
+        }
+
+        employees.push(EmployeeCapacity {
+            resource_id,
+            resource_name,
+            periods,
+        });
+    }
+
+    Ok(CapacityReportResponse {
+        start_date: start_date.to_string(),
+        end_date: end_date.to_string(),
+        employees,
+    })
+}
+
+pub async fn get_capacity_report_in_transaction(
+    tx: &mut Transaction<'_, Postgres>,
+    department_id: Option<Uuid>,
+    start_date: NaiveDate,
+    end_date: NaiveDate,
+) -> Result<CapacityReportResponse> {
+    query_capacity_report_with_tx(tx, department_id, start_date, end_date).await
 }
 
 #[cfg(test)]
@@ -272,6 +482,8 @@ mod tests {
                 daily_rate: Some(1000000),
                 ctc_status: "Active".to_string(),
                 total_allocation_pct: 50.0,
+                current_allocation_percentage: 50.0,
+                is_overallocated: false,
                 active_assignments: vec![],
             },
             TeamMemberResponse {
@@ -282,6 +494,8 @@ mod tests {
                 daily_rate: Some(900000),
                 ctc_status: "Active".to_string(),
                 total_allocation_pct: 80.0,
+                current_allocation_percentage: 80.0,
+                is_overallocated: false,
                 active_assignments: vec![],
             },
             TeamMemberResponse {
@@ -292,6 +506,8 @@ mod tests {
                 daily_rate: None,
                 ctc_status: "Missing".to_string(),
                 total_allocation_pct: 0.0,
+                current_allocation_percentage: 0.0,
+                is_overallocated: false,
                 active_assignments: vec![],
             },
         ];

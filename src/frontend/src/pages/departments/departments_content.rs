@@ -1,4 +1,6 @@
-use crate::auth::{authenticated_delete, authenticated_get, authenticated_post_json, authenticated_put_json};
+use crate::auth::{
+    authenticated_delete, authenticated_get, authenticated_post_json, authenticated_put_json,
+};
 use crate::components::{DepartmentEditData, DepartmentForm, DepartmentFormData, HeadCandidate};
 use leptos::*;
 use serde::Deserialize;
@@ -334,8 +336,8 @@ async fn create_department(form_data: DepartmentFormData) -> Result<(), String> 
             "head_id": head_id,
         }),
     )
-        .await
-        .map_err(|e| format!("Failed to create department: {}", e))?;
+    .await
+    .map_err(|e| format!("Failed to create department: {}", e))?;
 
     if response.status().is_success() {
         Ok(())
@@ -372,8 +374,8 @@ async fn update_department(dept_id: String, form_data: DepartmentFormData) -> Re
             "head_id": head_id,
         }),
     )
-        .await
-        .map_err(|e| format!("Failed to update department: {}", e))?;
+    .await
+    .map_err(|e| format!("Failed to update department: {}", e))?;
 
     if response.status().is_success() {
         Ok(())
@@ -392,9 +394,10 @@ async fn delete_department(dept_id: String) -> Result<(), String> {
         .parse::<Uuid>()
         .map_err(|_| "Invalid department ID")?;
 
-    let response = authenticated_delete(&format!("http://localhost:3000/api/v1/departments/{}", id))
-        .await
-        .map_err(|e| format!("Failed to delete department: {}", e))?;
+    let response =
+        authenticated_delete(&format!("http://localhost:3000/api/v1/departments/{}", id))
+            .await
+            .map_err(|e| format!("Failed to delete department: {}", e))?;
 
     if response.status().is_success() {
         Ok(())

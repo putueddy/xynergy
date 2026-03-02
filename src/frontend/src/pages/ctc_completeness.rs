@@ -1,5 +1,5 @@
 use crate::auth::{
-    AuthContext, authenticated_get, auth_token, clear_auth_storage, use_auth, validate_token,
+    auth_token, authenticated_get, clear_auth_storage, use_auth, validate_token, AuthContext,
 };
 use crate::components::{Footer, Header};
 use leptos::*;
@@ -63,10 +63,15 @@ fn value_to_f64(value: &Value) -> Option<f64> {
     value.as_str()?.parse::<f64>().ok()
 }
 
-async fn fetch_completeness(department_id: Option<String>) -> Result<(Vec<DepartmentRow>, i64, i64, i64, f64), String> {
+async fn fetch_completeness(
+    department_id: Option<String>,
+) -> Result<(Vec<DepartmentRow>, i64, i64, i64, f64), String> {
     let url = match department_id {
         Some(ref id) if !id.is_empty() => {
-            format!("http://localhost:3000/api/v1/ctc/completeness?department_id={}", id)
+            format!(
+                "http://localhost:3000/api/v1/ctc/completeness?department_id={}",
+                id
+            )
         }
         _ => "http://localhost:3000/api/v1/ctc/completeness".to_string(),
     };
@@ -76,7 +81,10 @@ async fn fetch_completeness(department_id: Option<String>) -> Result<(Vec<Depart
         .map_err(|e| format!("Failed to fetch completeness: {}", e))?;
 
     if !response.status().is_success() {
-        return Err(format!("Failed to fetch completeness: {}", response.status()));
+        return Err(format!(
+            "Failed to fetch completeness: {}",
+            response.status()
+        ));
     }
 
     let body: Value = response
@@ -84,10 +92,16 @@ async fn fetch_completeness(department_id: Option<String>) -> Result<(Vec<Depart
         .await
         .map_err(|e| format!("Failed to parse completeness response: {}", e))?;
 
-    let total_employees = body.get("total_employees").and_then(value_to_i64).unwrap_or(0);
+    let total_employees = body
+        .get("total_employees")
+        .and_then(value_to_i64)
+        .unwrap_or(0);
     let with_ctc = body.get("with_ctc").and_then(value_to_i64).unwrap_or(0);
     let missing_ctc = body.get("missing_ctc").and_then(value_to_i64).unwrap_or(0);
-    let completion_pct = body.get("completion_pct").and_then(value_to_f64).unwrap_or(0.0);
+    let completion_pct = body
+        .get("completion_pct")
+        .and_then(value_to_f64)
+        .unwrap_or(0.0);
 
     let deps = body
         .get("departments")
@@ -98,16 +112,33 @@ async fn fetch_completeness(department_id: Option<String>) -> Result<(Vec<Depart
     let mut department_rows = Vec::new();
     for d in deps {
         department_rows.push(DepartmentRow {
-            department_id: d.get("department_id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            department: d.get("department").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+            department_id: d
+                .get("department_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            department: d
+                .get("department")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
             total_employees: d.get("total_employees").and_then(value_to_i64).unwrap_or(0),
             with_ctc: d.get("with_ctc").and_then(value_to_i64).unwrap_or(0),
             missing_ctc: d.get("missing_ctc").and_then(value_to_i64).unwrap_or(0),
-            completion_pct: d.get("completion_pct").and_then(value_to_f64).unwrap_or(0.0),
+            completion_pct: d
+                .get("completion_pct")
+                .and_then(value_to_f64)
+                .unwrap_or(0.0),
         });
     }
 
-    Ok((department_rows, total_employees, with_ctc, missing_ctc, completion_pct))
+    Ok((
+        department_rows,
+        total_employees,
+        with_ctc,
+        missing_ctc,
+        completion_pct,
+    ))
 }
 
 async fn fetch_missing_employees() -> Result<Vec<MissingEmployee>, String> {
@@ -116,7 +147,10 @@ async fn fetch_missing_employees() -> Result<Vec<MissingEmployee>, String> {
         .map_err(|e| format!("Failed to fetch missing employees: {}", e))?;
 
     if !response.status().is_success() {
-        return Err(format!("Failed to fetch missing employees: {}", response.status()));
+        return Err(format!(
+            "Failed to fetch missing employees: {}",
+            response.status()
+        ));
     }
 
     let body: Value = response
@@ -134,9 +168,21 @@ async fn fetch_missing_employees() -> Result<Vec<MissingEmployee>, String> {
     let mut employees = Vec::new();
     for e in arr {
         employees.push(MissingEmployee {
-            id: e.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            name: e.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            department: e.get("department").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+            id: e
+                .get("id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            name: e
+                .get("name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            department: e
+                .get("department")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
         });
     }
 
@@ -149,7 +195,10 @@ async fn fetch_departments_list() -> Result<Vec<(String, String)>, String> {
         .map_err(|e| format!("Failed to fetch departments: {}", e))?;
 
     if !response.status().is_success() {
-        return Err(format!("Failed to fetch departments: {}", response.status()));
+        return Err(format!(
+            "Failed to fetch departments: {}",
+            response.status()
+        ));
     }
 
     let values: Vec<Value> = response
@@ -168,13 +217,22 @@ async fn fetch_departments_list() -> Result<Vec<(String, String)>, String> {
         .collect())
 }
 
-async fn fetch_compliance_report(start_date: &str, end_date: &str) -> Result<(Vec<ComplianceRow>, i64, i64, i64, f64), String> {
-    let response = authenticated_get(&format!("http://localhost:3000/api/v1/ctc/compliance-report?start_date={}&end_date={}", start_date, end_date))
-        .await
-        .map_err(|e| format!("Failed to fetch compliance report: {}", e))?;
+async fn fetch_compliance_report(
+    start_date: &str,
+    end_date: &str,
+) -> Result<(Vec<ComplianceRow>, i64, i64, i64, f64), String> {
+    let response = authenticated_get(&format!(
+        "http://localhost:3000/api/v1/ctc/compliance-report?start_date={}&end_date={}",
+        start_date, end_date
+    ))
+    .await
+    .map_err(|e| format!("Failed to fetch compliance report: {}", e))?;
 
     if !response.status().is_success() {
-        return Err(format!("Failed to fetch compliance report: {}", response.status()));
+        return Err(format!(
+            "Failed to fetch compliance report: {}",
+            response.status()
+        ));
     }
 
     let body: Value = response
@@ -182,10 +240,19 @@ async fn fetch_compliance_report(start_date: &str, end_date: &str) -> Result<(Ve
         .await
         .map_err(|e| format!("Failed to parse compliance response: {}", e))?;
 
-    let total_validated = body.get("total_validated").and_then(value_to_i64).unwrap_or(0);
+    let total_validated = body
+        .get("total_validated")
+        .and_then(value_to_i64)
+        .unwrap_or(0);
     let passed = body.get("passed").and_then(value_to_i64).unwrap_or(0);
-    let discrepancies = body.get("discrepancies").and_then(value_to_i64).unwrap_or(0);
-    let compliance_rate = body.get("compliance_rate").and_then(value_to_f64).unwrap_or(0.0);
+    let discrepancies = body
+        .get("discrepancies")
+        .and_then(value_to_i64)
+        .unwrap_or(0);
+    let compliance_rate = body
+        .get("compliance_rate")
+        .and_then(value_to_f64)
+        .unwrap_or(0.0);
 
     let res = body
         .get("results")
@@ -196,19 +263,43 @@ async fn fetch_compliance_report(start_date: &str, end_date: &str) -> Result<(Ve
     let mut rows = Vec::new();
     for r in res {
         rows.push(ComplianceRow {
-            resource_id: r.get("resource_id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            name: r.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+            resource_id: r
+                .get("resource_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            name: r
+                .get("name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
             stored_bpjs_kes: r.get("stored_bpjs_kes").and_then(value_to_i64).unwrap_or(0),
-            expected_bpjs_kes: r.get("expected_bpjs_kes").and_then(value_to_i64).unwrap_or(0),
+            expected_bpjs_kes: r
+                .get("expected_bpjs_kes")
+                .and_then(value_to_i64)
+                .unwrap_or(0),
             stored_bpjs_kt: r.get("stored_bpjs_kt").and_then(value_to_i64).unwrap_or(0),
-            expected_bpjs_kt: r.get("expected_bpjs_kt").and_then(value_to_i64).unwrap_or(0),
+            expected_bpjs_kt: r
+                .get("expected_bpjs_kt")
+                .and_then(value_to_i64)
+                .unwrap_or(0),
             risk_tier: r.get("risk_tier").and_then(value_to_i64).unwrap_or(0),
-            status: r.get("status").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+            status: r
+                .get("status")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
             variance_amount: r.get("variance_amount").and_then(value_to_i64).unwrap_or(0),
         });
     }
 
-    Ok((rows, total_validated, passed, discrepancies, compliance_rate))
+    Ok((
+        rows,
+        total_validated,
+        passed,
+        discrepancies,
+        compliance_rate,
+    ))
 }
 
 fn get_color_class(pct: f64) -> &'static str {
@@ -574,7 +665,7 @@ pub fn CtcCompleteness() -> impl IntoView {
                             {move || is_hr_or_finance.get().then(|| view! {
                                 <div class="bg-white dark:bg-gray-800 shadow rounded-lg p-6 space-y-4">
                                     <h2 class="text-xl font-semibold text-gray-900 dark:text-white">"BPJS Compliance Report"</h2>
-                                    
+
                                     <div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
                                         <div>
                                             <label class="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">"Start Date"</label>

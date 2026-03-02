@@ -1,6 +1,6 @@
 use crate::auth::{
-    AuthContext, authenticated_get, authenticated_post_json, auth_token, clear_auth_storage,
-    use_auth, validate_token,
+    auth_token, authenticated_get, authenticated_post_json, clear_auth_storage, use_auth,
+    validate_token, AuthContext,
 };
 use crate::components::{Footer, Header};
 use chrono::NaiveDate;
@@ -129,12 +129,7 @@ pub fn ThrManagement() -> impl IntoView {
         });
     }
 
-    let is_hr = Signal::derive(move || {
-        auth.user
-            .get()
-            .map(|u| u.role == "hr")
-            .unwrap_or(false)
-    });
+    let is_hr = Signal::derive(move || auth.user.get().map(|u| u.role == "hr").unwrap_or(false));
 
     create_effect(move |_| {
         if auth.token.get().is_some() {
@@ -158,10 +153,7 @@ pub fn ThrManagement() -> impl IntoView {
 
     let selected_resource_view = Signal::derive(move || {
         let selected_id = selected_resource.get();
-        resources
-            .get()
-            .into_iter()
-            .find(|r| r.id == selected_id)
+        resources.get().into_iter().find(|r| r.id == selected_id)
     });
 
     let save_config = move |_| {
@@ -741,9 +733,10 @@ async fn run_thr_monthly_accrual(period: &str) -> Result<(i64, i64), String> {
         "accrual_period": period,
     });
 
-    let response = authenticated_post_json("http://localhost:3000/api/v1/thr/accrual/run", &payload)
-        .await
-        .map_err(|e| format!("Failed to run THR accrual: {}", e))?;
+    let response =
+        authenticated_post_json("http://localhost:3000/api/v1/thr/accrual/run", &payload)
+            .await
+            .map_err(|e| format!("Failed to run THR accrual: {}", e))?;
 
     if !response.status().is_success() {
         let text = response

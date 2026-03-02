@@ -99,8 +99,9 @@ pub fn Dashboard() -> impl IntoView {
 
             if session_expired {
                 logout_user(&auth);
-                set_dashboard_error
-                    .set(Some("Your session expired. Please sign in again.".to_string()));
+                set_dashboard_error.set(Some(
+                    "Your session expired. Please sign in again.".to_string(),
+                ));
                 navigate("/login", Default::default());
                 set_loading.set(false);
                 return;

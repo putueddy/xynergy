@@ -1,4 +1,7 @@
-use crate::auth::{authenticated_delete, authenticated_get, authenticated_post_json, authenticated_put_json, use_auth};
+use crate::auth::{
+    authenticated_delete, authenticated_get, authenticated_post_json, authenticated_put_json,
+    use_auth,
+};
 use crate::components::project_list::Project;
 use crate::components::{project_form::ProjectFormData, Footer, Header, ProjectForm, ProjectList};
 use chrono::NaiveDate;

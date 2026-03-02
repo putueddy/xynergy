@@ -129,8 +129,7 @@ pub fn clear_auth_storage() {
 }
 
 pub fn auth_token() -> Result<String, String> {
-    read_local_storage("auth_token")
-        .ok_or_else(|| "SESSION_EXPIRED".to_string())
+    read_local_storage("auth_token").ok_or_else(|| "SESSION_EXPIRED".to_string())
 }
 
 fn force_relogin() {
@@ -141,8 +140,8 @@ fn force_relogin() {
 }
 
 pub async fn refresh_access_token_from_storage() -> Result<String, String> {
-    let refresh = read_local_storage("auth_refresh_token")
-        .ok_or_else(|| "SESSION_EXPIRED".to_string())?;
+    let refresh =
+        read_local_storage("auth_refresh_token").ok_or_else(|| "SESSION_EXPIRED".to_string())?;
 
     match refresh_access_token(&refresh).await {
         Ok((new_token, new_refresh)) => {

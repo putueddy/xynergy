@@ -13,10 +13,12 @@ use uuid::Uuid;
 
 use crate::error::{AppError, Result};
 use crate::services::{
-    audit_log::user_claims_from_headers, audit_payload, log_audit, user_id_from_headers,
+    audit_log::user_claims_from_headers,
+    audit_payload,
     cost_preview::{calculate_cost_preview, is_weekend, MonthlyBucket},
     ctc_crypto::{CtcCryptoService, DefaultCtcCryptoService, EncryptedPayload},
     key_provider::EnvKeyProvider,
+    log_audit, user_id_from_headers,
 };
 
 fn required_uuid(value: Option<Uuid>, field: &str) -> Result<Uuid> {
@@ -113,6 +115,28 @@ pub struct CreateAllocationRequest {
     pub end_date: NaiveDate,
     pub allocation_percentage: f64,
     pub include_weekend: bool,
+    #[serde(default)]
+    pub confirm_overallocation: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct OverallocationWarningResponse {
+    pub resource_id: Uuid,
+    pub resource_name: String,
+    pub current_allocation_percentage: f64,
+    pub requested_allocation_percentage: f64,
+    pub projected_allocation_percentage: f64,
+    pub warning_message: String,
+    pub requires_confirmation: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(tag = "status")]
+pub enum CreateAllocationResult {
+    #[serde(rename = "created")]
+    Created { allocation: AllocationResponse },
+    #[serde(rename = "overallocation_warning")]
+    OverallocationWarning(OverallocationWarningResponse),
 }
 
 /// Update allocation request
@@ -158,6 +182,19 @@ pub struct CostPreviewResponse {
     pub requires_approval: bool,
 }
 
+fn format_percentage(value: f64) -> String {
+    let rounded = (value * 100.0).round() / 100.0;
+    if (rounded.fract()).abs() < f64::EPSILON {
+        format!("{:.0}", rounded)
+    } else {
+        let as_str = format!("{:.2}", rounded);
+        as_str
+            .trim_end_matches('0')
+            .trim_end_matches('.')
+            .to_string()
+    }
+}
+
 /// Daily allocation info for validation
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -198,10 +235,16 @@ fn bigdecimal_to_i64_trunc(value: &BigDecimal) -> Result<i64> {
 fn parse_json_decimal(value: &serde_json::Value, field: &str) -> Result<BigDecimal> {
     match value {
         serde_json::Value::String(s) => s.parse::<BigDecimal>().map_err(|_| {
-            AppError::Internal(format!("Failed to parse '{}' from decrypted payload", field))
+            AppError::Internal(format!(
+                "Failed to parse '{}' from decrypted payload",
+                field
+            ))
         }),
         serde_json::Value::Number(n) => n.to_string().parse::<BigDecimal>().map_err(|_| {
-            AppError::Internal(format!("Failed to parse '{}' from decrypted payload", field))
+            AppError::Internal(format!(
+                "Failed to parse '{}' from decrypted payload",
+                field
+            ))
         }),
         _ => Err(AppError::Internal(format!(
             "Invalid '{}' value in decrypted payload",
@@ -278,6 +321,37 @@ async fn get_active_ctc_daily_rate(pool: &PgPool, resource_id: Uuid) -> Result<i
     ))
 }
 
+async fn get_resource_name(pool: &PgPool, resource_id: Uuid) -> Result<String> {
+    sqlx::query_scalar!("SELECT name FROM resources WHERE id = $1", resource_id)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| AppError::Database(e.to_string()))?
+        .ok_or_else(|| AppError::NotFound(format!("Resource {} not found", resource_id)))
+}
+
+async fn get_current_allocation_percentage(
+    pool: &PgPool,
+    resource_id: Uuid,
+    start_date: NaiveDate,
+    end_date: NaiveDate,
+) -> Result<f64> {
+    let total: Option<BigDecimal> = sqlx::query_scalar(
+        "SELECT SUM(allocation_percentage)
+         FROM allocations
+         WHERE resource_id = $1
+           AND start_date < $2
+           AND end_date > $3",
+    )
+    .bind(resource_id)
+    .bind(end_date)
+    .bind(start_date)
+    .fetch_one(pool)
+    .await
+    .map_err(|e| AppError::Database(e.to_string()))?;
+
+    Ok(total.map(bigdecimal_to_f64).unwrap_or(0.0))
+}
+
 #[derive(Debug)]
 struct BudgetComputation {
     budget_impact: Option<BudgetImpact>,
@@ -289,7 +363,10 @@ fn format_idr_millions(value: i64) -> String {
     format!("{:.1}", value as f64 / 1_000_000.0)
 }
 
-async fn extract_daily_rate_from_allocation_row(row: &sqlx::postgres::PgRow, crypto_svc: &DefaultCtcCryptoService<EnvKeyProvider>) -> Result<Option<i64>> {
+async fn extract_daily_rate_from_allocation_row(
+    row: &sqlx::postgres::PgRow,
+    crypto_svc: &DefaultCtcCryptoService<EnvKeyProvider>,
+) -> Result<Option<i64>> {
     let encrypted_daily_rate: Option<String> = row
         .try_get("encrypted_daily_rate")
         .map_err(|e| AppError::Database(e.to_string()))?;
@@ -461,7 +538,9 @@ async fn compute_budget_impact(
             continue;
         }
 
-        let Some(daily_rate_idr) = extract_daily_rate_from_allocation_row(&row, &crypto_svc).await? else {
+        let Some(daily_rate_idr) =
+            extract_daily_rate_from_allocation_row(&row, &crypto_svc).await?
+        else {
             continue;
         };
 
@@ -1143,7 +1222,7 @@ async fn create_allocation(
     State(pool): State<PgPool>,
     headers: HeaderMap,
     Json(req): Json<CreateAllocationRequest>,
-) -> Result<Json<AllocationResponse>> {
+) -> Result<Json<CreateAllocationResult>> {
     ensure_allocation_access(
         &pool,
         &headers,
@@ -1182,6 +1261,33 @@ async fn create_allocation(
         ));
     }
 
+    // Validate dates are within project dates
+    validate_allocation_dates(&pool, req.project_id, req.start_date, req.end_date).await?;
+
+    let current_allocation_percentage =
+        get_current_allocation_percentage(&pool, req.resource_id, req.start_date, req.end_date)
+            .await?;
+
+    let projected_allocation_percentage = current_allocation_percentage + req.allocation_percentage;
+
+    if projected_allocation_percentage > 100.0 && !req.confirm_overallocation {
+        let resource_name = get_resource_name(&pool, req.resource_id).await?;
+        return Ok(Json(CreateAllocationResult::OverallocationWarning(
+            OverallocationWarningResponse {
+                resource_id: req.resource_id,
+                resource_name,
+                current_allocation_percentage,
+                requested_allocation_percentage: req.allocation_percentage,
+                projected_allocation_percentage,
+                warning_message: format!(
+                    "Total allocation would be {}% - confirm over-allocation?",
+                    format_percentage(projected_allocation_percentage)
+                ),
+                requires_confirmation: true,
+            },
+        )));
+    }
+
     let audit_changes = audit_payload(
         None,
         Some(json!({
@@ -1191,27 +1297,10 @@ async fn create_allocation(
             "end_date": req.end_date,
             "allocation_percentage": req.allocation_percentage,
             "include_weekend": req.include_weekend,
+            "confirm_overallocation": req.confirm_overallocation,
         })),
     );
     let user_id = user_id_from_headers(&headers)?;
-    // Validate dates are within project dates
-    validate_allocation_dates(&pool, req.project_id, req.start_date, req.end_date).await?;
-
-    // Check if resource has capacity
-    let (has_capacity, message, _daily_capacity) = check_resource_capacity(
-        &pool,
-        req.resource_id,
-        req.start_date,
-        req.end_date,
-        req.allocation_percentage,
-        req.include_weekend,
-        None,
-    )
-    .await?;
-
-    if !has_capacity {
-        return Err(AppError::Validation(message));
-    }
 
     let allocation_percentage_bd = f64_to_bigdecimal(req.allocation_percentage);
 
@@ -1253,7 +1342,7 @@ async fn create_allocation(
             .await
             .map_err(|e| AppError::Database(e.to_string()))?;
 
-    Ok(Json(AllocationResponse {
+    let allocation_response = AllocationResponse {
         id: allocation.id,
         project_id: required_uuid(allocation.project_id, "allocations.project_id")?,
         resource_id: required_uuid(allocation.resource_id, "allocations.resource_id")?,
@@ -1263,6 +1352,29 @@ async fn create_allocation(
         include_weekend: allocation.include_weekend,
         project_name,
         resource_name,
+    };
+
+    if projected_allocation_percentage > 100.0 && req.confirm_overallocation {
+        log_audit(
+            &pool,
+            user_id,
+            "overallocation_confirmed",
+            "allocation",
+            allocation.id,
+            json!({
+                "project_id": req.project_id,
+                "resource_id": req.resource_id,
+                "current_allocation_percentage": current_allocation_percentage,
+                "requested_allocation_percentage": req.allocation_percentage,
+                "projected_allocation_percentage": projected_allocation_percentage,
+                "reason_code": "manual_overallocation_confirmation"
+            }),
+        )
+        .await?;
+    }
+
+    Ok(Json(CreateAllocationResult::Created {
+        allocation: allocation_response,
     }))
 }
 

@@ -1,4 +1,7 @@
-use crate::auth::{authenticated_delete, authenticated_get, authenticated_post_json, authenticated_put_json, use_auth};
+use crate::auth::{
+    authenticated_delete, authenticated_get, authenticated_post_json, authenticated_put_json,
+    use_auth,
+};
 use crate::components::resource_list::Resource;
 use crate::components::{
     resource_form::ResourceFormData, Footer, Header, ResourceForm, ResourceList,
@@ -236,8 +239,8 @@ async fn create_resource(form_data: ResourceFormData) -> Result<(), String> {
             "skills": null
         }),
     )
-        .await
-        .map_err(|e| format!("Failed to create resource: {}", e))?;
+    .await
+    .map_err(|e| format!("Failed to create resource: {}", e))?;
 
     if response.status().is_success() {
         Ok(())
@@ -262,8 +265,8 @@ async fn update_resource(id: Uuid, form_data: ResourceFormData) -> Result<(), St
             "skills": null
         }),
     )
-        .await
-        .map_err(|e| format!("Failed to update resource: {}", e))?;
+    .await
+    .map_err(|e| format!("Failed to update resource: {}", e))?;
 
     if response.status().is_success() {
         Ok(())

@@ -1,4 +1,7 @@
-use crate::auth::{authenticated_delete, authenticated_get, authenticated_post_json, authenticated_put_json, use_auth};
+use crate::auth::{
+    authenticated_delete, authenticated_get, authenticated_post_json, authenticated_put_json,
+    use_auth,
+};
 use crate::components::{DepartmentOption, UserEditData, UserForm, UserFormData};
 use leptos::*;
 use serde::Deserialize;
@@ -427,8 +430,8 @@ async fn create_user(form_data: UserFormData) -> Result<(), String> {
             "department_id": department_id,
         }),
     )
-        .await
-        .map_err(|e| format!("Failed to create user: {}", e))?;
+    .await
+    .map_err(|e| format!("Failed to create user: {}", e))?;
 
     if response.status().is_success() {
         Ok(())
@@ -448,10 +451,7 @@ async fn create_user(form_data: UserFormData) -> Result<(), String> {
 }
 
 /// Update an existing user
-async fn update_user_form(
-    user_id: String,
-    form_data: UserFormData,
-) -> Result<(), String> {
+async fn update_user_form(user_id: String, form_data: UserFormData) -> Result<(), String> {
     let id = user_id.parse::<Uuid>().map_err(|_| "Invalid user ID")?;
 
     let department_id = if form_data.department_id.is_empty() {
@@ -475,8 +475,8 @@ async fn update_user_form(
             "department_id": department_id,
         }),
     )
-        .await
-        .map_err(|e| format!("Failed to update user: {}", e))?;
+    .await
+    .map_err(|e| format!("Failed to update user: {}", e))?;
 
     if response.status().is_success() {
         Ok(())

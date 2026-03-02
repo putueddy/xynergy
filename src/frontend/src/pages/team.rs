@@ -1,11 +1,12 @@
 use crate::auth::{
-    AuthContext, authenticated_get, authenticated_post_json, auth_token, clear_auth_storage,
-    use_auth, validate_token,
+    auth_token, authenticated_get, authenticated_post_json, clear_auth_storage, use_auth,
+    validate_token, AuthContext,
 };
 use crate::components::timeline_chart::{AllocationItem, ResourceGroup, TimelineChart};
 use crate::components::{Footer, Header};
 use crate::timeline::{TimelineGroup, TimelineItem};
 use gloo_timers::callback::Timeout;
+use js_sys::Date;
 use leptos::*;
 use leptos_router::*;
 use serde::{Deserialize, Serialize};
@@ -30,6 +31,8 @@ struct TeamMember {
     daily_rate: Option<i64>,
     ctc_status: String,
     total_allocation_pct: f64,
+    current_allocation_percentage: f64,
+    is_overallocated: bool,
     active_assignments: Vec<AssignmentInfo>,
 }
 
@@ -50,6 +53,40 @@ struct CreateAssignmentRequest {
     end_date: String,
     allocation_percentage: f64,
     include_weekend: bool,
+    confirm_overallocation: bool,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct OverallocationWarning {
+    resource_id: String,
+    resource_name: String,
+    current_allocation_percentage: f64,
+    requested_allocation_percentage: f64,
+    projected_allocation_percentage: f64,
+    warning_message: String,
+    requires_confirmation: bool,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+struct CapacityPeriod {
+    period: String,
+    total_allocation_percentage: f64,
+    is_overallocated: bool,
+    allocation_count: i32,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+struct EmployeeCapacity {
+    resource_id: String,
+    resource_name: String,
+    periods: Vec<CapacityPeriod>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+struct CapacityReportResponse {
+    start_date: String,
+    end_date: String,
+    employees: Vec<EmployeeCapacity>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -187,6 +224,18 @@ async fn fetch_team_members() -> Result<Vec<TeamMember>, String> {
                 .get("total_allocation_pct")
                 .and_then(value_to_f64)
                 .unwrap_or(0.0),
+            current_allocation_percentage: item
+                .get("current_allocation_percentage")
+                .and_then(value_to_f64)
+                .unwrap_or_else(|| {
+                    item.get("total_allocation_pct")
+                        .and_then(value_to_f64)
+                        .unwrap_or(0.0)
+                }),
+            is_overallocated: item
+                .get("is_overallocated")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
             active_assignments,
         });
     }
@@ -275,16 +324,16 @@ async fn fetch_cost_preview(
 }
 
 async fn fetch_resource_allocations(resource_id: &str) -> Result<Vec<Value>, String> {
-    let url = format!(
-        "/api/v1/allocations/resource/{}",
-        resource_id
-    );
+    let url = format!("/api/v1/allocations/resource/{}", resource_id);
     let response = authenticated_get(&url)
         .await
         .map_err(|e| format!("Failed to fetch allocations: {}", e))?;
 
     if !response.status().is_success() {
-        return Err(format!("Failed to fetch allocations: {}", response.status()));
+        return Err(format!(
+            "Failed to fetch allocations: {}",
+            response.status()
+        ));
     }
 
     let body: Value = response
@@ -293,6 +342,35 @@ async fn fetch_resource_allocations(resource_id: &str) -> Result<Vec<Value>, Str
         .map_err(|e| format!("Failed to parse allocations: {}", e))?;
 
     Ok(body.as_array().cloned().unwrap_or_default())
+}
+
+async fn fetch_capacity_report(
+    start_date: &str,
+    end_date: &str,
+) -> Result<CapacityReportResponse, String> {
+    let url = format!(
+        "/api/v1/team/capacity-report?start_date={}&end_date={}",
+        start_date, end_date
+    );
+
+    let response = authenticated_get(&url)
+        .await
+        .map_err(|e| format!("Failed to fetch capacity report: {}", e))?;
+
+    if !response.status().is_success() {
+        let body: Value = response.json().await.unwrap_or_default();
+        let msg = body
+            .pointer("/error/message")
+            .and_then(|v| v.as_str())
+            .or_else(|| body.get("message").and_then(|v| v.as_str()))
+            .unwrap_or("Failed to fetch capacity report.");
+        return Err(msg.to_string());
+    }
+
+    response
+        .json::<CapacityReportResponse>()
+        .await
+        .map_err(|e| format!("Failed to parse capacity report: {}", e))
 }
 
 fn format_idr(amount: i64) -> String {
@@ -307,11 +385,37 @@ fn format_idr(amount: i64) -> String {
     format!("Rp {}", result.chars().rev().collect::<String>())
 }
 
+fn current_month_range() -> (String, String) {
+    let now = Date::new_0();
+    let year = now.get_full_year();
+    let month = now.get_month() as u32 + 1;
+
+    let start_date = format!("{:04}-{:02}-01", year, month);
+
+    let (next_year, next_month) = if month == 12 {
+        (year + 1, 1u32)
+    } else {
+        (year, month + 1)
+    };
+    let next_month_start = Date::new_with_year_month_day(next_year, next_month as i32 - 1, 1);
+    let last_day_current_month = Date::new_with_year_month_day(
+        next_month_start.get_full_year(),
+        next_month_start.get_month() as i32,
+        0,
+    );
+    let end_date = format!(
+        "{:04}-{:02}-{:02}",
+        year,
+        month,
+        last_day_current_month.get_date() as u32
+    );
+
+    (start_date, end_date)
+}
+
 fn allocation_color(pct: f64) -> &'static str {
     if pct > 100.0 {
         "text-red-800 dark:text-red-300 font-bold"
-    } else if pct >= 100.0 {
-        "text-red-600 dark:text-red-400"
     } else if pct >= 81.0 {
         "text-yellow-600 dark:text-yellow-400"
     } else {
@@ -368,6 +472,17 @@ pub fn TeamPage() -> impl IntoView {
     let (preview_loading, set_preview_loading) = create_signal(false);
     let (preview_error, set_preview_error) = create_signal(None::<String>);
 
+    let (overallocation_warning, set_overallocation_warning) =
+        create_signal(None::<OverallocationWarning>);
+    let (show_confirm_overallocation, set_show_confirm_overallocation) = create_signal(false);
+    let (confirm_submitting, set_confirm_submitting) = create_signal(false);
+
+    let (capacity_start_date, set_capacity_start_date) = create_signal(String::new());
+    let (capacity_end_date, set_capacity_end_date) = create_signal(String::new());
+    let (capacity_loading, set_capacity_loading) = create_signal(false);
+    let (capacity_error, set_capacity_error) = create_signal(None::<String>);
+    let (capacity_report, set_capacity_report) = create_signal(None::<CapacityReportResponse>);
+
     let preview_timer: Rc<RefCell<Option<Timeout>>> = Rc::new(RefCell::new(None));
     {
         let preview_timer = preview_timer.clone();
@@ -423,6 +538,48 @@ pub fn TeamPage() -> impl IntoView {
                 });
             });
             *preview_timer.borrow_mut() = Some(timeout);
+        });
+    }
+
+    let capacity_timer: Rc<RefCell<Option<Timeout>>> = Rc::new(RefCell::new(None));
+    {
+        let capacity_timer = capacity_timer.clone();
+        create_effect(move |_| {
+            let token_present = auth.token.get().is_some();
+            let start_date = capacity_start_date.get();
+            let end_date = capacity_end_date.get();
+
+            capacity_timer.borrow_mut().take();
+
+            if !token_present || start_date.is_empty() || end_date.is_empty() {
+                if start_date.is_empty() || end_date.is_empty() {
+                    set_capacity_report.set(None);
+                }
+                set_capacity_error.set(None);
+                set_capacity_loading.set(false);
+                return;
+            }
+
+            set_capacity_loading.set(true);
+            let capacity_timer_inner = capacity_timer.clone();
+            let timeout = Timeout::new(300, move || {
+                capacity_timer_inner.borrow_mut().take();
+                spawn_local(async move {
+                    match fetch_capacity_report(&start_date, &end_date).await {
+                        Ok(report) => {
+                            set_capacity_report.set(Some(report));
+                            set_capacity_error.set(None);
+                        }
+                        Err(e) => {
+                            set_capacity_report.set(None);
+                            set_capacity_error.set(Some(e));
+                        }
+                    }
+                    set_capacity_loading.set(false);
+                });
+            });
+
+            *capacity_timer.borrow_mut() = Some(timeout);
         });
     }
 
@@ -503,6 +660,13 @@ pub fn TeamPage() -> impl IntoView {
             if !is_authorized.get() {
                 return;
             }
+
+            if capacity_start_date.get().is_empty() || capacity_end_date.get().is_empty() {
+                let (start, end) = current_month_range();
+                set_capacity_start_date.set(start);
+                set_capacity_end_date.set(end);
+            }
+
             set_loading.set(true);
             spawn_local(async move {
                 match fetch_team_members().await {
@@ -532,14 +696,12 @@ pub fn TeamPage() -> impl IntoView {
             .collect();
 
         match sort.as_str() {
-            "rate" => filtered.sort_by(|a, b| {
-                b.daily_rate
-                    .unwrap_or(0)
-                    .cmp(&a.daily_rate.unwrap_or(0))
-            }),
+            "rate" => {
+                filtered.sort_by(|a, b| b.daily_rate.unwrap_or(0).cmp(&a.daily_rate.unwrap_or(0)))
+            }
             "allocation" => filtered.sort_by(|a, b| {
-                b.total_allocation_pct
-                    .partial_cmp(&a.total_allocation_pct)
+                b.current_allocation_percentage
+                    .partial_cmp(&a.current_allocation_percentage)
                     .unwrap_or(std::cmp::Ordering::Equal)
             }),
             "status" => filtered.sort_by(|a, b| a.ctc_status.cmp(&b.ctc_status)),
@@ -573,7 +735,10 @@ pub fn TeamPage() -> impl IntoView {
         if members.is_empty() {
             return 0.0;
         }
-        let sum: f64 = members.iter().map(|m| m.total_allocation_pct).sum();
+        let sum: f64 = members
+            .iter()
+            .map(|m| m.current_allocation_percentage)
+            .sum();
         sum / members.len() as f64
     });
 
@@ -599,6 +764,9 @@ pub fn TeamPage() -> impl IntoView {
         set_preview_data.set(None);
         set_preview_loading.set(false);
         set_preview_error.set(None);
+        set_overallocation_warning.set(None);
+        set_show_confirm_overallocation.set(false);
+        set_confirm_submitting.set(false);
         set_show_assign_modal.set(true);
 
         // Fetch assignable projects
@@ -630,8 +798,7 @@ pub fn TeamPage() -> impl IntoView {
         let pct: f64 = match pct_str.parse() {
             Ok(v) => v,
             Err(_) => {
-                set_assign_error
-                    .set(Some("Allocation percentage must be a number.".to_string()));
+                set_assign_error.set(Some("Allocation percentage must be a number.".to_string()));
                 return;
             }
         };
@@ -645,6 +812,8 @@ pub fn TeamPage() -> impl IntoView {
         set_assign_error.set(None);
         set_assign_success.set(None);
         set_assign_submitting.set(true);
+        set_overallocation_warning.set(None);
+        set_show_confirm_overallocation.set(false);
 
         let payload = CreateAssignmentRequest {
             project_id,
@@ -653,27 +822,74 @@ pub fn TeamPage() -> impl IntoView {
             end_date,
             allocation_percentage: pct,
             include_weekend: false,
+            confirm_overallocation: false,
         };
 
         spawn_local(async move {
-            let result = authenticated_post_json(
-                "/api/v1/allocations",
-                &payload,
-            )
-            .await;
+            let result = authenticated_post_json("/api/v1/allocations", &payload).await;
 
             match result {
                 Ok(resp) => {
                     if resp.status().is_success() {
-                        set_assign_success
-                            .set(Some("Assignment created successfully.".to_string()));
-                        set_assign_error.set(None);
-                        set_preview_data.set(None);
-                        set_preview_loading.set(false);
-                        set_preview_error.set(None);
-                        // Refresh team data
-                        if let Ok(members) = fetch_team_members().await {
-                            set_team_members.set(members);
+                        let body: Value = resp.json().await.unwrap_or_default();
+                        match body
+                            .get("status")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("created")
+                        {
+                            "overallocation_warning" => {
+                                let warning = OverallocationWarning {
+                                    resource_id: body
+                                        .get("resource_id")
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or_default()
+                                        .to_string(),
+                                    resource_name: body
+                                        .get("resource_name")
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or_default()
+                                        .to_string(),
+                                    current_allocation_percentage: body
+                                        .get("current_allocation_percentage")
+                                        .and_then(value_to_f64)
+                                        .unwrap_or(0.0),
+                                    requested_allocation_percentage: body
+                                        .get("requested_allocation_percentage")
+                                        .and_then(value_to_f64)
+                                        .unwrap_or(0.0),
+                                    projected_allocation_percentage: body
+                                        .get("projected_allocation_percentage")
+                                        .and_then(value_to_f64)
+                                        .unwrap_or(0.0),
+                                    warning_message: body
+                                        .get("warning_message")
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or("Total allocation would exceed 100%.")
+                                        .to_string(),
+                                    requires_confirmation: body
+                                        .get("requires_confirmation")
+                                        .and_then(|v| v.as_bool())
+                                        .unwrap_or(true),
+                                };
+                                set_overallocation_warning.set(Some(warning));
+                                set_show_confirm_overallocation.set(true);
+                                set_assign_error.set(None);
+                                set_assign_success.set(None);
+                            }
+                            _ => {
+                                set_assign_success
+                                    .set(Some("Assignment created successfully.".to_string()));
+                                set_assign_error.set(None);
+                                set_preview_data.set(None);
+                                set_preview_loading.set(false);
+                                set_preview_error.set(None);
+                                set_overallocation_warning.set(None);
+                                set_show_confirm_overallocation.set(false);
+
+                                if let Ok(members) = fetch_team_members().await {
+                                    set_team_members.set(members);
+                                }
+                            }
                         }
                     } else {
                         let body: Value = resp.json().await.unwrap_or_default();
@@ -693,59 +909,127 @@ pub fn TeamPage() -> impl IntoView {
         });
     };
 
-    // Open timeline modal for a resource
-    let open_timeline_modal =
-        move |resource_id: String, resource_name: String, total_pct: f64| {
-            set_timeline_resource_name.set(resource_name.clone());
-            set_timeline_groups.set(Vec::new());
-            set_timeline_items.set(Vec::new());
-            set_show_timeline_modal.set(true);
+    let confirm_overallocation_assignment = move |_| {
+        let project_id = assign_project_id.get();
+        let start_date = assign_start_date.get();
+        let end_date = assign_end_date.get();
+        let resource_id = assign_resource_id.get();
+        let pct: f64 = match assign_pct.get().parse() {
+            Ok(v) => v,
+            Err(_) => {
+                set_assign_error.set(Some("Allocation percentage must be a number.".to_string()));
+                return;
+            }
+        };
 
-            let rg = ResourceGroup {
-                id: resource_id.clone(),
-                name: resource_name.clone(),
-                allocation_percentage: total_pct,
-            };
-            set_timeline_groups.set(vec![rg.to_timeline_group()]);
+        let payload = CreateAssignmentRequest {
+            project_id,
+            resource_id,
+            start_date,
+            end_date,
+            allocation_percentage: pct,
+            include_weekend: false,
+            confirm_overallocation: true,
+        };
 
-            spawn_local(async move {
-                match fetch_resource_allocations(&resource_id).await {
-                    Ok(allocs) => {
-                        let items: Vec<TimelineItem> = allocs
-                            .iter()
-                            .filter_map(|a| {
-                                let item = AllocationItem {
-                                    id: a.get("id").and_then(|v| v.as_str())?.to_string(),
-                                    resource_id: a
-                                        .get("resource_id")
-                                        .and_then(|v| v.as_str())?
-                                        .to_string(),
-                                    project_name: a
-                                        .get("project_name")
-                                        .and_then(|v| v.as_str())
-                                        .unwrap_or("Unknown")
-                                        .to_string(),
-                                    start: a
-                                        .get("start_date")
-                                        .and_then(|v| v.as_str())?
-                                        .to_string(),
-                                    end: a.get("end_date").and_then(|v| v.as_str())?.to_string(),
-                                    percentage: a
-                                        .get("allocation_percentage")
-                                        .and_then(value_to_f64)
-                                        .unwrap_or(0.0),
-                                };
-                                Some(item.to_timeline_item())
-                            })
-                            .collect();
-                        set_timeline_items.set(items);
-                    }
-                    Err(e) => {
-                        web_sys::console::log_1(&format!("Timeline fetch error: {}", e).into());
+        set_confirm_submitting.set(true);
+        set_assign_error.set(None);
+
+        spawn_local(async move {
+            match authenticated_post_json("/api/v1/allocations", &payload).await {
+                Ok(resp) => {
+                    if resp.status().is_success() {
+                        let body: Value = resp.json().await.unwrap_or_default();
+                        let status = body
+                            .get("status")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("created");
+
+                        if status == "created" {
+                            set_assign_success.set(Some(
+                                "Assignment created successfully with over-allocation confirmation."
+                                    .to_string(),
+                            ));
+                            set_show_confirm_overallocation.set(false);
+                            set_overallocation_warning.set(None);
+                            set_preview_data.set(None);
+                            set_preview_loading.set(false);
+                            set_preview_error.set(None);
+
+                            if let Ok(members) = fetch_team_members().await {
+                                set_team_members.set(members);
+                            }
+                        } else {
+                            set_assign_error.set(Some(
+                                "Unexpected response while confirming assignment.".to_string(),
+                            ));
+                        }
+                    } else {
+                        let body: Value = resp.json().await.unwrap_or_default();
+                        let msg = body
+                            .pointer("/error/message")
+                            .and_then(|v| v.as_str())
+                            .or_else(|| body.get("message").and_then(|v| v.as_str()))
+                            .unwrap_or("Failed to confirm over-allocation.");
+                        set_assign_error.set(Some(msg.to_string()));
                     }
                 }
-            });
+                Err(e) => set_assign_error.set(Some(e)),
+            }
+
+            set_confirm_submitting.set(false);
+        });
+    };
+
+    // Open timeline modal for a resource
+    let open_timeline_modal = move |resource_id: String, resource_name: String, total_pct: f64| {
+        set_timeline_resource_name.set(resource_name.clone());
+        set_timeline_groups.set(Vec::new());
+        set_timeline_items.set(Vec::new());
+        set_show_timeline_modal.set(true);
+
+        let rg = ResourceGroup {
+            id: resource_id.clone(),
+            name: resource_name.clone(),
+            allocation_percentage: total_pct,
         };
+        set_timeline_groups.set(vec![rg.to_timeline_group()]);
+
+        spawn_local(async move {
+            match fetch_resource_allocations(&resource_id).await {
+                Ok(allocs) => {
+                    let items: Vec<TimelineItem> = allocs
+                        .iter()
+                        .filter_map(|a| {
+                            let item = AllocationItem {
+                                id: a.get("id").and_then(|v| v.as_str())?.to_string(),
+                                resource_id: a
+                                    .get("resource_id")
+                                    .and_then(|v| v.as_str())?
+                                    .to_string(),
+                                project_name: a
+                                    .get("project_name")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("Unknown")
+                                    .to_string(),
+                                start: a.get("start_date").and_then(|v| v.as_str())?.to_string(),
+                                end: a.get("end_date").and_then(|v| v.as_str())?.to_string(),
+                                percentage: a
+                                    .get("allocation_percentage")
+                                    .and_then(value_to_f64)
+                                    .unwrap_or(0.0),
+                            };
+                            Some(item.to_timeline_item())
+                        })
+                        .collect();
+                    set_timeline_items.set(items);
+                }
+                Err(e) => {
+                    web_sys::console::log_1(&format!("Timeline fetch error: {}", e).into());
+                }
+            }
+        });
+    };
 
     view! {
         <div class="min-h-screen flex flex-col bg-gray-50 dark:bg-gray-900">
@@ -865,7 +1149,12 @@ pub fn TeamPage() -> impl IntoView {
                                                     let alloc_class = if is_missing {
                                                         "text-gray-400 font-mono text-right".to_string()
                                                     } else {
-                                                        format!("font-mono text-right {}", allocation_color(m.total_allocation_pct))
+                                                        format!(
+                                                            "font-mono text-right {}",
+                                                            allocation_color(
+                                                                m.current_allocation_percentage
+                                                            )
+                                                        )
                                                     };
 
                                                     let projects_tooltip = m.active_assignments.iter()
@@ -892,12 +1181,16 @@ pub fn TeamPage() -> impl IntoView {
 
                                                     let status_badge = if is_missing {
                                                         "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300 border-red-200"
+                                                    } else if m.is_overallocated {
+                                                        "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300 border-red-200"
                                                     } else {
                                                         "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300 border-green-200"
                                                     };
 
                                                     let display_status = if is_missing {
                                                         "CTC Missing"
+                                                    } else if m.is_overallocated {
+                                                        "Overallocated"
                                                     } else {
                                                         "Active"
                                                     };
@@ -907,7 +1200,7 @@ pub fn TeamPage() -> impl IntoView {
                                                     let rname_assign = m.name.clone();
                                                     let rid_timeline = m.resource_id.clone();
                                                     let rname_timeline = m.name.clone();
-                                                    let total_pct = m.total_allocation_pct;
+                                                    let total_pct = m.current_allocation_percentage;
                                                     let has_assignments = !m.active_assignments.is_empty();
 
                                                     view! {
@@ -915,7 +1208,7 @@ pub fn TeamPage() -> impl IntoView {
                                                             <td class="px-4 py-3 text-sm font-medium">{m.name.clone()}</td>
                                                             <td class="px-4 py-3 text-sm">{m.role.clone()}</td>
                                                             <td class="px-4 py-3 text-sm font-mono text-right">{rate_text}</td>
-                                                            <td class=format!("px-4 py-3 text-sm {}", alloc_class)>{format!("{:.1}%", m.total_allocation_pct)}</td>
+                                                            <td class=format!("px-4 py-3 text-sm {}", alloc_class)>{format!("{:.1}%", m.current_allocation_percentage)}</td>
                                                             <td class="px-4 py-3 text-sm" title=projects_title>{projects_display}</td>
                                                             <td class="px-4 py-3 text-sm text-center">
                                                                 <span class=format!("px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full border {}", status_badge)>
@@ -975,6 +1268,111 @@ pub fn TeamPage() -> impl IntoView {
                                     </table>
                                 </div>
                             </div>
+
+                            <div class="bg-white dark:bg-gray-800 shadow rounded-lg p-6 space-y-4">
+                                <div class="flex flex-col md:flex-row md:items-end md:justify-between gap-3">
+                                    <div>
+                                        <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
+                                            "Department Capacity Report"
+                                        </h2>
+                                        <p class="text-sm text-gray-500 dark:text-gray-400">
+                                            "Utilization by month with overallocated periods highlighted"
+                                        </p>
+                                    </div>
+                                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                        <div>
+                                            <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
+                                                "Start Date"
+                                            </label>
+                                            <input
+                                                type="date"
+                                                class="border rounded px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                                                prop:value=capacity_start_date
+                                                on:input=move |ev| set_capacity_start_date.set(event_target_value(&ev))
+                                            />
+                                        </div>
+                                        <div>
+                                            <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
+                                                "End Date"
+                                            </label>
+                                            <input
+                                                type="date"
+                                                class="border rounded px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                                                prop:value=capacity_end_date
+                                                on:input=move |ev| set_capacity_end_date.set(event_target_value(&ev))
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {move || capacity_error.get().map(|err| view! {
+                                    <div class="rounded-md bg-red-50 p-3 dark:bg-red-900/20 text-red-800 dark:text-red-200 text-sm">{err}</div>
+                                })}
+
+                                {move || capacity_loading.get().then(|| view! {
+                                    <div class="text-sm text-gray-500 dark:text-gray-400">"Loading capacity report..."</div>
+                                })}
+
+                                {move || {
+                                    match capacity_report.get() {
+                                        None => view! { <span></span> }.into_view(),
+                                        Some(report) => {
+                                            let periods: Vec<String> = report
+                                                .employees
+                                                .first()
+                                                .map(|e| e.periods.iter().map(|p| p.period.clone()).collect())
+                                                .unwrap_or_else(Vec::new);
+
+                                            view! {
+                                                <div class="space-y-2">
+                                                    <div class="text-xs text-gray-500 dark:text-gray-400">
+                                                        {format!("Range: {} to {}", report.start_date, report.end_date)}
+                                                    </div>
+                                                    <div class="overflow-x-auto">
+                                                        <table class="min-w-full text-sm border border-gray-200 dark:border-gray-700">
+                                                            <thead class="bg-gray-50 dark:bg-gray-700">
+                                                                <tr>
+                                                                    <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">"Employee"</th>
+                                                                    {periods.iter().map(|period| view! {
+                                                                        <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">{period.clone()}</th>
+                                                                    }).collect::<Vec<_>>()}
+                                                                </tr>
+                                                            </thead>
+                                                            <tbody>
+                                                                {report.employees.iter().map(|employee| {
+                                                                    let row_name = employee.resource_name.clone();
+                                                                    view! {
+                                                                        <tr class="border-t border-gray-200 dark:border-gray-700">
+                                                                            <td class="px-3 py-2 font-medium text-gray-900 dark:text-gray-100">{row_name}</td>
+                                                                            {employee.periods.iter().map(|period| {
+                                                                                let pct = period.total_allocation_percentage;
+                                                                                let cell_class = if period.is_overallocated {
+                                                                                    "bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300"
+                                                                                } else if pct >= 80.0 {
+                                                                                    "bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-300"
+                                                                                } else {
+                                                                                    "bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300"
+                                                                                };
+
+                                                                                view! {
+                                                                                    <td class=format!("px-3 py-2 text-right font-mono {}", cell_class) title=format!("{} allocations", period.allocation_count)>
+                                                                                        {format!("{:.1}%", pct)}
+                                                                                    </td>
+                                                                                }
+                                                                            }).collect::<Vec<_>>()}
+                                                                        </tr>
+                                                                    }
+                                                                }).collect::<Vec<_>>()}
+                                                            </tbody>
+                                                        </table>
+                                                    </div>
+                                                </div>
+                                            }
+                                                .into_view()
+                                        }
+                                    }
+                                }}
+                            </div>
                         </div>
                     }.into_view()
                 }}
@@ -990,7 +1388,11 @@ pub fn TeamPage() -> impl IntoView {
                             </h2>
                             <button
                                 class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-                                on:click=move |_| set_show_assign_modal.set(false)
+                                on:click=move |_| {
+                                    set_show_assign_modal.set(false);
+                                    set_show_confirm_overallocation.set(false);
+                                    set_overallocation_warning.set(None);
+                                }
                             >
                                 "\u{2715}"
                             </button>
@@ -1296,7 +1698,11 @@ pub fn TeamPage() -> impl IntoView {
                         <div class="flex justify-end gap-3 pt-2">
                             <button
                                 class="px-4 py-2 text-sm font-medium rounded border border-gray-300 text-gray-700 bg-white hover:bg-gray-50 dark:bg-gray-700 dark:text-gray-300 dark:border-gray-600 dark:hover:bg-gray-600"
-                                on:click=move |_| set_show_assign_modal.set(false)
+                                on:click=move |_| {
+                                    set_show_assign_modal.set(false);
+                                    set_show_confirm_overallocation.set(false);
+                                    set_overallocation_warning.set(None);
+                                }
                             >
                                 "Cancel"
                             </button>
@@ -1310,6 +1716,45 @@ pub fn TeamPage() -> impl IntoView {
                         </div>
                     </div>
                 </div>
+            })}
+
+            {move || show_confirm_overallocation.get().then(|| {
+                let warning = overallocation_warning.get();
+                view! {
+                    <div class="fixed inset-0 z-[60] flex items-center justify-center bg-black/60">
+                        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-md mx-4 p-6 space-y-4">
+                            <h3 class="text-lg font-semibold text-gray-900 dark:text-white">"Confirm Over-Allocation"</h3>
+
+                            {warning.as_ref().map(|w| view! {
+                                <div class="rounded-md bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-300 dark:border-yellow-700 p-3 text-sm text-yellow-900 dark:text-yellow-200 space-y-1">
+                                    <div class="font-medium">{w.warning_message.clone()}</div>
+                                    <div>{format!("Current: {:.1}%", w.current_allocation_percentage)}</div>
+                                    <div>{format!("Requested: {:.1}%", w.requested_allocation_percentage)}</div>
+                                    <div class="font-semibold text-red-700 dark:text-red-300">{format!("Projected: {:.1}%", w.projected_allocation_percentage)}</div>
+                                </div>
+                            })}
+
+                            <div class="flex justify-end gap-3 pt-2">
+                                <button
+                                    class="px-4 py-2 text-sm font-medium rounded border border-gray-300 text-gray-700 bg-white hover:bg-gray-50 dark:bg-gray-700 dark:text-gray-300 dark:border-gray-600 dark:hover:bg-gray-600"
+                                    on:click=move |_| {
+                                        set_show_confirm_overallocation.set(false);
+                                        set_confirm_submitting.set(false);
+                                    }
+                                >
+                                    "Cancel"
+                                </button>
+                                <button
+                                    class="px-4 py-2 text-sm font-medium rounded bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                                    prop:disabled=move || confirm_submitting.get()
+                                    on:click=confirm_overallocation_assignment
+                                >
+                                    {move || if confirm_submitting.get() { "Confirming..." } else { "Confirm Over-Allocation" }}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                }
             })}
 
             // Timeline Modal

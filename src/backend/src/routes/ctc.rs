@@ -315,10 +315,9 @@ async fn update_ctc_components(
     if has_errors(&whole_number_issues) {
         return Err(AppError::Validation(format!(
             "CTC validation failed: {}",
-            serde_json::to_string(&whole_number_issues).map_err(|e| AppError::Internal(format!(
-                "Failed to serialize validation issues: {}",
-                e
-            )))?
+            serde_json::to_string(&whole_number_issues).map_err(|e| AppError::Internal(
+                format!("Failed to serialize validation issues: {}", e)
+            ))?
         )));
     }
 

@@ -171,12 +171,22 @@ async fn cost_preview_happy_path_returns_expected_formula(pool: PgPool) {
     let project_id = create_test_project(&pool, "Preview Project").await;
 
     let token = get_auth_token(&app, &email).await;
-    let monday = next_weekday(Local::now().date_naive() + chrono::Duration::days(7), Weekday::Mon);
+    let monday = next_weekday(
+        Local::now().date_naive() + chrono::Duration::days(7),
+        Weekday::Mon,
+    );
     let friday = monday + chrono::Duration::days(4);
 
     let req = Request::builder()
         .method("GET")
-        .uri(preview_uri(resource_id, project_id, monday, friday, 50.0, false))
+        .uri(preview_uri(
+            resource_id,
+            project_id,
+            monday,
+            friday,
+            50.0,
+            false,
+        ))
         .header("Authorization", format!("Bearer {}", token))
         .body(Body::empty())
         .expect("request should be built");
@@ -211,7 +221,14 @@ async fn cost_preview_validates_create_constraints(pool: PgPool) {
 
     let req = Request::builder()
         .method("GET")
-        .uri(preview_uri(resource_id, project_id, start, end, 50.0, false))
+        .uri(preview_uri(
+            resource_id,
+            project_id,
+            start,
+            end,
+            50.0,
+            false,
+        ))
         .header("Authorization", format!("Bearer {}", token.clone()))
         .body(Body::empty())
         .expect("request should be built");
@@ -229,7 +246,14 @@ async fn cost_preview_validates_create_constraints(pool: PgPool) {
 
     let req = Request::builder()
         .method("GET")
-        .uri(preview_uri(resource_id, project_id, end, end + chrono::Duration::days(3), 50.0, false))
+        .uri(preview_uri(
+            resource_id,
+            project_id,
+            end,
+            end + chrono::Duration::days(3),
+            50.0,
+            false,
+        ))
         .header("Authorization", format!("Bearer {}", token))
         .body(Body::empty())
         .expect("request should be built");
@@ -273,7 +297,14 @@ async fn cost_preview_monthly_split_across_boundaries(pool: PgPool) {
 
     let req = Request::builder()
         .method("GET")
-        .uri(preview_uri(resource_id, project_id, start, end, 50.0, false))
+        .uri(preview_uri(
+            resource_id,
+            project_id,
+            start,
+            end,
+            50.0,
+            false,
+        ))
         .header("Authorization", format!("Bearer {}", token))
         .body(Body::empty())
         .expect("request should be built");
@@ -311,7 +342,14 @@ async fn cost_preview_budget_impact_null_without_config(pool: PgPool) {
 
     let req = Request::builder()
         .method("GET")
-        .uri(preview_uri(resource_id, project_id, start, end, 75.0, false))
+        .uri(preview_uri(
+            resource_id,
+            project_id,
+            start,
+            end,
+            75.0,
+            false,
+        ))
         .header("Authorization", format!("Bearer {}", token))
         .body(Body::empty())
         .expect("request should be built");
@@ -344,7 +382,14 @@ async fn cost_preview_unauthorized_role_forbidden(pool: PgPool) {
 
     let req = Request::builder()
         .method("GET")
-        .uri(preview_uri(resource_id, project_id, start, end, 50.0, false))
+        .uri(preview_uri(
+            resource_id,
+            project_id,
+            start,
+            end,
+            50.0,
+            false,
+        ))
         .header("Authorization", format!("Bearer {}", token))
         .body(Body::empty())
         .expect("request should be built");
@@ -353,7 +398,12 @@ async fn cost_preview_unauthorized_role_forbidden(pool: PgPool) {
     assert_eq!(resp.status(), StatusCode::FORBIDDEN);
 }
 
-async fn insert_department_budget(pool: &PgPool, dept_id: Uuid, period: &str, total_budget_idr: i64) {
+async fn insert_department_budget(
+    pool: &PgPool,
+    dept_id: Uuid,
+    period: &str,
+    total_budget_idr: i64,
+) {
     sqlx::query(
         "INSERT INTO department_budgets (id, department_id, budget_period, total_budget_idr, created_at, updated_at)
          VALUES ($1, $2, $3, $4, NOW(), NOW())"
@@ -382,7 +432,10 @@ async fn cost_preview_budget_health_thresholds(pool: PgPool) {
     let token = get_auth_token(&app, &email).await;
 
     // daily_rate = 1,200,000. 5 weekdays at 100% = 6,000,000
-    let monday = next_weekday(Local::now().date_naive() + chrono::Duration::days(7), Weekday::Mon);
+    let monday = next_weekday(
+        Local::now().date_naive() + chrono::Duration::days(7),
+        Weekday::Mon,
+    );
     let friday = monday + chrono::Duration::days(4);
     let period = format!("{:04}-{:02}", monday.year(), monday.month());
 
@@ -390,7 +443,14 @@ async fn cost_preview_budget_health_thresholds(pool: PgPool) {
     insert_department_budget(&pool, dept_id, &period, 100_000_000).await;
     let req = Request::builder()
         .method("GET")
-        .uri(preview_uri(resource_id, project_id, monday, friday, 100.0, false))
+        .uri(preview_uri(
+            resource_id,
+            project_id,
+            monday,
+            friday,
+            100.0,
+            false,
+        ))
         .header("Authorization", format!("Bearer {}", token))
         .body(Body::empty())
         .expect("request");
@@ -411,7 +471,14 @@ async fn cost_preview_budget_health_thresholds(pool: PgPool) {
     insert_department_budget(&pool, dept_id, &period, 10_000_000).await;
     let req = Request::builder()
         .method("GET")
-        .uri(preview_uri(resource_id, project_id, monday, friday, 100.0, false))
+        .uri(preview_uri(
+            resource_id,
+            project_id,
+            monday,
+            friday,
+            100.0,
+            false,
+        ))
         .header("Authorization", format!("Bearer {}", token))
         .body(Body::empty())
         .expect("request");
@@ -431,7 +498,14 @@ async fn cost_preview_budget_health_thresholds(pool: PgPool) {
     insert_department_budget(&pool, dept_id, &period, 7_000_000).await;
     let req = Request::builder()
         .method("GET")
-        .uri(preview_uri(resource_id, project_id, monday, friday, 100.0, false))
+        .uri(preview_uri(
+            resource_id,
+            project_id,
+            monday,
+            friday,
+            100.0,
+            false,
+        ))
         .header("Authorization", format!("Bearer {}", token))
         .body(Body::empty())
         .expect("request");
@@ -440,7 +514,10 @@ async fn cost_preview_budget_health_thresholds(pool: PgPool) {
     let bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
     let body: Value = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(body["budget_impact"]["budget_health"], "critical");
-    assert!(!body["warning"].is_null(), "warning should be present for critical budget");
+    assert!(
+        !body["warning"].is_null(),
+        "warning should be present for critical budget"
+    );
 }
 
 #[sqlx::test(migrations = "../../migrations")]
@@ -458,7 +535,10 @@ async fn cost_preview_committed_increases_after_allocation(pool: PgPool) {
     let project_id_2 = create_test_project(&pool, "Committed Project 2").await;
     let token = get_auth_token(&app, &email).await;
 
-    let monday = next_weekday(Local::now().date_naive() + chrono::Duration::days(7), Weekday::Mon);
+    let monday = next_weekday(
+        Local::now().date_naive() + chrono::Duration::days(7),
+        Weekday::Mon,
+    );
     let friday = monday + chrono::Duration::days(4);
     let period = format!("{:04}-{:02}", monday.year(), monday.month());
     insert_department_budget(&pool, dept_id, &period, 100_000_000).await;
@@ -466,7 +546,14 @@ async fn cost_preview_committed_increases_after_allocation(pool: PgPool) {
     // Query 1: before any allocation — committed should be 0
     let req = Request::builder()
         .method("GET")
-        .uri(preview_uri(resource_id, project_id, monday, friday, 50.0, false))
+        .uri(preview_uri(
+            resource_id,
+            project_id,
+            monday,
+            friday,
+            50.0,
+            false,
+        ))
         .header("Authorization", format!("Bearer {}", token))
         .body(Body::empty())
         .expect("request");
@@ -474,7 +561,9 @@ async fn cost_preview_committed_increases_after_allocation(pool: PgPool) {
     assert_eq!(resp.status(), StatusCode::OK);
     let bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
     let body_before: Value = serde_json::from_slice(&bytes).unwrap();
-    let committed_before = body_before["budget_impact"]["current_committed_idr"].as_i64().unwrap();
+    let committed_before = body_before["budget_impact"]["current_committed_idr"]
+        .as_i64()
+        .unwrap();
     assert_eq!(committed_before, 0);
 
     // Create an allocation via POST
@@ -494,13 +583,24 @@ async fn cost_preview_committed_increases_after_allocation(pool: PgPool) {
         .body(Body::from(allocation_payload.to_string()))
         .expect("request");
     let resp = app.clone().oneshot(req).await.expect("response");
-    assert_eq!(resp.status(), StatusCode::OK, "allocation creation should succeed");
+    assert_eq!(
+        resp.status(),
+        StatusCode::OK,
+        "allocation creation should succeed"
+    );
 
     // Query 2: after allocation — committed should have increased
     // Use project_id_2 so this is a different assignment preview
     let req = Request::builder()
         .method("GET")
-        .uri(preview_uri(resource_id, project_id_2, monday, friday, 50.0, false))
+        .uri(preview_uri(
+            resource_id,
+            project_id_2,
+            monday,
+            friday,
+            50.0,
+            false,
+        ))
         .header("Authorization", format!("Bearer {}", token))
         .body(Body::empty())
         .expect("request");
@@ -508,7 +608,9 @@ async fn cost_preview_committed_increases_after_allocation(pool: PgPool) {
     assert_eq!(resp.status(), StatusCode::OK);
     let bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
     let body_after: Value = serde_json::from_slice(&bytes).unwrap();
-    let committed_after = body_after["budget_impact"]["current_committed_idr"].as_i64().unwrap();
+    let committed_after = body_after["budget_impact"]["current_committed_idr"]
+        .as_i64()
+        .unwrap();
     assert!(committed_after > committed_before, "committed should increase after allocation; before={committed_before}, after={committed_after}");
 }
 
@@ -528,7 +630,10 @@ async fn cost_preview_budget_overrun_block_requires_approval(pool: PgPool) {
     let project_id = create_test_project(&pool, "Block Project").await;
     let token = get_auth_token(&app, &email).await;
 
-    let monday = next_weekday(Local::now().date_naive() + chrono::Duration::days(7), Weekday::Mon);
+    let monday = next_weekday(
+        Local::now().date_naive() + chrono::Duration::days(7),
+        Weekday::Mon,
+    );
     let friday = monday + chrono::Duration::days(4);
     let period = format!("{:04}-{:02}", monday.year(), monday.month());
 
@@ -537,7 +642,14 @@ async fn cost_preview_budget_overrun_block_requires_approval(pool: PgPool) {
 
     let req = Request::builder()
         .method("GET")
-        .uri(preview_uri(resource_id, project_id, monday, friday, 100.0, false))
+        .uri(preview_uri(
+            resource_id,
+            project_id,
+            monday,
+            friday,
+            100.0,
+            false,
+        ))
         .header("Authorization", format!("Bearer {}", token))
         .body(Body::empty())
         .expect("request");
@@ -548,7 +660,10 @@ async fn cost_preview_budget_overrun_block_requires_approval(pool: PgPool) {
 
     assert_eq!(body["budget_impact"]["budget_health"], "critical");
     assert_eq!(body["requires_approval"], true);
-    assert!(!body["warning"].is_null(), "warning should be present for critical budget with block policy");
+    assert!(
+        !body["warning"].is_null(),
+        "warning should be present for critical budget with block policy"
+    );
 
     // Clean up env var
     std::env::set_var("BUDGET_OVERRUN_POLICY", "warn");

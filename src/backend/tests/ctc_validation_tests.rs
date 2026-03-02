@@ -39,13 +39,11 @@ async fn create_test_user_with_role(pool: &PgPool, email: &str, role: &str) -> U
 }
 
 async fn create_test_department(pool: &PgPool, name: &str) -> Uuid {
-    sqlx::query_scalar::<_, Uuid>(
-        "INSERT INTO departments (name) VALUES ($1) RETURNING id",
-    )
-    .bind(name)
-    .fetch_one(pool)
-    .await
-    .expect("test department should be created")
+    sqlx::query_scalar::<_, Uuid>("INSERT INTO departments (name) VALUES ($1) RETURNING id")
+        .bind(name)
+        .fetch_one(pool)
+        .await
+        .expect("test department should be created")
 }
 
 async fn create_test_resource(pool: &PgPool, name: &str) -> Uuid {
@@ -320,7 +318,10 @@ async fn completeness_returns_department_counts(pool: PgPool) {
 
     // There should be at least one department in the result
     let departments = json["departments"].as_array().unwrap();
-    assert!(!departments.is_empty(), "Should have at least one department");
+    assert!(
+        !departments.is_empty(),
+        "Should have at least one department"
+    );
 
     // Find our Engineering department
     let eng = departments
@@ -423,14 +424,26 @@ async fn missing_employees_returns_correct_list(pool: PgPool) {
     let arr = json.as_array().unwrap();
     // Diana should be in the missing list; Charlie should NOT be
     let diana_found = arr.iter().any(|e| {
-        e["id"].as_str().map(|s| s == resource_without_ctc.to_string()).unwrap_or(false)
+        e["id"]
+            .as_str()
+            .map(|s| s == resource_without_ctc.to_string())
+            .unwrap_or(false)
     });
     let charlie_found = arr.iter().any(|e| {
-        e["id"].as_str().map(|s| s == resource_with_ctc.to_string()).unwrap_or(false)
+        e["id"]
+            .as_str()
+            .map(|s| s == resource_with_ctc.to_string())
+            .unwrap_or(false)
     });
 
-    assert!(diana_found, "Diana (no CTC) should be in missing employees list");
-    assert!(!charlie_found, "Charlie (has CTC) should NOT be in missing employees list");
+    assert!(
+        diana_found,
+        "Diana (no CTC) should be in missing employees list"
+    );
+    assert!(
+        !charlie_found,
+        "Charlie (has CTC) should NOT be in missing employees list"
+    );
 }
 
 // ============================================================================
@@ -467,16 +480,31 @@ async fn compliance_report_returns_results_for_hr(pool: PgPool) {
     let json: Value = serde_json::from_slice(&body).unwrap();
 
     // Should have summary fields
-    assert!(json["total_validated"].is_number(), "total_validated should be present");
-    assert!(json["total_passed"].is_number(), "total_passed should be present");
-    assert!(json["total_discrepancies"].is_number(), "total_discrepancies should be present");
-    assert!(json["compliance_rate_pct"].is_number(), "compliance_rate_pct should be present");
+    assert!(
+        json["total_validated"].is_number(),
+        "total_validated should be present"
+    );
+    assert!(
+        json["total_passed"].is_number(),
+        "total_passed should be present"
+    );
+    assert!(
+        json["total_discrepancies"].is_number(),
+        "total_discrepancies should be present"
+    );
+    assert!(
+        json["compliance_rate_pct"].is_number(),
+        "compliance_rate_pct should be present"
+    );
 
     // A freshly-created CTC should PASS compliance (BPJS calculated by same engine)
     let total = json["total_validated"].as_i64().unwrap();
     let passed = json["total_passed"].as_i64().unwrap();
     if total > 0 {
-        assert_eq!(passed, total, "All freshly-created records should PASS compliance");
+        assert_eq!(
+            passed, total,
+            "All freshly-created records should PASS compliance"
+        );
     }
 }
 

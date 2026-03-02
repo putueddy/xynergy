@@ -1,4 +1,6 @@
-use crate::auth::{authenticated_delete, authenticated_get, authenticated_post_json, authenticated_put_json};
+use crate::auth::{
+    authenticated_delete, authenticated_get, authenticated_post_json, authenticated_put_json,
+};
 use crate::components::{HolidayForm, HolidayFormData};
 use leptos::*;
 use serde::Deserialize;
@@ -287,14 +289,11 @@ async fn create_holiday(form_data: HolidayFormData) -> Result<(), String> {
 /// Update a holiday
 async fn update_holiday(holiday_id: String, form_data: HolidayFormData) -> Result<(), String> {
     let response = authenticated_put_json(
-        &format!(
-            "http://localhost:3000/api/v1/holidays/{}",
-            holiday_id
-        ),
+        &format!("http://localhost:3000/api/v1/holidays/{}", holiday_id),
         &form_data,
     )
-        .await
-        .map_err(|e| format!("Failed to update holiday: {}", e))?;
+    .await
+    .map_err(|e| format!("Failed to update holiday: {}", e))?;
 
     if response.status().is_success() {
         Ok(())
@@ -310,11 +309,11 @@ async fn update_holiday(holiday_id: String, form_data: HolidayFormData) -> Resul
 /// Delete a holiday
 async fn delete_holiday(holiday_id: String) -> Result<(), String> {
     let response = authenticated_delete(&format!(
-            "http://localhost:3000/api/v1/holidays/{}",
-            holiday_id
-        ))
-        .await
-        .map_err(|e| format!("Failed to delete holiday: {}", e))?;
+        "http://localhost:3000/api/v1/holidays/{}",
+        holiday_id
+    ))
+    .await
+    .map_err(|e| format!("Failed to delete holiday: {}", e))?;
 
     if response.status().is_success() {
         Ok(())

@@ -1,4 +1,7 @@
-use crate::auth::{authenticated_delete, authenticated_get, authenticated_post_json, authenticated_put_json, use_auth};
+use crate::auth::{
+    authenticated_delete, authenticated_get, authenticated_post_json, authenticated_put_json,
+    use_auth,
+};
 use crate::components::{
     AllocationEditData, AllocationForm, AllocationFormData, Footer, Header, ProjectOption,
     ResourceOption, TimelineChart,
@@ -933,8 +936,8 @@ async fn create_allocation(form_data: AllocationFormData) -> Result<(), String> 
             "include_weekend": form_data.include_weekend,
         }),
     )
-        .await
-        .map_err(|e| format!("Failed to create allocation: {}", e))?;
+    .await
+    .map_err(|e| format!("Failed to create allocation: {}", e))?;
 
     if response.status().is_success() {
         Ok(())
@@ -966,10 +969,7 @@ async fn update_allocation_form(
         .map_err(|_| "Invalid allocation percentage")?;
 
     let response = authenticated_put_json(
-        &format!(
-            "http://localhost:3000/api/v1/allocations/{}",
-            allocation_id
-        ),
+        &format!("http://localhost:3000/api/v1/allocations/{}", allocation_id),
         &serde_json::json!({
             "resource_id": resource_id,
             "project_id": project_id,
@@ -979,8 +979,8 @@ async fn update_allocation_form(
             "include_weekend": form_data.include_weekend,
         }),
     )
-        .await
-        .map_err(|e| format!("Failed to update allocation: {}", e))?;
+    .await
+    .map_err(|e| format!("Failed to update allocation: {}", e))?;
 
     if response.status().is_success() {
         Ok(())
@@ -1016,8 +1016,8 @@ async fn update_allocation(
             "end_date": end_date,
         }),
     )
-        .await
-        .map_err(|e| format!("Failed to update allocation: {}", e))?;
+    .await
+    .map_err(|e| format!("Failed to update allocation: {}", e))?;
 
     if response.status().is_success() {
         Ok(())
@@ -1036,9 +1036,10 @@ async fn delete_allocation(allocation_id: String) -> Result<(), String> {
         .parse::<Uuid>()
         .map_err(|_| "Invalid allocation ID")?;
 
-    let response = authenticated_delete(&format!("http://localhost:3000/api/v1/allocations/{}", id))
-        .await
-        .map_err(|e| format!("Failed to delete allocation: {}", e))?;
+    let response =
+        authenticated_delete(&format!("http://localhost:3000/api/v1/allocations/{}", id))
+            .await
+            .map_err(|e| format!("Failed to delete allocation: {}", e))?;
 
     if response.status().is_success() {
         Ok(())
