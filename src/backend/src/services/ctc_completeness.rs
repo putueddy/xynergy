@@ -53,7 +53,7 @@ pub async fn get_completeness_summary(
         FROM departments d
         LEFT JOIN resources r
             ON r.department_id = d.id
-           AND r.status = 'Active'
+           AND r.resource_type = 'employee'
         LEFT JOIN ctc_records c
             ON c.resource_id = r.id
            AND c.status = 'Active'
@@ -123,7 +123,7 @@ pub async fn get_missing_employees(
         LEFT JOIN ctc_records c
             ON c.resource_id = r.id
            AND c.status = 'Active'
-        WHERE r.status = 'Active'
+        WHERE r.resource_type = 'employee'
           AND c.resource_id IS NULL
           AND ($1::uuid IS NULL OR d.id = $1)
         ORDER BY d.name, r.name

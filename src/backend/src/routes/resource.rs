@@ -4,6 +4,7 @@ use axum::{
     routing::get,
     Json, Router,
 };
+use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sqlx::PgPool;
@@ -20,7 +21,9 @@ pub struct ResourceResponse {
     pub resource_type: String,
     pub capacity: Option<f64>,
     pub department_id: Option<Uuid>,
+    pub department_name: Option<String>,
     pub skills: Option<serde_json::Value>,
+    pub employment_start_date: Option<NaiveDate>,
 }
 
 /// Create resource request
@@ -31,6 +34,7 @@ pub struct CreateResourceRequest {
     pub capacity: Option<f64>,
     pub department_id: Option<Uuid>,
     pub skills: Option<serde_json::Value>,
+    pub employment_start_date: Option<NaiveDate>,
 }
 
 /// Update resource request
@@ -41,6 +45,7 @@ pub struct UpdateResourceRequest {
     pub capacity: Option<f64>,
     pub department_id: Option<Uuid>,
     pub skills: Option<serde_json::Value>,
+    pub employment_start_date: Option<NaiveDate>,
 }
 
 /// Convert BigDecimal to f64
@@ -64,8 +69,11 @@ async fn get_resources(
     let mut tx = crate::services::begin_rls_transaction(&pool, &headers).await?;
 
     let resources = sqlx::query!(
-        "SELECT id, name, resource_type, capacity, department_id, skills 
-         FROM resources ORDER BY name"
+        r#"SELECT r.id, r.name, r.resource_type, r.capacity, r.department_id, r.skills, r.employment_start_date,
+                d.name AS "department_name?"
+         FROM resources r
+         LEFT JOIN departments d ON d.id = r.department_id
+         ORDER BY r.name"#
     )
     .fetch_all(&mut *tx)
     .await
@@ -104,7 +112,9 @@ async fn get_resources(
             resource_type: r.resource_type,
             capacity: bigdecimal_to_f64(r.capacity),
             department_id: r.department_id,
+            department_name: r.department_name,
             skills: r.skills,
+            employment_start_date: r.employment_start_date,
         })
         .collect();
 
@@ -123,8 +133,11 @@ async fn get_resource(
     let mut tx = crate::services::begin_rls_transaction(&pool, &headers).await?;
 
     let resource = sqlx::query!(
-        "SELECT id, name, resource_type, capacity, department_id, skills 
-         FROM resources WHERE id = $1",
+        r#"SELECT r.id, r.name, r.resource_type, r.capacity, r.department_id, r.skills, r.employment_start_date,
+                d.name AS "department_name?"
+         FROM resources r
+         LEFT JOIN departments d ON d.id = r.department_id
+         WHERE r.id = $1"#,
         id
     )
     .fetch_optional(&mut *tx)
@@ -163,7 +176,9 @@ async fn get_resource(
         resource_type: resource.resource_type,
         capacity: bigdecimal_to_f64(resource.capacity),
         department_id: resource.department_id,
+        department_name: resource.department_name,
         skills: resource.skills,
+        employment_start_date: resource.employment_start_date,
     }))
 }
 
@@ -181,6 +196,7 @@ async fn create_resource(
             "capacity": req.capacity,
             "department_id": req.department_id,
             "skills": req.skills.clone(),
+            "employment_start_date": req.employment_start_date,
         })),
     );
     let user_id = user_id_from_headers(&headers)?;
@@ -188,14 +204,15 @@ async fn create_resource(
     let capacity_decimal = f64_to_bigdecimal(req.capacity);
 
     let resource = sqlx::query!(
-        "INSERT INTO resources (name, resource_type, capacity, department_id, skills)
-         VALUES ($1, $2, $3, $4, $5)
-         RETURNING id, name, resource_type, capacity, department_id, skills",
+        "INSERT INTO resources (name, resource_type, capacity, department_id, skills, employment_start_date)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         RETURNING id, name, resource_type, capacity, department_id, skills, employment_start_date",
         req.name,
         req.resource_type,
         capacity_decimal,
         req.department_id,
-        req.skills
+        req.skills,
+        req.employment_start_date
     )
     .fetch_one(&pool)
     .await
@@ -217,7 +234,9 @@ async fn create_resource(
         resource_type: resource.resource_type,
         capacity: bigdecimal_to_f64(resource.capacity),
         department_id: resource.department_id,
+        department_name: None,
         skills: resource.skills,
+        employment_start_date: resource.employment_start_date,
     }))
 }
 
@@ -230,7 +249,7 @@ async fn update_resource(
 ) -> Result<Json<ResourceResponse>> {
     // Check if resource exists
     let existing = sqlx::query!(
-        "SELECT id, name, resource_type, capacity, department_id, skills FROM resources WHERE id = $1",
+        "SELECT id, name, resource_type, capacity, department_id, skills, employment_start_date FROM resources WHERE id = $1",
         id
     )
     .fetch_optional(&pool)
@@ -246,11 +265,13 @@ async fn update_resource(
     let before_type = existing.resource_type.clone();
     let before_department_id = existing.department_id;
     let before_skills = existing.skills.clone();
+    let before_employment_start_date = existing.employment_start_date;
     let after_name_default = existing.name;
     let after_type_default = existing.resource_type;
     let after_capacity_default = before_capacity;
     let after_department_default = before_department_id;
     let after_skills_default = existing.skills;
+    let after_employment_start_date_default = existing.employment_start_date;
     let audit_changes = audit_payload(
         Some(json!({
             "name": before_name,
@@ -258,6 +279,7 @@ async fn update_resource(
             "capacity": before_capacity,
             "department_id": before_department_id,
             "skills": before_skills,
+            "employment_start_date": before_employment_start_date,
         })),
         Some(json!({
             "name": req.name.clone().unwrap_or_else(|| after_name_default),
@@ -265,6 +287,7 @@ async fn update_resource(
             "capacity": req.capacity.or(after_capacity_default),
             "department_id": req.department_id.or(after_department_default),
             "skills": req.skills.clone().or(after_skills_default),
+            "employment_start_date": req.employment_start_date.or(after_employment_start_date_default),
         })),
     );
     let user_id = user_id_from_headers(&headers)?;
@@ -276,14 +299,16 @@ async fn update_resource(
              resource_type = COALESCE($2, resource_type),
              capacity = COALESCE($3, capacity),
              department_id = COALESCE($4, department_id),
-             skills = COALESCE($5, skills)
-         WHERE id = $6
-         RETURNING id, name, resource_type, capacity, department_id, skills",
+             skills = COALESCE($5, skills),
+             employment_start_date = COALESCE($6, employment_start_date)
+         WHERE id = $7
+         RETURNING id, name, resource_type, capacity, department_id, skills, employment_start_date",
         req.name.as_ref(),
         req.resource_type.as_ref(),
         capacity_decimal,
         req.department_id,
         req.skills,
+        req.employment_start_date,
         id
     )
     .fetch_one(&pool)
@@ -306,7 +331,9 @@ async fn update_resource(
         resource_type: resource.resource_type,
         capacity: bigdecimal_to_f64(resource.capacity),
         department_id: resource.department_id,
+        department_name: None,
         skills: resource.skills,
+        employment_start_date: resource.employment_start_date,
     }))
 }
 
@@ -318,7 +345,7 @@ async fn delete_resource(
 ) -> Result<Json<serde_json::Value>> {
     // Check if resource exists
     let existing = sqlx::query!(
-        "SELECT id, name, resource_type, capacity, department_id, skills FROM resources WHERE id = $1",
+        "SELECT id, name, resource_type, capacity, department_id, skills, employment_start_date FROM resources WHERE id = $1",
         id
     )
     .fetch_optional(&pool)
@@ -340,6 +367,7 @@ async fn delete_resource(
             "capacity": bigdecimal_to_f64(existing.capacity),
             "department_id": existing.department_id,
             "skills": existing.skills,
+            "employment_start_date": existing.employment_start_date,
         })),
         None,
     );

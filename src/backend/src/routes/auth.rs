@@ -27,6 +27,7 @@ pub struct Claims {
     pub sub: String, // User ID
     pub email: String,
     pub role: String,
+    pub department_id: Option<Uuid>, // User's department for efficient scoping
     pub exp: usize, // Expiration time
     pub iat: usize, // Issued at
 }
@@ -126,6 +127,7 @@ fn generate_access_token(user: &User) -> Result<String> {
         sub: user.id.to_string(),
         email: user.email.clone(),
         role: user.role.clone(),
+        department_id: user.department_id,
         exp: expiration,
         iat: Utc::now().timestamp() as usize,
     };

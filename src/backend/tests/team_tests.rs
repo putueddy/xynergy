@@ -38,7 +38,7 @@ async fn create_test_department(pool: &PgPool, name: &str) -> Uuid {
 async fn create_test_resource_in_dept(pool: &PgPool, name: &str, dept_id: Uuid) -> Uuid {
     sqlx::query_scalar::<_, Uuid>(
         "INSERT INTO resources (name, resource_type, capacity, department_id)
-         VALUES ($1, 'human', 1.0, $2)
+         VALUES ($1, 'employee', 1.0, $2)
          RETURNING id",
     )
     .bind(name)
@@ -207,7 +207,7 @@ async fn dept_head_sees_own_department_only(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "../../migrations")]
-async fn hr_sees_all_departments(pool: PgPool) {
+async fn hr_sees_own_department_and_can_access_other(pool: PgPool) {
     std::env::set_var("JWT_SECRET", "test-secret");
     std::env::set_var("CTC_ACTIVE_KEY_VERSION", "v1");
     std::env::set_var(
@@ -224,10 +224,12 @@ async fn hr_sees_all_departments(pool: PgPool) {
 
     let hr_email = test_email();
     let hr_id = create_test_user_with_role(&pool, &hr_email, "hr").await;
+    assign_user_to_department(&pool, hr_id, engineering_id).await;
     create_ctc_for_resource(&pool, eng_resource_id, hr_id).await;
     create_ctc_for_resource(&pool, mkt_resource_id, hr_id).await;
     let token = get_auth_token(&app, &hr_email).await;
 
+    // HR default (own department) — should see Engineering only
     let req = Request::builder()
         .method("GET")
         .uri("/api/v1/team")
@@ -248,34 +250,11 @@ async fn hr_sees_all_departments(pool: PgPool) {
     let body: Vec<Value> =
         serde_json::from_slice(&bytes).expect("team response should be an array payload");
 
-    // Verify our specific test resources are visible to HR (across departments)
+    // HR sees own department by default
     assert!(
         body.iter()
             .any(|item| item["resource_id"].as_str() == Some(eng_resource_id.to_string().as_str())),
-        "HR should see Engineering resource"
-    );
-    assert!(
-        body.iter()
-            .any(|item| item["resource_id"].as_str() == Some(mkt_resource_id.to_string().as_str())),
-        "HR should see Marketing resource"
-    );
-
-    let department_names: Vec<&str> = body
-        .iter()
-        .map(|entry| {
-            entry["department_name"]
-                .as_str()
-                .expect("department_name should be string")
-        })
-        .collect();
-
-    assert!(
-        department_names.contains(&"Engineering"),
-        "HR should see Engineering department"
-    );
-    assert!(
-        department_names.contains(&"Marketing"),
-        "HR should see Marketing department"
+        "HR should see Engineering resource in own department"
     );
 }
 

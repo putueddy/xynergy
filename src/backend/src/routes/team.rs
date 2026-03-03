@@ -176,11 +176,8 @@ async fn get_team(
 
     let mut tx = begin_rls_transaction(&pool, &headers).await?;
 
-    let department_filter = if claims.role == "department_head" {
-        Some(resolve_department_id(&mut tx, &claims.role, None).await?)
-    } else {
-        None
-    };
+    let department_id = resolve_department_id(&mut tx, &claims.role, None).await?;
+    let department_filter = Some(department_id);
 
     let team_members =
         get_team_members_in_transaction(&mut tx, department_filter, &claims.role).await?;
@@ -212,11 +209,8 @@ async fn get_capacity_report(
 
     let mut tx = begin_rls_transaction(&pool, &headers).await?;
 
-    let department_filter = if claims.role == "department_head" {
-        Some(resolve_department_id(&mut tx, &claims.role, None).await?)
-    } else {
-        None
-    };
+    let department_id = resolve_department_id(&mut tx, &claims.role, None).await?;
+    let department_filter = Some(department_id);
 
     let report = get_capacity_report_in_transaction(
         &mut tx,

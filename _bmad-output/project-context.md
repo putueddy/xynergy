@@ -381,6 +381,11 @@ pub date: chrono::NaiveDate,
 5. **User Deletion**: Use LEFT JOIN in audit logs - users may be deleted but logs must persist
 6. **Concurrent Allocations**: Consider race conditions when checking resource capacity
 7. **WASM Caching**: Browser may cache old WASM - users need hard refresh (Ctrl+F5)
+8. **WASM Absolute URLs**: `reqwest` in WASM requires absolute URLs — use `resolve_url()` helper (in `auth.rs`) that prepends `window().location().origin()`. Relative URLs like `/api/v1/...` will fail silently
+9. **Resource Type Values**: The `resources.resource_type` column uses `'employee'` (not `'human'`). Always filter with `resource_type = 'employee'` for human team members
+10. **Capacity Report Formula**: Use weighted working-day average, NOT raw allocation percentage sum. Formula: `Σ(allocated_weekdays × allocation_pct / 100) / working_days_in_month × 100%`. Use `count_weekdays()` O(1) helper for working day counts
+11. **Department Scoping Consistency**: ALL team page sections (team members, capacity report, budget) must use `resolve_department_id()` helper for consistent department filtering. Admin/HR should NOT bypass department scoping — they see their own department by default, with optional `department_id` override
+12. **Migration Idempotency**: Use `IF NOT EXISTS` for `ALTER TABLE ADD COLUMN` in migrations to prevent failure when re-running
 
 **Security Rules:**
 1. **Never log passwords or JWT tokens**
@@ -388,6 +393,7 @@ pub date: chrono::NaiveDate,
 3. **Use parameterized queries** (sqlx does this automatically)
 4. **Check user permissions** before allowing mutations
 5. **Sanitize user input** in frontend before sending to API
+6. **RBAC via database relationships**: Validate access using `departments.head_id` and `projects.project_manager_id` FK lookups, not just JWT role string. Helper functions: `is_department_head()`, `is_project_manager()`, `can_access_department()`, `can_access_project()`
 
 **Performance Gotchas:**
 1. **Don't fetch all records** - implement pagination for list endpoints
@@ -395,7 +401,6 @@ pub date: chrono::NaiveDate,
 3. **N+1 queries**: Use JOINs to fetch related data in single query
 4. **BigDecimal in loops**: Convert once, use f64 for calculations
 5. **Audit log growth**: No retention policy - monitor table size
-
 ---
 
 ## Usage Guidelines
@@ -416,7 +421,7 @@ pub date: chrono::NaiveDate,
 
 ---
 
-*Project Context Version: 1.0*  
-*Last Updated: 2026-02-22*  
-*Rule Count: 50+ critical rules*  
+*Project Context Version: 1.1*  
+*Last Updated: 2026-03-03*  
+*Rule Count: 55+ critical rules*  
 *Status: Complete*

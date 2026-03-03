@@ -197,7 +197,7 @@ This document provides the complete epic and story breakdown for xynergy, decomp
 ### Epic 3: Department Resource Assignment
 **Department Heads can assign team members to projects with real-time cost impact visibility.**
 
-**FRs covered:** FR9-15 (Team view, assignments, cost preview, overallocation warnings)
+**FRs covered:** FR9-15, FR58-59 (Team view, assignments, cost preview, overallocation warnings, capacity formula, department scoping)
 
 **User Outcome:**
 - View team with blended daily rates (no sensitive CTC components)
@@ -205,15 +205,24 @@ This document provides the complete epic and story breakdown for xynergy, decomp
 - See cost impact BEFORE confirming assignment
 - Receive warnings when assignments exceed 100% capacity
 - View department budget utilization in real-time
+- Capacity report uses weighted working-day formula (not raw percentage sum)
+- All team sections consistently scoped by department
 
 **NFRs addressed:** NFR2, NFR7, NFR8 (Dashboard performance, real-time updates)
+
+**Post-Implementation Changelog (2026-03-03):**
+- **Bug fix**: `resource_type` filter changed from `'human'` to `'employee'` to match seed data (team_service.rs)
+- **Bug fix**: Capacity report formula rewritten from raw allocation sum to weighted working-day average: `Σ(allocated_weekdays × pct/100) / working_days_in_month × 100%`
+- **Bug fix**: Department scoping made consistent across all 3 team page sections (team members, capacity report, budget) — admin/hr no longer bypass department filter
+- **Enhancement**: Added `count_weekdays()` O(1) helper function for working day calculation
+- **Enhancement**: Added `resolve_department_id()` helper for consistent department scoping across endpoints
 
 ---
 
 ### Epic 4: Project Budget & P&L
 **Project Managers can track project budgets, costs, and profitability with ERP integration.**
 
-**FRs covered:** FR16-29 (Budget setup, cost tracking, P&L, forecasting)
+**FRs covered:** FR16-29, FR60-61 (Budget setup, cost tracking, P&L, forecasting, RBAC enhancements)
 
 **User Outcome:**
 - Create project budgets with category breakdown (HR, software, hardware, overhead)
@@ -223,6 +232,13 @@ This document provides the complete epic and story breakdown for xynergy, decomp
 - Forecast profitability at completion based on burn rate
 
 **NFRs addressed:** NFR1, NFR29-35 (P&L performance, ERP integration)
+
+**RBAC Prerequisites (planned, from Epic 3 discoveries):**
+- Add `department_id` to JWT Claims struct for efficient department scoping
+- Create relationship-based access helpers: `is_department_head()`, `is_project_manager()`, `can_access_department()`, `can_access_project()`
+- Validate access via `departments.head_id` and `projects.project_manager_id` FK relationships — not just role string
+- No new tables needed — schema already has `head_id` and `project_manager_id` columns
+- Seed data: populate `departments.head_id` for all departments
 
 ---
 
@@ -258,7 +274,7 @@ This document provides the complete epic and story breakdown for xynergy, decomp
 
 ---
 
-**Total: 6 Epics covering 57 FRs and 43 NFRs**
+**Total: 6 Epics covering 61 FRs and 43 NFRs**
 
 ## Epic 1: Security & RBAC Foundation
 

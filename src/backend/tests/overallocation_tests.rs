@@ -78,7 +78,7 @@ async fn assign_user_to_department(pool: &PgPool, user_id: Uuid, dept_id: Uuid) 
 async fn create_test_resource_in_dept(pool: &PgPool, name: &str, dept_id: Uuid) -> Uuid {
     sqlx::query_scalar::<_, Uuid>(
         "INSERT INTO resources (name, resource_type, capacity, department_id)
-         VALUES ($1, 'human', 1.0, $2)
+         VALUES ($1, 'employee', 1.0, $2)
          RETURNING id",
     )
     .bind(name)

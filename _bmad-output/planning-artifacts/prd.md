@@ -841,8 +841,8 @@ Xynergy HR & Financial Management is a **Single Page Application (SPA)** built w
 
 - **FR36:** System supports role-based access control (HR, Department Head, Project Manager, Finance, Admin)
 - **FR37:** HR role can view and edit CTC details
-- **FR38:** Department Head role can view blended rates and assign resources (own department only)
-- **FR39:** Project Manager role can view blended rates and manage project budgets (assigned projects only)
+- **FR38:** Department Head role can view blended rates and assign resources (own department only) — enforced via `departments.head_id` database relationship, not just role string
+- **FR39:** Project Manager role can view blended rates and manage project budgets (assigned projects only) — enforced via `projects.project_manager_id` database relationship
 - **FR40:** Finance role can view all financial data for compliance and reporting
 - **FR41:** System enforces row-level security (users only see data for their department)
 - **FR42:** System logs all CTC views and mutations with user, timestamp, and action
@@ -868,6 +868,12 @@ Xynergy HR & Financial Management is a **Single Page Application (SPA)** built w
 - **FR56:** Finance Team can generate audit reports for compliance verification
 - **FR57:** System supports basic audit log viewing and filtering
 
+### 9. Capacity & Budget Reporting Enhancements (Post-Implementation)
+
+- **FR58:** Capacity report uses weighted working-day formula: `Σ(allocated_weekdays × allocation_pct / 100) / working_days_in_month × 100%` — not raw percentage sum
+- **FR59:** All team page sections (team members, capacity report, budget utilization) are consistently scoped to the user's department via `resolve_department_id()` helper
+- **FR60:** RBAC authorization uses relationship-based access control: `departments.head_id` identifies department heads, `projects.project_manager_id` identifies project managers — database lookups validate access, not just JWT role string
+- **FR61:** JWT Claims include `department_id` for efficient department scoping without additional DB lookups on every request
 ---
 
 ## Non-Functional Requirements

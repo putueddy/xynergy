@@ -2,7 +2,7 @@ use axum::{
     body::{to_bytes, Body},
     http::{Request, StatusCode},
 };
-use chrono::{Datelike, Local, NaiveDate, Weekday};
+use chrono::{Datelike, Local, NaiveDate};
 use serde_json::{json, Value};
 use sqlx::PgPool;
 use tower::ServiceExt;
@@ -131,12 +131,6 @@ async fn get_auth_token(app: &axum::Router, email: &str) -> String {
         .to_string()
 }
 
-fn next_weekday(mut date: NaiveDate, weekday: Weekday) -> NaiveDate {
-    while date.weekday() != weekday {
-        date = date.succ_opt().expect("next date should exist");
-    }
-    date
-}
 
 fn preview_uri(
     resource_id: Uuid,
@@ -171,11 +165,9 @@ async fn cost_preview_happy_path_returns_expected_formula(pool: PgPool) {
     let project_id = create_test_project(&pool, "Preview Project").await;
 
     let token = get_auth_token(&app, &email).await;
-    let monday = next_weekday(
-        Local::now().date_naive() + chrono::Duration::days(7),
-        Weekday::Mon,
-    );
-    let friday = monday + chrono::Duration::days(4);
+    // Use fixed dates that don't overlap with seeded holidays
+    let monday = NaiveDate::from_ymd_opt(2026, 4, 13).unwrap(); // Monday, no holidays nearby
+    let friday = NaiveDate::from_ymd_opt(2026, 4, 17).unwrap(); // Friday
 
     let req = Request::builder()
         .method("GET")
@@ -432,11 +424,9 @@ async fn cost_preview_budget_health_thresholds(pool: PgPool) {
     let token = get_auth_token(&app, &email).await;
 
     // daily_rate = 1,200,000. 5 weekdays at 100% = 6,000,000
-    let monday = next_weekday(
-        Local::now().date_naive() + chrono::Duration::days(7),
-        Weekday::Mon,
-    );
-    let friday = monday + chrono::Duration::days(4);
+    // Use fixed dates that don't overlap with seeded holidays
+    let monday = NaiveDate::from_ymd_opt(2026, 4, 13).unwrap();
+    let friday = NaiveDate::from_ymd_opt(2026, 4, 17).unwrap();
     let period = format!("{:04}-{:02}", monday.year(), monday.month());
 
     // Scenario 1: healthy — budget 100M, assignment cost 6M => ~6% utilization
@@ -535,11 +525,9 @@ async fn cost_preview_committed_increases_after_allocation(pool: PgPool) {
     let project_id_2 = create_test_project(&pool, "Committed Project 2").await;
     let token = get_auth_token(&app, &email).await;
 
-    let monday = next_weekday(
-        Local::now().date_naive() + chrono::Duration::days(7),
-        Weekday::Mon,
-    );
-    let friday = monday + chrono::Duration::days(4);
+    // Use fixed dates that don't overlap with seeded holidays
+    let monday = NaiveDate::from_ymd_opt(2026, 4, 13).unwrap();
+    let friday = NaiveDate::from_ymd_opt(2026, 4, 17).unwrap();
     let period = format!("{:04}-{:02}", monday.year(), monday.month());
     insert_department_budget(&pool, dept_id, &period, 100_000_000).await;
 
@@ -630,11 +618,9 @@ async fn cost_preview_budget_overrun_block_requires_approval(pool: PgPool) {
     let project_id = create_test_project(&pool, "Block Project").await;
     let token = get_auth_token(&app, &email).await;
 
-    let monday = next_weekday(
-        Local::now().date_naive() + chrono::Duration::days(7),
-        Weekday::Mon,
-    );
-    let friday = monday + chrono::Duration::days(4);
+    // Use fixed dates that don't overlap with seeded holidays
+    let monday = NaiveDate::from_ymd_opt(2026, 4, 13).unwrap();
+    let friday = NaiveDate::from_ymd_opt(2026, 4, 17).unwrap();
     let period = format!("{:04}-{:02}", monday.year(), monday.month());
 
     // Budget 7M, assignment 6M at 100% => ~86% => critical

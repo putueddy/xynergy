@@ -453,3 +453,125 @@ Router::new()
 1. ERP integration (polling)
 2. Cash flow tracking (MVP scope)
 3. Performance optimization
+
+---
+
+### RBAC Enhancement: Relationship-Based Access Control
+
+**Status:** Planned (Epic 4 prerequisite, discovered during Epic 3 implementation)
+
+**Problem:** Current RBAC relies solely on JWT `role` string (e.g., `department_head`, `project_manager`). This allows any department head to access any department's data if they know the ID. Similarly, any PM can query any project's budget.
+
+**Solution:** Validate access based on **database relationships**, not just role string:
+
+#### Schema Relationships (Already Exist)
+
+```sql
+-- departments table
+departments.head_id UUID REFERENCES users(id)  -- who is department head
+
+-- projects table
+projects.project_manager_id UUID REFERENCES users(id)  -- who is PM
+
+-- users table
+users.role VARCHAR  -- base permission tier (admin, hr, department_head, project_manager, finance)
+users.department_id UUID REFERENCES departments(id)  -- user's own department
+```
+
+#### JWT Claims Enhancement
+
+```rust
+// Current
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Claims {
+    pub sub: Uuid,      // user_id
+    pub email: String,
+    pub role: String,
+    pub exp: usize,
+    pub iat: usize,
+}
+
+// Enhanced
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Claims {
+    pub sub: Uuid,
+    pub email: String,
+    pub role: String,
+    pub department_id: Option<Uuid>,  // NEW: user's department
+    pub exp: usize,
+    pub iat: usize,
+}
+```
+
+#### Access Control Helper Functions
+
+```rust
+/// Check if user is the head of a specific department
+async fn is_department_head(
+    tx: &mut PgConnection,
+    user_id: Uuid,
+    department_id: Uuid,
+) -> Result<bool, AppError> {
+    let row = sqlx::query!(
+        "SELECT head_id FROM departments WHERE id = $1",
+        department_id
+    ).fetch_optional(&mut *tx).await?;
+    Ok(row.map_or(false, |r| r.head_id == Some(user_id)))
+}
+
+/// Check if user is PM of a specific project
+async fn is_project_manager(
+    tx: &mut PgConnection,
+    user_id: Uuid,
+    project_id: Uuid,
+) -> Result<bool, AppError> {
+    let row = sqlx::query!(
+        "SELECT project_manager_id FROM projects WHERE id = $1",
+        project_id
+    ).fetch_optional(&mut *tx).await?;
+    Ok(row.map_or(false, |r| r.project_manager_id == Some(user_id)))
+}
+
+/// Can user access a department's data?
+/// admin: always yes
+/// hr: always yes (read-only CTC access)
+/// department_head: only if departments.head_id matches
+/// others: only if users.department_id matches
+async fn can_access_department(
+    tx: &mut PgConnection,
+    user_id: Uuid,
+    role: &str,
+    department_id: Uuid,
+) -> Result<bool, AppError> { ... }
+
+/// Can user access a project's data?
+/// admin: always yes
+/// project_manager: only if projects.project_manager_id matches
+/// department_head: if any of their department's resources are allocated
+/// others: denied
+async fn can_access_project(
+    tx: &mut PgConnection,
+    user_id: Uuid,
+    role: &str,
+    project_id: Uuid,
+) -> Result<bool, AppError> { ... }
+```
+
+#### Access Matrix
+
+| Role | Own Department | Other Departments | Own Projects | Other Projects |
+|:-----|:---------------|:-------------------|:-------------|:---------------|
+| **Admin** | Full | Full | Full | Full |
+| **HR** | Full | Read (CTC/rates) | - | - |
+| **Dept Head** | Full (if head_id) | Denied | View (if resources allocated) | Denied |
+| **PM** | - | - | Full (if PM) | Denied |
+| **Finance** | Read | Read | Read | Read |
+
+#### Implementation Notes
+
+- No new database tables required
+- `departments.head_id` and `projects.project_manager_id` columns already exist but are mostly NULL in current seed data
+- Seed data update needed: populate `head_id` for all departments
+- Backward compatible: existing endpoints continue to work; relationship checks are additive
+- Helper functions placed in a shared `src/backend/src/services/rbac.rs` module
+- Existing `resolve_department_id()` in `team.rs` will be refactored to use `can_access_department()`

@@ -8,7 +8,14 @@ use crate::components::{
 };
 use leptos::*;
 use leptos_router::*;
+use serde::Deserialize;
 use uuid::Uuid;
+
+#[derive(Debug, Clone, Deserialize)]
+struct Department {
+    id: Uuid,
+    name: String,
+}
 
 /// Resources page component
 #[component]
@@ -28,6 +35,7 @@ pub fn Resources() -> impl IntoView {
 
     // Resource data
     let (resources, set_resources) = create_signal(Vec::new());
+    let (departments, set_departments) = create_signal(Vec::new());
     let (loading, set_loading) = create_signal(false);
     let (error, set_error) = create_signal(Option::<String>::None);
     let (show_form, set_show_form) = create_signal(false);
@@ -38,15 +46,16 @@ pub fn Resources() -> impl IntoView {
         set_loading.set(true);
         spawn_local(async move {
             match fetch_resources().await {
-                Ok(data) => {
-                    set_resources.set(data);
-                    set_loading.set(false);
-                }
-                Err(e) => {
-                    set_error.set(Some(e));
-                    set_loading.set(false);
-                }
+                Ok(data) => set_resources.set(data),
+                Err(e) => set_error.set(Some(e)),
             }
+
+            match fetch_departments().await {
+                Ok(data) => set_departments.set(data),
+                Err(e) => set_error.set(Some(e)),
+            }
+
+            set_loading.set(false);
         });
     });
 
@@ -158,6 +167,7 @@ pub fn Resources() -> impl IntoView {
                                     resource_type: r.resource_type,
                                     capacity: r.capacity,
                                     department_id: r.department_id,
+                                    employment_start_date: r.employment_start_date,
                                 })
                             });
 
@@ -168,6 +178,13 @@ pub fn Resources() -> impl IntoView {
                                     </h2>
                                     <ResourceForm
                                         initial_data=initial_data
+                                        departments=Signal::derive(move || {
+                                            departments
+                                                .get()
+                                                .into_iter()
+                                                .map(|d| (d.id.to_string(), d.name))
+                                                .collect::<Vec<(String, String)>>()
+                                        })
                                         on_submit=Callback::new(handle_submit)
                                         on_cancel=Callback::new(handle_cancel)
                                     />
@@ -213,7 +230,7 @@ pub fn Resources() -> impl IntoView {
 
 /// Fetch all resources from API
 async fn fetch_resources() -> Result<Vec<Resource>, String> {
-    let response = authenticated_get("http://localhost:3000/api/v1/resources")
+    let response = authenticated_get("/api/v1/resources")
         .await
         .map_err(|e| format!("Failed to fetch resources: {}", e))?;
 
@@ -227,15 +244,34 @@ async fn fetch_resources() -> Result<Vec<Resource>, String> {
     }
 }
 
+async fn fetch_departments() -> Result<Vec<Department>, String> {
+    let response = authenticated_get("/api/v1/departments")
+        .await
+        .map_err(|e| format!("Failed to fetch departments: {}", e))?;
+
+    if response.status().is_success() {
+        response
+            .json::<Vec<Department>>()
+            .await
+            .map_err(|e| format!("Failed to parse departments: {}", e))
+    } else {
+        Err(format!(
+            "Failed to fetch departments: {}",
+            response.status()
+        ))
+    }
+}
+
 /// Create a new resource
 async fn create_resource(form_data: ResourceFormData) -> Result<(), String> {
     let response = authenticated_post_json(
-        "http://localhost:3000/api/v1/resources",
+        "/api/v1/resources",
         &serde_json::json!({
             "name": form_data.name,
             "resource_type": form_data.resource_type,
             "capacity": form_data.capacity,
             "department_id": form_data.department_id,
+            "employment_start_date": form_data.employment_start_date,
             "skills": null
         }),
     )
@@ -256,12 +292,13 @@ async fn create_resource(form_data: ResourceFormData) -> Result<(), String> {
 /// Update an existing resource
 async fn update_resource(id: Uuid, form_data: ResourceFormData) -> Result<(), String> {
     let response = authenticated_put_json(
-        &format!("http://localhost:3000/api/v1/resources/{}", id),
+        &format!("/api/v1/resources/{}", id),
         &serde_json::json!({
             "name": form_data.name,
             "resource_type": form_data.resource_type,
             "capacity": form_data.capacity,
             "department_id": form_data.department_id,
+            "employment_start_date": form_data.employment_start_date,
             "skills": null
         }),
     )
@@ -281,7 +318,7 @@ async fn update_resource(id: Uuid, form_data: ResourceFormData) -> Result<(), St
 
 /// Delete a resource
 async fn delete_resource(id: Uuid) -> Result<(), String> {
-    let response = authenticated_delete(&format!("http://localhost:3000/api/v1/resources/{}", id))
+    let response = authenticated_delete(&format!("/api/v1/resources/{}", id))
         .await
         .map_err(|e| format!("Failed to delete resource: {}", e))?;
 

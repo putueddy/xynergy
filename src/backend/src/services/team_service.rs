@@ -114,7 +114,7 @@ where
             AND a.start_date <= CURRENT_DATE
             AND (a.end_date >= CURRENT_DATE OR a.end_date IS NULL)
         LEFT JOIN projects p ON p.id = a.project_id
-        WHERE r.resource_type = 'human'
+        WHERE r.resource_type = 'employee'
           AND ($1::uuid IS NULL OR r.department_id = $1)
         ORDER BY r.name ASC
         "#,
@@ -279,6 +279,24 @@ fn next_month(date: NaiveDate) -> Result<NaiveDate> {
         .ok_or_else(|| AppError::Internal("Invalid next month date".to_string()))
 }
 
+/// Count weekdays (Mon–Fri) in an inclusive date range.
+fn count_weekdays(start: NaiveDate, end: NaiveDate) -> i64 {
+    if start > end {
+        return 0;
+    }
+    let total_days = (end - start).num_days() + 1;
+    let full_weeks = total_days / 7;
+    let remainder = total_days % 7;
+    let start_wd = start.weekday().num_days_from_monday(); // Mon=0 … Sun=6
+    let weekend_in_remainder = (0..remainder)
+        .filter(|i| {
+            let wd = (start_wd + *i as u32) % 7;
+            wd >= 5 // Sat=5, Sun=6
+        })
+        .count() as i64;
+    full_weeks * 5 + (remainder - weekend_in_remainder)
+}
+
 async fn query_capacity_report_with_tx(
     tx: &mut Transaction<'_, Postgres>,
     department_id: Option<Uuid>,
@@ -289,7 +307,7 @@ async fn query_capacity_report_with_tx(
         r#"
         SELECT r.id AS resource_id, r.name AS resource_name
         FROM resources r
-        WHERE r.resource_type = 'human'
+        WHERE r.resource_type = 'employee'
           AND ($1::uuid IS NULL OR r.department_id = $1)
         ORDER BY r.name ASC
         "#,
@@ -339,6 +357,19 @@ async fn query_capacity_report_with_tx(
     .await
     .map_err(|e| AppError::Database(e.to_string()))?;
 
+    // Precompute working days (weekdays) for each month, clamped to report range.
+    let mut working_days_per_month: HashMap<String, i64> = HashMap::new();
+    for month in &month_starts {
+        let next = next_month(*month)?;
+        let month_end = next
+            .pred_opt()
+            .ok_or_else(|| AppError::Internal("Invalid month end date".to_string()))?;
+        let effective_start = std::cmp::max(*month, start_date);
+        let effective_end = std::cmp::min(month_end, end_date);
+        working_days_per_month.insert(month_key(*month), count_weekdays(effective_start, effective_end));
+    }
+
+    // (weighted_fte_days, allocation_count) per resource per month
     let mut by_resource_month: HashMap<Uuid, HashMap<String, (f64, i32)>> = HashMap::new();
 
     for row in allocation_rows {
@@ -373,13 +404,19 @@ async fn query_capacity_report_with_tx(
                 .pred_opt()
                 .ok_or_else(|| AppError::Internal("Invalid month end date".to_string()))?;
             if overlap_start <= period_end && overlap_end >= period_start {
+                // Clamp allocation to this month's boundaries
+                let alloc_month_start = std::cmp::max(overlap_start, period_start);
+                let alloc_month_end = std::cmp::min(overlap_end, period_end);
+                let allocated_weekdays = count_weekdays(alloc_month_start, alloc_month_end);
+
                 let period = month_key(*month);
                 let entry = by_resource_month
                     .entry(resource_id)
                     .or_default()
                     .entry(period)
                     .or_insert((0.0, 0));
-                entry.0 += allocation_percentage;
+                // Accumulate FTE-days: weekdays × (pct / 100)
+                entry.0 += allocated_weekdays as f64 * (allocation_percentage / 100.0);
                 entry.1 += 1;
             }
         }
@@ -398,11 +435,25 @@ async fn query_capacity_report_with_tx(
 
         let mut periods = Vec::new();
         for period in &month_set {
-            let (total_allocation_percentage, allocation_count) = by_resource_month
+            let (weighted_fte_days, allocation_count) = by_resource_month
                 .get(&resource_id)
                 .and_then(|m| m.get(period))
                 .copied()
                 .unwrap_or((0.0, 0));
+
+            let month_working_days = working_days_per_month
+                .get(period)
+                .copied()
+                .unwrap_or(0);
+
+            let total_allocation_percentage = if month_working_days > 0 {
+                (weighted_fte_days / month_working_days as f64) * 100.0
+            } else {
+                0.0
+            };
+
+            // Round to 1 decimal place for clean display
+            let total_allocation_percentage = (total_allocation_percentage * 10.0).round() / 10.0;
 
             periods.push(CapacityPeriod {
                 period: period.clone(),

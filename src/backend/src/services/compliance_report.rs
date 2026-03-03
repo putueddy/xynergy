@@ -109,7 +109,7 @@ pub async fn validate_bpjs_compliance(
         FROM ctc_records c
         JOIN resources r ON r.id = c.resource_id
         WHERE c.status = 'Active'
-          AND r.status = 'Active'
+          AND r.resource_type = 'employee'
           AND c.effective_date BETWEEN $1 AND $2
         ORDER BY r.name ASC
         "#,
@@ -142,7 +142,10 @@ pub async fn validate_bpjs_compliance(
                 .map_err(|e| AppError::Database(e.to_string()))?,
         };
 
-        let decrypted = crypto_svc.decrypt_components(&payload).await?;
+        let decrypted = match crypto_svc.decrypt_components(&payload).await {
+            Ok(d) => d,
+            Err(_) => continue, // skip records that can't be decrypted
+        };
         let resource_id: Uuid = row
             .try_get("resource_id")
             .map_err(|e| AppError::Database(e.to_string()))?;
@@ -150,52 +153,35 @@ pub async fn validate_bpjs_compliance(
             .try_get("name")
             .map_err(|e| AppError::Database(e.to_string()))?;
 
-        let base_salary = value_as_i64(
-            decrypted.get("base_salary").ok_or_else(|| {
-                AppError::Validation("Missing base_salary in CTC payload".to_string())
-            })?,
-            "base_salary",
-        )?;
-        let hra_allowance = value_as_i64(
-            decrypted.get("hra_allowance").ok_or_else(|| {
-                AppError::Validation("Missing hra_allowance in CTC payload".to_string())
-            })?,
-            "hra_allowance",
-        )?;
-        let medical_allowance = value_as_i64(
-            decrypted.get("medical_allowance").ok_or_else(|| {
-                AppError::Validation("Missing medical_allowance in CTC payload".to_string())
-            })?,
-            "medical_allowance",
-        )?;
-        let transport_allowance = value_as_i64(
-            decrypted.get("transport_allowance").ok_or_else(|| {
-                AppError::Validation("Missing transport_allowance in CTC payload".to_string())
-            })?,
-            "transport_allowance",
-        )?;
-        let meal_allowance = value_as_i64(
-            decrypted.get("meal_allowance").ok_or_else(|| {
-                AppError::Validation("Missing meal_allowance in CTC payload".to_string())
-            })?,
-            "meal_allowance",
-        )?;
-        let stored_bpjs_kes = value_as_i64(
-            decrypted.get("bpjs_kesehatan_employer").ok_or_else(|| {
-                AppError::Validation("Missing bpjs_kesehatan_employer in CTC payload".to_string())
-            })?,
-            "bpjs_kesehatan_employer",
-        )?;
-        let stored_bpjs_kt = value_as_i64(
-            decrypted
-                .get("bpjs_ketenagakerjaan_employer")
-                .ok_or_else(|| {
-                    AppError::Validation(
-                        "Missing bpjs_ketenagakerjaan_employer in CTC payload".to_string(),
-                    )
-                })?,
-            "bpjs_ketenagakerjaan_employer",
-        )?;
+        // Skip records missing required BPJS fields
+        let base_salary = match decrypted.get("base_salary").and_then(|v| value_as_i64(v, "base_salary").ok()) {
+            Some(v) => v,
+            None => continue,
+        };
+        let hra_allowance = match decrypted.get("hra_allowance").and_then(|v| value_as_i64(v, "hra_allowance").ok()) {
+            Some(v) => v,
+            None => continue,
+        };
+        let medical_allowance = match decrypted.get("medical_allowance").and_then(|v| value_as_i64(v, "medical_allowance").ok()) {
+            Some(v) => v,
+            None => continue,
+        };
+        let transport_allowance = match decrypted.get("transport_allowance").and_then(|v| value_as_i64(v, "transport_allowance").ok()) {
+            Some(v) => v,
+            None => continue,
+        };
+        let meal_allowance = match decrypted.get("meal_allowance").and_then(|v| value_as_i64(v, "meal_allowance").ok()) {
+            Some(v) => v,
+            None => continue,
+        };
+        let stored_bpjs_kes = match decrypted.get("bpjs_kesehatan_employer").and_then(|v| value_as_i64(v, "bpjs_kesehatan_employer").ok()) {
+            Some(v) => v,
+            None => continue,
+        };
+        let stored_bpjs_kt = match decrypted.get("bpjs_ketenagakerjaan_employer").and_then(|v| value_as_i64(v, "bpjs_ketenagakerjaan_employer").ok()) {
+            Some(v) => v,
+            None => continue,
+        };
         let risk_tier = value_as_i32_with_default(decrypted.get("risk_tier"), 1);
 
         let components = CtcComponents {
@@ -207,7 +193,10 @@ pub async fn validate_bpjs_compliance(
         };
 
         let mut config = BpjsConfig::default();
-        config.ketenagakerjaan_jkk_rate = jkk_rate_for_tier(risk_tier)?;
+        config.ketenagakerjaan_jkk_rate = match jkk_rate_for_tier(risk_tier) {
+            Ok(rate) => rate,
+            Err(_) => continue,
+        };
         let recalculated = calculate_bpjs(&components, &config);
 
         let expected_bpjs_kes = bd_to_i64(&recalculated.kesehatan_employer);

@@ -5,6 +5,20 @@ use uuid::Uuid;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 
+/// Resolve a relative URL to an absolute URL using the browser's origin.
+/// If the URL is already absolute (starts with http:// or https://), it is returned as-is.
+fn resolve_url(url: &str) -> String {
+    if url.starts_with("http://") || url.starts_with("https://") {
+        return url.to_string();
+    }
+    let origin = web_sys::window()
+        .expect("no window")
+        .location()
+        .origin()
+        .expect("no origin");
+    format!("{}{}", origin, url)
+}
+
 /// User information
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct User {
@@ -31,15 +45,34 @@ pub fn provide_auth_context() {
     let refresh_token = create_rw_signal(None);
 
     // Check localStorage on mount
+    let mut has_saved_token = false;
     if let Ok(storage) = web_sys::window().unwrap().local_storage() {
         if let Some(storage) = storage {
             if let Ok(Some(saved_token)) = storage.get_item("auth_token") {
                 token.set(Some(saved_token));
+                has_saved_token = true;
             }
             if let Ok(Some(saved_refresh)) = storage.get_item("auth_refresh_token") {
                 refresh_token.set(Some(saved_refresh));
             }
         }
+    }
+
+    // If we have a saved token, hydrate the user from the API
+    if has_saved_token {
+        spawn_local(async move {
+            if let Some(tok) = token.get() {
+                match validate_token(tok).await {
+                    Ok(u) => user.set(Some(u)),
+                    Err(_) => {
+                        // Token invalid — clear everything
+                        token.set(None);
+                        refresh_token.set(None);
+                        clear_auth_storage();
+                    }
+                }
+            }
+        });
     }
 
     let is_authenticated = create_memo(move |_| {
@@ -164,8 +197,9 @@ async fn authenticated_request<T: Serialize + ?Sized>(
     let client = reqwest::Client::new();
     let token = auth_token()?;
 
+    let abs_url = resolve_url(url);
     let mut builder = client
-        .request(method.clone(), url)
+        .request(method.clone(), &abs_url)
         .header("Authorization", format!("Bearer {}", token));
     if let Some(body) = payload {
         builder = builder.json(body);
@@ -178,7 +212,7 @@ async fn authenticated_request<T: Serialize + ?Sized>(
     if response.status() == reqwest::StatusCode::UNAUTHORIZED {
         let refreshed = refresh_access_token_from_storage().await?;
         let mut retry_builder = client
-            .request(method, url)
+            .request(method, &abs_url)
             .header("Authorization", format!("Bearer {}", refreshed));
         if let Some(body) = payload {
             retry_builder = retry_builder.json(body);
@@ -251,7 +285,7 @@ pub async fn login_user(email: String, password: String) -> Result<LoginResponse
     let request = LoginRequest { email, password };
 
     let response = reqwest::Client::new()
-        .post("http://localhost:3000/api/v1/auth/login")
+        .post(&resolve_url("/api/v1/auth/login"))
         .json(&request)
         .send()
         .await
@@ -293,7 +327,7 @@ async fn refresh_access_token(refresh_token: &str) -> Result<(String, String), S
     };
 
     let response = reqwest::Client::new()
-        .put("http://localhost:3000/api/v1/auth/refresh")
+        .put(&resolve_url("/api/v1/auth/refresh"))
         .json(&request)
         .send()
         .await
@@ -329,7 +363,7 @@ pub fn logout_user(auth: &AuthContext) {
 /// Validate token and fetch user data
 pub async fn validate_token(token: String) -> Result<User, String> {
     let response = reqwest::Client::new()
-        .get("http://localhost:3000/api/v1/auth/me")
+        .get(&resolve_url("/api/v1/auth/me"))
         .header("Authorization", format!("Bearer {}", token))
         .send()
         .await

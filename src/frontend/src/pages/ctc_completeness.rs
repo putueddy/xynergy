@@ -69,11 +69,11 @@ async fn fetch_completeness(
     let url = match department_id {
         Some(ref id) if !id.is_empty() => {
             format!(
-                "http://localhost:3000/api/v1/ctc/completeness?department_id={}",
+                "/api/v1/ctc/completeness?department_id={}",
                 id
             )
         }
-        _ => "http://localhost:3000/api/v1/ctc/completeness".to_string(),
+        _ => "/api/v1/ctc/completeness".to_string(),
     };
 
     let response = authenticated_get(&url)
@@ -142,7 +142,7 @@ async fn fetch_completeness(
 }
 
 async fn fetch_missing_employees() -> Result<Vec<MissingEmployee>, String> {
-    let response = authenticated_get("http://localhost:3000/api/v1/ctc/completeness/missing")
+    let response = authenticated_get("/api/v1/ctc/completeness/missing")
         .await
         .map_err(|e| format!("Failed to fetch missing employees: {}", e))?;
 
@@ -190,7 +190,7 @@ async fn fetch_missing_employees() -> Result<Vec<MissingEmployee>, String> {
 }
 
 async fn fetch_departments_list() -> Result<Vec<(String, String)>, String> {
-    let response = authenticated_get("http://localhost:3000/api/v1/departments")
+    let response = authenticated_get("/api/v1/departments")
         .await
         .map_err(|e| format!("Failed to fetch departments: {}", e))?;
 
@@ -222,7 +222,7 @@ async fn fetch_compliance_report(
     end_date: &str,
 ) -> Result<(Vec<ComplianceRow>, i64, i64, i64, f64), String> {
     let response = authenticated_get(&format!(
-        "http://localhost:3000/api/v1/ctc/compliance-report?start_date={}&end_date={}",
+        "/api/v1/ctc/compliance-report?start_date={}&end_date={}",
         start_date, end_date
     ))
     .await

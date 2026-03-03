@@ -41,6 +41,8 @@ pub fn UsersContent() -> impl IntoView {
     let (editing_user, set_editing_user) = create_signal(Option::<User>::None);
     let (form_submitting, set_form_submitting) = create_signal(false);
     let (deleting_id, set_deleting_id) = create_signal(Option::<String>::None);
+    let (resetting_id, set_resetting_id) = create_signal(Option::<String>::None);
+    let (new_password, set_new_password) = create_signal(String::new());
 
     // Load data on mount
     create_effect(move |_| {
@@ -266,6 +268,7 @@ pub fn UsersContent() -> impl IntoView {
                                 } else {
                                     users.get().into_iter().map(|user| {
                                         let user_id = user.id.to_string();
+                                        let user_id_for_reset = user.id.to_string();
                                         let user_for_edit = user.clone();
                                         let dept_name = get_department_name(user.department_id);
                                         let role_class = get_role_badge_class(&user.role);
@@ -300,51 +303,110 @@ pub fn UsersContent() -> impl IntoView {
                                                     {dept_name}
                                                 </td>
                                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                                                    <div class="flex items-center space-x-2">
+                                                    <div class="flex flex-col space-y-2">
                                                         {if is_admin() {
                                                             view! {
                                                                 <>
-                                                                    <button
-                                                                        class="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
-                                                                        on:click={
-                                                                            let user = user_for_edit.clone();
-                                                                            move |_| {
-                                                                                set_editing_user.set(Some(user.clone()));
-                                                                                set_show_form.set(true);
+                                                                    <div class="flex items-center space-x-2">
+                                                                        <button
+                                                                            class="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+                                                                            on:click={
+                                                                                let user = user_for_edit.clone();
+                                                                                move |_| {
+                                                                                    set_editing_user.set(Some(user.clone()));
+                                                                                    set_show_form.set(true);
+                                                                                }
                                                                             }
-                                                                        }
-                                                                    >
-                                                                        "Edit"
-                                                                    </button>
+                                                                        >
+                                                                            "Edit"
+                                                                        </button>
+                                                                        <button
+                                                                            class="text-amber-600 hover:text-amber-800 dark:text-amber-400 dark:hover:text-amber-300"
+                                                                            on:click={
+                                                                                let uid = user_id.clone();
+                                                                                move |_| {
+                                                                                    set_new_password.set(String::new());
+                                                                                    set_resetting_id.set(Some(uid.clone()));
+                                                                                }
+                                                                            }
+                                                                        >
+                                                                            "Reset Pwd"
+                                                                        </button>
+                                                                        {move || {
+                                                                            let is_deleting = deleting_id.get() == Some(user_id.clone());
+                                                                            view! {
+                                                                                <button
+                                                                                    class="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                                                    disabled=is_deleting
+                                                                                    on:click={
+                                                                                        let id = user_id.clone();
+                                                                                        move |_| {
+                                                                                            let id_clone = id.clone();
+                                                                                            set_deleting_id.set(Some(id_clone.clone()));
+                                                                                            spawn_local(async move {
+                                                                                                set_error.set(None);
+                                                                                                match delete_user(id_clone).await {
+                                                                                                    Ok(_) => {
+                                                                                                        match fetch_users().await {
+                                                                                                            Ok(data) => set_users.set(data),
+                                                                                                            Err(e) => set_error.set(Some(e)),
+                                                                                                        }
+                                                                                                    }
+                                                                                                    Err(e) => set_error.set(Some(e)),
+                                                                                                }
+                                                                                                set_deleting_id.set(None);
+                                                                                            });
+                                                                                        }
+                                                                                    }
+                                                                                >
+                                                                                    {if is_deleting { "Deleting..." } else { "Delete" }}
+                                                                                </button>
+                                                                            }
+                                                                        }}
+                                                                    </div>
+                                                                    // Inline password reset form
                                                                     {move || {
-                                                                        let is_deleting = deleting_id.get() == Some(user_id.clone());
-                                                                        view! {
-                                                                            <button
-                                                                                class="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 disabled:opacity-50 disabled:cursor-not-allowed"
-                                                                                disabled=is_deleting
-                                                                                on:click={
-                                                                                    let id = user_id.clone();
-                                                                                    move |_| {
-                                                                                        let id_clone = id.clone();
-                                                                                        set_deleting_id.set(Some(id_clone.clone()));
-                                                                                        spawn_local(async move {
-                                                                                            set_error.set(None);
-                                                                                            match delete_user(id_clone).await {
-                                                                                                Ok(_) => {
-                                                                                                    match fetch_users().await {
-                                                                                                        Ok(data) => set_users.set(data),
+                                                                        let uid = user_id_for_reset.clone();
+                                                                        if resetting_id.get() == Some(uid.clone()) {
+                                                                            view! {
+                                                                                <div class="flex items-center space-x-2 mt-1">
+                                                                                    <input
+                                                                                        type="password"
+                                                                                        class="w-32 px-2 py-1 text-xs rounded border border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                                                                                        placeholder="New password"
+                                                                                        prop:value=new_password
+                                                                                        on:input=move |ev| set_new_password.set(event_target_value(&ev))
+                                                                                    />
+                                                                                    <button
+                                                                                        class="text-xs px-2 py-1 bg-amber-500 text-white rounded hover:bg-amber-600 disabled:opacity-50"
+                                                                                        disabled=move || new_password.get().len() < 6
+                                                                                        on:click={
+                                                                                            let uid = uid.clone();
+                                                                                            move |_| {
+                                                                                                let uid = uid.clone();
+                                                                                                let pw = new_password.get();
+                                                                                                spawn_local(async move {
+                                                                                                    set_error.set(None);
+                                                                                                    match reset_user_password(uid, pw).await {
+                                                                                                        Ok(_) => set_resetting_id.set(None),
                                                                                                         Err(e) => set_error.set(Some(e)),
                                                                                                     }
-                                                                                                }
-                                                                                                Err(e) => set_error.set(Some(e)),
+                                                                                                });
                                                                                             }
-                                                                                            set_deleting_id.set(None);
-                                                                                        });
-                                                                                    }
-                                                                                }
-                                                                            >
-                                                                                {if is_deleting { "Deleting..." } else { "Delete" }}
-                                                                            </button>
+                                                                                        }
+                                                                                    >
+                                                                                        "Save"
+                                                                                    </button>
+                                                                                    <button
+                                                                                        class="text-xs px-2 py-1 text-gray-500 hover:text-gray-700"
+                                                                                        on:click=move |_| set_resetting_id.set(None)
+                                                                                    >
+                                                                                        "Cancel"
+                                                                                    </button>
+                                                                                </div>
+                                                                            }.into_view()
+                                                                        } else {
+                                                                            view! { <span></span> }.into_view()
                                                                         }
                                                                     }}
                                                                 </>
@@ -515,5 +577,29 @@ async fn delete_user(user_id: String) -> Result<(), String> {
         } else {
             Err(format!("Failed to delete user: {}", error_text))
         }
+    }
+}
+
+/// Reset a user's password (admin only)
+async fn reset_user_password(user_id: String, new_password: String) -> Result<(), String> {
+    let id = user_id.parse::<Uuid>().map_err(|_| "Invalid user ID")?;
+
+    let response = authenticated_put_json(
+        &format!("/api/v1/users/{}", id),
+        &serde_json::json!({
+            "password": new_password,
+        }),
+    )
+    .await
+    .map_err(|e| format!("Failed to reset password: {}", e))?;
+
+    if response.status().is_success() {
+        Ok(())
+    } else {
+        let error_text = response
+            .text()
+            .await
+            .unwrap_or_else(|_| "Unknown error".to_string());
+        Err(format!("Failed to reset password: {}", error_text))
     }
 }

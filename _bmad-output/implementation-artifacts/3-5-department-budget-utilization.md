@@ -433,3 +433,4 @@ anthropic/claude-opus-4-6
 - 2026-03-02: Tasks 5-6 completed (frontend UI + integration tests) — all 18 tests pass
 - 2026-03-02: Story marked as `review` — all 6 tasks complete, full regression green
 - 2026-03-02: Code-review findings resolved (frontend race/accessibility/style fixes), Epic 3 regressions re-run, story moved to `done`
+- 2026-03-03: Post-deployment bug fixes — capacity report formula rewritten to weighted working-day average (added `count_weekdays()` O(1) helper); department scoping fixed in `get_capacity_report()` to use `resolve_department_id()` for all roles; `resource_type` filter corrected from `'human'` to `'employee'`

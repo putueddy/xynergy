@@ -275,3 +275,4 @@ claude-opus-4-6
 - 2026-03-01: Code review fixes — audit entity_id, CTC guard regression test, rate assertions, unit tests, tooltip/disabled-Assign UI, story file updates
 - 2026-03-01: Test fixes — encryption key format (hex→base64), CTC guard test role (hr→admin). All tests green.
 - 2026-03-01: Code review pass — fixed sentinel date in tooltip, redundant query, label mismatch, test data inconsistency, HR test assertions. Status → done.
+- 2026-03-03: Post-deployment bug fixes — `resource_type` filter changed from `'human'` to `'employee'` in team_service.rs (2 occurrences); department scoping fixed in `get_team()` to use `resolve_department_id()` for all roles (admin/hr no longer bypass department filter)

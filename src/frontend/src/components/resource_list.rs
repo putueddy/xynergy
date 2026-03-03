@@ -10,6 +10,8 @@ pub struct Resource {
     pub resource_type: String,
     pub capacity: Option<f64>,
     pub department_id: Option<Uuid>,
+    pub department_name: Option<String>,
+    pub employment_start_date: Option<String>,
     pub skills: Option<serde_json::Value>,
 }
 
@@ -34,6 +36,12 @@ pub fn ResourceList(
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                             "Capacity"
                         </th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                            "Department"
+                        </th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                            "Start Date"
+                        </th>
                         <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                             "Actions"
                         </th>
@@ -57,6 +65,12 @@ pub fn ResourceList(
                                     </td>
                                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                                         {resource.capacity.map(|c| c.to_string()).unwrap_or_else(|| "-".to_string())}
+                                    </td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                                        {resource.department_name.clone().or_else(|| resource.department_id.as_ref().map(|id| id.to_string())).unwrap_or_else(|| "-".to_string())}
+                                    </td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                                        {resource.employment_start_date.clone().unwrap_or_else(|| "-".to_string())}
                                     </td>
                                     <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                                         <button

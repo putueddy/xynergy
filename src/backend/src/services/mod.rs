@@ -11,6 +11,7 @@ pub mod key_provider;
 pub mod project_service;
 pub mod resource_service;
 pub mod rls_context;
+pub mod rbac;
 pub mod team_service;
 pub mod thr_calculator;
 pub mod user_service;

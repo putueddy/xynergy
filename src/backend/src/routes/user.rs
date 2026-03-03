@@ -171,6 +171,7 @@ pub struct UpdateUserRequest {
     pub last_name: Option<String>,
     pub role: Option<String>,
     pub department_id: Option<Uuid>,
+    pub password: Option<String>,
 }
 
 /// Update an existing user
@@ -200,7 +201,8 @@ async fn update_user(
         || req.first_name.is_some()
         || req.last_name.is_some()
         || req.role.is_some()
-        || req.department_id.is_some();
+        || req.department_id.is_some()
+        || req.password.is_some();
 
     if !has_updates {
         // No fields to update, return current user
@@ -248,9 +250,16 @@ async fn update_user(
             "last_name": req.last_name.clone().unwrap_or_else(|| after_last_default),
             "role": req.role.clone().unwrap_or_else(|| after_role_default),
             "department_id": req.department_id.or(after_department_default),
+            "password_changed": req.password.is_some(),
         })),
     );
     let user_id = user_id_from_headers(&headers)?;
+
+    // Hash password if provided
+    let password_hash = match &req.password {
+        Some(pw) if !pw.is_empty() => Some(hash_password(pw)?),
+        _ => None,
+    };
 
     // Update user with COALESCE to only update provided fields
     let user = sqlx::query!(
@@ -260,14 +269,16 @@ async fn update_user(
              last_name = COALESCE($3, last_name),
              role = COALESCE($4, role),
              department_id = COALESCE($5, department_id),
+             password_hash = COALESCE($6, password_hash),
              updated_at = CURRENT_TIMESTAMP
-         WHERE id = $6
+         WHERE id = $7
          RETURNING id, email, first_name, last_name, role, department_id",
         req.email,
         req.first_name,
         req.last_name,
         req.role,
         req.department_id,
+        password_hash,
         id
     )
     .fetch_one(&pool)
