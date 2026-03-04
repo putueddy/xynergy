@@ -28,6 +28,159 @@ struct ProjectBudgetData {
     pub remaining_idr: i64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ProjectExpenseData {
+    pub id: Uuid,
+    pub project_id: Uuid,
+    pub category: String,
+    pub description: String,
+    pub amount_idr: i64,
+    pub expense_date: String,  // NaiveDate serializes as string
+    pub vendor: Option<String>,
+    pub created_by: Option<Uuid>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Default)]
+struct ExpenseFormData {
+    pub category: String,
+    pub description: String,
+    pub amount_idr: String,
+    pub expense_date: String,
+    pub vendor: String,
+}
+
+#[derive(Debug, Clone, Default)]
+struct ExpenseEditData {
+    pub category: String,
+    pub description: String,
+    pub amount_idr: String,
+    pub expense_date: String,
+    pub vendor: String,
+    pub edit_reason: String,
+}
+
+#[component]
+fn ExpenseFormPanel(
+    category: ReadSignal<String>,
+    set_category: WriteSignal<String>,
+    amount: ReadSignal<String>,
+    set_amount: WriteSignal<String>,
+    description: ReadSignal<String>,
+    set_description: WriteSignal<String>,
+    date_value: ReadSignal<String>,
+    set_date_value: WriteSignal<String>,
+    vendor: ReadSignal<String>,
+    set_vendor: WriteSignal<String>,
+    edit_reason: ReadSignal<String>,
+    set_edit_reason: WriteSignal<String>,
+    is_editing: Signal<bool>,
+    loading: ReadSignal<bool>,
+    on_submit: Callback<leptos::ev::SubmitEvent>,
+    on_cancel: Callback<()>,
+) -> impl IntoView {
+    view! {
+        <form
+            class="space-y-4 mb-8 bg-gray-50 dark:bg-gray-700/50 p-4 rounded-lg"
+            on:submit=move |ev| on_submit.call(ev)
+        >
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">"Category"</label>
+                    <select
+                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                        on:change=move |ev| set_category.set(event_target_value(&ev))
+                        prop:value=category
+                        required
+                    >
+                        <option value="" disabled>"Select category..."</option>
+                        <option value="hr">"HR"</option>
+                        <option value="software">"Software"</option>
+                        <option value="hardware">"Hardware"</option>
+                        <option value="overhead">"Overhead"</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">"Amount (IDR)"</label>
+                    <input
+                        type="text"
+                        inputmode="numeric"
+                        pattern="[0-9]*"
+                        autocomplete="off"
+                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                        on:input=move |ev| set_amount.set(event_target_value(&ev))
+                        prop:value=amount
+                        required
+                    />
+                </div>
+                <div class="md:col-span-2">
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">"Description"</label>
+                    <input
+                        type="text"
+                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                        on:input=move |ev| set_description.set(event_target_value(&ev))
+                        prop:value=description
+                        required
+                    />
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">"Date"</label>
+                    <input
+                        type="date"
+                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                        on:input=move |ev| set_date_value.set(event_target_value(&ev))
+                        prop:value=date_value
+                        required
+                    />
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">"Vendor (Optional)"</label>
+                    <input
+                        type="text"
+                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                        on:input=move |ev| set_vendor.set(event_target_value(&ev))
+                        prop:value=vendor
+                    />
+                </div>
+                {move || if is_editing.get() {
+                    view! {
+                        <div class="md:col-span-2">
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">"Edit Reason"</label>
+                            <input
+                                type="text"
+                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                                on:input=move |ev| set_edit_reason.set(event_target_value(&ev))
+                                prop:value=edit_reason
+                                required
+                            />
+                        </div>
+                    }
+                        .into_view()
+                } else {
+                    view! { <div></div> }.into_view()
+                }}
+            </div>
+            <div class="flex justify-end space-x-3 pt-4">
+                <button
+                    type="button"
+                    class="btn-secondary"
+                    on:click=move |_| on_cancel.call(())
+                >
+                    "Cancel"
+                </button>
+                <button
+                    type="submit"
+                    class="btn-primary"
+                    disabled=move || loading.get()
+                >
+                    {move || if is_editing.get() { "Update Expense" } else { "Save Expense" }}
+                </button>
+            </div>
+        </form>
+    }
+}
+
 fn format_idr(value: i64) -> String {
     let digits = value.unsigned_abs().to_string();
     let mut reversed_grouped = String::new();
@@ -70,6 +223,17 @@ pub fn Projects() -> impl IntoView {
     let (show_form, set_show_form) = create_signal(false);
     let (editing_project, set_editing_project) = create_signal(Option::<Project>::None);
     let (selected_budget, set_selected_budget) = create_signal(Option::<ProjectBudgetData>::None);
+    let (selected_project_for_expenses, set_selected_project_for_expenses) = create_signal(Option::<Project>::None);
+    let (expenses, set_expenses) = create_signal(Vec::<ProjectExpenseData>::new());
+    let (show_expense_form, set_show_expense_form) = create_signal(false);
+    let (editing_expense, set_editing_expense) = create_signal(Option::<ProjectExpenseData>::None);
+
+    let (expense_category, set_expense_category) = create_signal(String::from("hr"));
+    let (expense_description, set_expense_description) = create_signal(String::new());
+    let (expense_amount, set_expense_amount) = create_signal(String::new());
+    let (expense_date, set_expense_date) = create_signal(String::new());
+    let (expense_vendor, set_expense_vendor) = create_signal(String::new());
+    let (expense_edit_reason, set_expense_edit_reason) = create_signal(String::new());
 
     // Load projects on mount
     create_effect(move |_| {
@@ -164,6 +328,164 @@ pub fn Projects() -> impl IntoView {
         set_editing_project.set(None);
     };
 
+    let handle_view_expenses = move |id: Uuid| {
+        if let Some(project) = projects.get().iter().find(|p| p.id == id).cloned() {
+            set_selected_project_for_expenses.set(Some(project));
+            set_show_expense_form.set(false);
+            spawn_local(async move {
+                set_loading.set(true);
+                match fetch_project_expenses(id).await {
+                    Ok(data) => {
+                        let mut sorted_data = data;
+                        sorted_data.sort_by(|a, b| b.expense_date.cmp(&a.expense_date));
+                        set_expenses.set(sorted_data);
+                    },
+                    Err(e) => set_error.set(Some(e)),
+                }
+                set_loading.set(false);
+            });
+        }
+    };
+
+    let handle_cancel_expense = move || {
+        set_show_expense_form.set(false);
+        set_editing_expense.set(None);
+    };
+
+    let reset_expense_form = move || {
+        set_expense_category.set(String::from("hr"));
+        set_expense_description.set(String::new());
+        set_expense_amount.set(String::new());
+        set_expense_date.set(String::new());
+        set_expense_vendor.set(String::new());
+        set_expense_edit_reason.set(String::new());
+    };
+
+    let handle_submit_expense = move |ev: leptos::ev::SubmitEvent| {
+        ev.prevent_default();
+        let project_id = match selected_project_for_expenses.get() {
+            Some(p) => p.id,
+            None => return,
+        };
+        
+        let editing = editing_expense.get();
+        let is_edit = editing.is_some();
+        let expense_id = editing.map(|e| e.id);
+        
+        let form_data = ExpenseEditData {
+            category: expense_category.get(),
+            description: expense_description.get(),
+            amount_idr: expense_amount.get(),
+            expense_date: expense_date.get(),
+            vendor: expense_vendor.get(),
+            edit_reason: expense_edit_reason.get(),
+        };
+
+        spawn_local(async move {
+            set_loading.set(true);
+            set_error.set(None);
+
+            let result = if is_edit {
+                update_project_expense(project_id, expense_id.unwrap(), form_data).await
+            } else {
+                create_project_expense(project_id, ExpenseFormData {
+                    category: form_data.category,
+                    description: form_data.description,
+                    amount_idr: form_data.amount_idr,
+                    expense_date: form_data.expense_date,
+                    vendor: form_data.vendor,
+                }).await
+            };
+
+            match result {
+                Ok(_) => {
+                    match fetch_project_expenses(project_id).await {
+                        Ok(data) => {
+                            let mut sorted_data = data;
+                            sorted_data.sort_by(|a, b| b.expense_date.cmp(&a.expense_date));
+                            set_expenses.set(sorted_data);
+                            set_show_expense_form.set(false);
+                            set_editing_expense.set(None);
+                        },
+                        Err(e) => set_error.set(Some(e)),
+                    }
+                    
+                    match fetch_projects().await {
+                        Ok(data) => set_projects.set(data),
+                        Err(e) => set_error.set(Some(e)),
+                    }
+
+                    if let Some(budget) = selected_budget.get() {
+                        if budget.project_id == project_id {
+                            match fetch_project_budget(project_id).await {
+                                Ok(data) => set_selected_budget.set(Some(data)),
+                                Err(_) => {}
+                            }
+                        }
+                    }
+                }
+                Err(e) => set_error.set(Some(e)),
+            }
+            set_loading.set(false);
+        });
+    };
+
+    let handle_delete_expense = move |expense_id: Uuid| {
+        let project_id = match selected_project_for_expenses.get() {
+            Some(p) => p.id,
+            None => return,
+        };
+        
+        spawn_local(async move {
+            set_loading.set(true);
+            set_error.set(None);
+
+            match delete_project_expense(project_id, expense_id).await {
+                Ok(_) => {
+                    match fetch_project_expenses(project_id).await {
+                        Ok(data) => {
+                            let mut sorted_data = data;
+                            sorted_data.sort_by(|a, b| b.expense_date.cmp(&a.expense_date));
+                            set_expenses.set(sorted_data);
+                        },
+                        Err(e) => set_error.set(Some(e)),
+                    }
+                    
+                    match fetch_projects().await {
+                        Ok(data) => set_projects.set(data),
+                        Err(e) => set_error.set(Some(e)),
+                    }
+
+                    if let Some(budget) = selected_budget.get() {
+                        if budget.project_id == project_id {
+                            match fetch_project_budget(project_id).await {
+                                Ok(data) => set_selected_budget.set(Some(data)),
+                                Err(_) => {}
+                            }
+                        }
+                    }
+                }
+                Err(e) => set_error.set(Some(e)),
+            }
+            set_loading.set(false);
+        });
+    };
+
+    let handle_edit_expense_click = move |expense: ProjectExpenseData| {
+        set_expense_category.set(expense.category.clone());
+        set_expense_description.set(expense.description.clone());
+        set_expense_amount.set(expense.amount_idr.to_string());
+        set_expense_date.set(expense.expense_date.clone());
+        set_expense_vendor.set(expense.vendor.clone().unwrap_or_default());
+        set_expense_edit_reason.set(String::new());
+        set_editing_expense.set(Some(expense));
+        set_show_expense_form.set(true);
+    };
+
+    let is_editing_expense = Signal::derive(move || editing_expense.get().is_some());
+    let expense_submit_callback = Callback::new(handle_submit_expense);
+    let expense_cancel_callback = Callback::new(move |_| handle_cancel_expense());
+
     view! {
         <div class="min-h-screen flex flex-col bg-gray-50 dark:bg-gray-900">
             <Header/>
@@ -251,6 +573,7 @@ pub fn Projects() -> impl IntoView {
                                                 on_edit=Callback::new(handle_edit)
                                                 on_delete=Callback::new(handle_delete)
                                                 on_view_budget=Callback::new(handle_view_budget)
+                                                on_view_expenses=Callback::new(handle_view_expenses)
                                             />
                                             {move || {
                                                 selected_budget.get().map(|budget| {
@@ -320,6 +643,119 @@ pub fn Projects() -> impl IntoView {
                                             }}
                                         }.into_view()
                                     }
+                                }}
+                                {move || {
+                                    selected_project_for_expenses.get().map(|project| {
+                                        view! {
+                                            <div class="bg-white dark:bg-gray-800 shadow rounded-lg p-6 mt-6">
+                                                <div class="flex items-center justify-between mb-4">
+                                                    <h2 class="text-xl font-semibold text-gray-900 dark:text-white">
+                                                        {format!("Expenses - {}", project.name)}
+                                                    </h2>
+                                                    <div class="space-x-2">
+                                                        <button
+                                                            class="btn-primary text-sm"
+                                                            on:click=move |_| {
+                                                                reset_expense_form();
+                                                                set_editing_expense.set(None);
+                                                                set_show_expense_form.set(true);
+                                                            }
+                                                        >
+                                                            "Add Expense"
+                                                        </button>
+                                                        <button
+                                                            class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                                                            on:click=move |_| set_selected_project_for_expenses.set(None)
+                                                        >
+                                                            "Close"
+                                                        </button>
+                                                    </div>
+                                                </div>
+
+                                                {move || if show_expense_form.get() {
+                                                    view! {
+                                                        <ExpenseFormPanel
+                                                            category=expense_category
+                                                            set_category=set_expense_category
+                                                            amount=expense_amount
+                                                            set_amount=set_expense_amount
+                                                            description=expense_description
+                                                            set_description=set_expense_description
+                                                            date_value=expense_date
+                                                            set_date_value=set_expense_date
+                                                            vendor=expense_vendor
+                                                            set_vendor=set_expense_vendor
+                                                            edit_reason=expense_edit_reason
+                                                            set_edit_reason=set_expense_edit_reason
+                                                            is_editing=is_editing_expense
+                                                            loading=loading
+                                                            on_submit=expense_submit_callback
+                                                            on_cancel=expense_cancel_callback
+                                                        />
+                                                    }
+                                                        .into_view()
+                                                } else {
+                                                    view! { <div></div> }.into_view()
+                                                }}
+
+                                                <div class="overflow-x-auto">
+                                                    <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                                                        <thead class="bg-gray-50 dark:bg-gray-700">
+                                                            <tr>
+                                                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">"Date"</th>
+                                                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">"Category"</th>
+                                                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">"Description"</th>
+                                                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">"Vendor"</th>
+                                                                <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">"Amount"</th>
+                                                                <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">"Actions"</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                                                            {move || {
+                                                                if expenses.get().is_empty() {
+                                                                    view! {
+                                                                        <tr>
+                                                                            <td colspan="6" class="px-4 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400 text-center">
+                                                                                "No expenses found for this project."
+                                                                            </td>
+                                                                        </tr>
+                                                                    }.into_view()
+                                                                } else {
+                                                                    expenses.get().into_iter().map(|expense| {
+                                                                        let exp_id = expense.id;
+                                                                        let exp_clone = expense.clone();
+                                                                        view! {
+                                                                            <tr class="hover:bg-gray-50 dark:hover:bg-gray-700">
+                                                                                <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{expense.expense_date}</td>
+                                                                                <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900 dark:text-white capitalize">{expense.category}</td>
+                                                                                <td class="px-4 py-3 text-sm text-gray-900 dark:text-white max-w-xs truncate">{expense.description}</td>
+                                                                                <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{expense.vendor.unwrap_or_default()}</td>
+                                                                                <td class="px-4 py-3 whitespace-nowrap text-sm font-medium text-right text-gray-900 dark:text-white">{format_idr(expense.amount_idr)}</td>
+                                                                                <td class="px-4 py-3 whitespace-nowrap text-right text-sm font-medium">
+                                                                                    <button
+                                                                                        class="text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300 mr-3"
+                                                                                        on:click=move |_| handle_edit_expense_click(exp_clone.clone())
+                                                                                    >
+                                                                                        "Edit"
+                                                                                    </button>
+                                                                                    <button
+                                                                                        class="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300"
+                                                                                        on:click=move |_| handle_delete_expense(exp_id)
+                                                                                    >
+                                                                                        "Delete"
+                                                                                    </button>
+                                                                                </td>
+                                                                            </tr>
+                                                                        }
+                                                                    }).collect_view()
+                                                                }
+                                                            }}
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                            </div>
+                                        }
+                                    })
                                 }}
                             </div> }.into_view()
                         }
@@ -519,5 +955,115 @@ async fn delete_project(id: Uuid) -> Result<(), String> {
             .await
             .unwrap_or_else(|_| "Unknown error".to_string());
         Err(format!("Failed to delete project: {}", error_text))
+    }
+}
+
+async fn fetch_project_expenses(project_id: Uuid) -> Result<Vec<ProjectExpenseData>, String> {
+    let response = authenticated_get(&format!(
+        "http://localhost:3000/api/v1/projects/{}/expenses",
+        project_id
+    ))
+    .await
+    .map_err(|e| format!("Failed to fetch expenses: {}", e))?;
+
+    if response.status().is_success() {
+        response
+            .json::<Vec<ProjectExpenseData>>()
+            .await
+            .map_err(|e| format!("Failed to parse expenses: {}", e))
+    } else {
+        Err(format!("Failed to fetch expenses: {}", response.status()))
+    }
+}
+
+async fn create_project_expense(project_id: Uuid, data: ExpenseFormData) -> Result<(), String> {
+    let amount_idr = parse_budget_input(&data.amount_idr, "Amount")?;
+    if amount_idr <= 0 {
+        return Err("Amount must be greater than 0".to_string());
+    }
+    let _ = NaiveDate::parse_from_str(&data.expense_date, "%Y-%m-%d")
+        .map_err(|_| "Invalid expense date".to_string())?;
+
+    if data.category.trim().is_empty() {
+        return Err("Category is required".to_string());
+    }
+    if data.description.trim().is_empty() {
+        return Err("Description is required".to_string());
+    }
+
+    let response = authenticated_post_json(
+        &format!("http://localhost:3000/api/v1/projects/{}/expenses", project_id),
+        &serde_json::json!({
+            "category": data.category,
+            "description": data.description,
+            "amount_idr": amount_idr,
+            "expense_date": data.expense_date,
+            "vendor": if data.vendor.trim().is_empty() { None } else { Some(data.vendor.trim().to_string()) }
+        }),
+    )
+    .await
+    .map_err(|e| format!("Failed to create expense: {}", e))?;
+
+    if response.status().is_success() {
+        Ok(())
+    } else {
+        let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+        Err(format!("Failed to create expense: {}", error_text))
+    }
+}
+
+async fn update_project_expense(project_id: Uuid, expense_id: Uuid, data: ExpenseEditData) -> Result<(), String> {
+    let amount_idr = parse_budget_input(&data.amount_idr, "Amount")?;
+    if amount_idr <= 0 {
+        return Err("Amount must be greater than 0".to_string());
+    }
+    let _ = NaiveDate::parse_from_str(&data.expense_date, "%Y-%m-%d")
+        .map_err(|_| "Invalid expense date".to_string())?;
+
+    if data.category.trim().is_empty() {
+        return Err("Category is required".to_string());
+    }
+    if data.description.trim().is_empty() {
+        return Err("Description is required".to_string());
+    }
+    if data.edit_reason.trim().is_empty() {
+        return Err("Edit reason is required".to_string());
+    }
+
+    let response = authenticated_put_json(
+        &format!("http://localhost:3000/api/v1/projects/{}/expenses/{}", project_id, expense_id),
+        &serde_json::json!({
+            "category": data.category,
+            "description": data.description,
+            "amount_idr": amount_idr,
+            "expense_date": data.expense_date,
+            "vendor": if data.vendor.trim().is_empty() { "".to_string() } else { data.vendor.trim().to_string() },
+            "edit_reason": data.edit_reason
+        }),
+    )
+    .await
+    .map_err(|e| format!("Failed to update expense: {}", e))?;
+
+    if response.status().is_success() {
+        Ok(())
+    } else {
+        let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+        Err(format!("Failed to update expense: {}", error_text))
+    }
+}
+
+async fn delete_project_expense(project_id: Uuid, expense_id: Uuid) -> Result<(), String> {
+    let response = authenticated_delete(&format!(
+        "http://localhost:3000/api/v1/projects/{}/expenses/{}",
+        project_id, expense_id
+    ))
+    .await
+    .map_err(|e| format!("Failed to delete expense: {}", e))?;
+
+    if response.status().is_success() {
+        Ok(())
+    } else {
+        let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+        Err(format!("Failed to delete expense: {}", error_text))
     }
 }

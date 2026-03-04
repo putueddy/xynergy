@@ -49,7 +49,7 @@ async fn create_test_department(pool: &PgPool, name: &str) -> Uuid {
 async fn create_test_resource(pool: &PgPool, name: &str) -> Uuid {
     sqlx::query_scalar::<_, Uuid>(
         "INSERT INTO resources (name, resource_type, capacity)
-         VALUES ($1, 'human', 1.0)
+         VALUES ($1, 'employee', 1.0)
          RETURNING id",
     )
     .bind(name)
@@ -60,8 +60,8 @@ async fn create_test_resource(pool: &PgPool, name: &str) -> Uuid {
 
 async fn create_test_resource_in_department(pool: &PgPool, name: &str, dept_id: Uuid) -> Uuid {
     sqlx::query_scalar::<_, Uuid>(
-        "INSERT INTO resources (name, resource_type, capacity, department_id, status)
-         VALUES ($1, 'human', 1.0, $2, 'Active')
+        "INSERT INTO resources (name, resource_type, capacity, department_id)
+         VALUES ($1, 'employee', 1.0, $2)
          RETURNING id",
     )
     .bind(name)
@@ -323,11 +323,10 @@ async fn completeness_returns_department_counts(pool: PgPool) {
         "Should have at least one department"
     );
 
-    // Find our Engineering department
     let eng = departments
         .iter()
-        .find(|d| d["department"].as_str() == Some("Engineering"));
-    assert!(eng.is_some(), "Engineering department should be in results");
+        .find(|d| d["department_id"].as_str() == Some(dept_id.to_string().as_str()));
+    assert!(eng.is_some(), "Test department should be in results");
 
     let eng = eng.unwrap();
     assert_eq!(eng["total_employees"].as_i64().unwrap(), 2);
@@ -645,7 +644,7 @@ async fn allocation_rejected_without_ctc(pool: PgPool) {
 
     let body = to_bytes(res.into_body(), usize::MAX).await.unwrap();
     let json: Value = serde_json::from_slice(&body).unwrap();
-    let message = json["message"].as_str().unwrap_or("");
+    let message = json["error"]["message"].as_str().unwrap_or("");
     assert!(
         message.contains("without CTC data"),
         "Error message should mention missing CTC data, got: {}",

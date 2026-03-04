@@ -58,7 +58,7 @@ development_status:
   epic-3-retrospective: optional
   epic-4: in-progress
   4-1-project-budget-setup: review
-  4-2-non-resource-cost-entry: backlog
+  4-2-non-resource-cost-entry: ready-for-dev
   4-3-automatic-resource-cost-calculation: backlog
   4-4-revenue-entry: backlog
   4-5-pl-dashboard: backlog

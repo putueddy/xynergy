@@ -79,6 +79,51 @@ async fn get_auth_token(app: &axum::Router, email: &str) -> String {
     login_json["token"].as_str().unwrap().to_string()
 }
 
+async fn build_valid_ctc_components(app: &axum::Router, token: &str, resource_id: Uuid) -> Value {
+    let req = Request::builder()
+        .method("POST")
+        .uri("/api/v1/ctc/calculate")
+        .header("content-type", "application/json")
+        .header("Authorization", format!("Bearer {}", token))
+        .body(Body::from(
+            json!({
+                "resource_id": resource_id.to_string(),
+                "base_salary": 15000000,
+                "hra_allowance": 3000000,
+                "medical_allowance": 1000000,
+                "transport_allowance": 500000,
+                "meal_allowance": 500000,
+                "working_days_per_month": 22,
+                "risk_tier": 1
+            })
+            .to_string(),
+        ))
+        .expect("request should be built");
+
+    let res = app.clone().oneshot(req).await.expect("preview should respond");
+    assert_eq!(res.status(), StatusCode::OK);
+    let bytes = to_bytes(res.into_body(), usize::MAX)
+        .await
+        .expect("preview body readable");
+    let preview: Value = serde_json::from_slice(&bytes).expect("preview JSON valid");
+
+    json!({
+        "base_salary": preview["base_salary"],
+        "hra_allowance": preview["allowances"]["hra"],
+        "medical_allowance": preview["allowances"]["medical"],
+        "transport_allowance": preview["allowances"]["transport"],
+        "meal_allowance": preview["allowances"]["meal"],
+        "bpjs_kesehatan_employer": preview["bpjs"]["kesehatan"]["employer"],
+        "bpjs_ketenagakerjaan_employer": preview["bpjs"]["ketenagakerjaan"]["employer"],
+        "thr_monthly_accrual": preview["thr_monthly_accrual"],
+        "total_monthly_ctc": preview["total_monthly_ctc"],
+        "daily_rate": format!("{:.2}", preview["daily_rate"].as_f64().unwrap_or(0.0)),
+        "working_days_per_month": preview["working_days_per_month"],
+        "risk_tier": 1,
+        "thr_eligible": true
+    })
+}
+
 #[sqlx::test(migrations = "../../migrations")]
 async fn test_valid_deterministic_hash_chain(pool: PgPool) {
     // Generate valid manual log inserts via log_audit helper
@@ -159,6 +204,7 @@ async fn test_ctc_view_and_mutation_audit(pool: PgPool) {
     assert_eq!(res_view.status(), StatusCode::OK);
 
     // Update resource
+    let components = build_valid_ctc_components(&app, &hr_token, resource_id).await;
     let req_update = Request::builder()
         .method("PUT")
         .uri(format!("/api/v1/ctc/{}/components", resource_id))
@@ -166,7 +212,7 @@ async fn test_ctc_view_and_mutation_audit(pool: PgPool) {
         .header("Content-Type", "application/json")
         .body(Body::from(
             json!({
-                "components": { "salary": 5000 },
+                "components": components,
                 "reason": "Annual Adjustment"
             })
             .to_string(),

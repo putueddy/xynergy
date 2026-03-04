@@ -28,6 +28,7 @@ pub fn ProjectList(
     on_edit: Callback<Uuid>,
     on_delete: Callback<Uuid>,
     on_view_budget: Callback<Uuid>,
+    on_view_expenses: Callback<Uuid>,
 ) -> impl IntoView {
     view! {
         <div class="bg-white dark:bg-gray-800 shadow rounded-lg overflow-hidden">
@@ -94,6 +95,12 @@ pub fn ProjectList(
                                         {project.end_date.to_string()}
                                     </td>
                                     <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                        <button
+                                            class="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 dark:hover:text-indigo-300 mr-4"
+                                            on:click=move |_| on_view_expenses.call(project_id)
+                                        >
+                                            "Expenses"
+                                        </button>
                                         <button
                                             class="text-purple-600 hover:text-purple-900 dark:text-purple-400 dark:hover:text-purple-300 mr-4"
                                             on:click=move |_| on_view_budget.call(project_id)

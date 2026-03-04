@@ -1,0 +1,82 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE project_expenses\n         SET category = COALESCE($1, category),\n             description = COALESCE($2, description),\n             amount_idr = COALESCE($3, amount_idr),\n             expense_date = COALESCE($4, expense_date),\n             vendor = CASE\n                 WHEN $5::text IS NULL THEN vendor\n                 WHEN $5::text = '' THEN NULL\n                 ELSE $5::text\n             END,\n             updated_at = CURRENT_TIMESTAMP\n         WHERE id = $6 AND project_id = $7\n         RETURNING id, project_id, category, description, amount_idr, expense_date, vendor, created_by, created_at, updated_at",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "project_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "category",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "amount_idr",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 5,
+        "name": "expense_date",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 6,
+        "name": "vendor",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "created_by",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 8,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 9,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Int8",
+        "Date",
+        "Text",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "306e3428b121b22c5baa784f3f9a287388f616f077d9ea7bdd687da26dc3d6d6"
+}

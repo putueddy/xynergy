@@ -96,6 +96,60 @@ async fn create_ctc_record(app: &axum::Router, hr_token: &str, resource_id: Uuid
     serde_json::from_slice(&body).unwrap()
 }
 
+async fn build_valid_components_from_preview(
+    app: &axum::Router,
+    token: &str,
+    resource_id: Uuid,
+    base_salary: i64,
+    hra_allowance: i64,
+    medical_allowance: i64,
+    transport_allowance: i64,
+    meal_allowance: i64,
+    working_days_per_month: i32,
+    risk_tier: i32,
+) -> Value {
+    let req = Request::builder()
+        .method("POST")
+        .uri("/api/v1/ctc/calculate")
+        .header("content-type", "application/json")
+        .header("Authorization", format!("Bearer {}", token))
+        .body(Body::from(
+            json!({
+                "resource_id": resource_id.to_string(),
+                "base_salary": base_salary,
+                "hra_allowance": hra_allowance,
+                "medical_allowance": medical_allowance,
+                "transport_allowance": transport_allowance,
+                "meal_allowance": meal_allowance,
+                "working_days_per_month": working_days_per_month,
+                "risk_tier": risk_tier
+            })
+            .to_string(),
+        ))
+        .unwrap();
+
+    let res = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let body = to_bytes(res.into_body(), usize::MAX).await.unwrap();
+    let preview: Value = serde_json::from_slice(&body).unwrap();
+
+    json!({
+        "base_salary": preview["base_salary"],
+        "hra_allowance": preview["allowances"]["hra"],
+        "medical_allowance": preview["allowances"]["medical"],
+        "transport_allowance": preview["allowances"]["transport"],
+        "meal_allowance": preview["allowances"]["meal"],
+        "bpjs_kesehatan_employer": preview["bpjs"]["kesehatan"]["employer"],
+        "bpjs_ketenagakerjaan_employer": preview["bpjs"]["ketenagakerjaan"]["employer"],
+        "thr_monthly_accrual": preview["thr_monthly_accrual"],
+        "total_monthly_ctc": preview["total_monthly_ctc"],
+        "daily_rate": format!("{:.2}", preview["daily_rate"].as_f64().unwrap_or(0.0)),
+        "working_days_per_month": preview["working_days_per_month"],
+        "risk_tier": risk_tier,
+        "thr_eligible": true
+    })
+}
+
 #[sqlx::test(migrations = "../../migrations")]
 async fn test_update_ctc_creates_revision(pool: PgPool) {
     std::env::set_var("JWT_SECRET", "test-secret");
@@ -109,6 +163,20 @@ async fn test_update_ctc_creates_revision(pool: PgPool) {
     let resource_id = create_test_resource(&pool, "Revision Test Employee").await;
     create_ctc_record(&app, &hr_token, resource_id).await;
 
+    let components = build_valid_components_from_preview(
+        &app,
+        &hr_token,
+        resource_id,
+        20000000,
+        3000000,
+        1000000,
+        500000,
+        500000,
+        22,
+        1,
+    )
+    .await;
+
     // Update CTC Component
     let req = Request::builder()
         .method("PUT")
@@ -117,14 +185,7 @@ async fn test_update_ctc_creates_revision(pool: PgPool) {
         .header("Authorization", format!("Bearer {}", hr_token))
         .body(Body::from(
             json!({
-                "components": {
-                    "base_salary": 20000000,
-                    "hra_allowance": 3000000,
-                    "medical_allowance": 1000000,
-                    "transport_allowance": 500000,
-                    "meal_allowance": 500000,
-                    "daily_rate": "800000"
-                },
+                "components": components,
                 "reason": "Promoted to Senior level",
                 "effective_date_policy": "pro_rata"
             })
@@ -260,6 +321,20 @@ async fn test_revision_storage_is_ciphertext_not_plaintext(pool: PgPool) {
     let resource_id = create_test_resource(&pool, "Encryption Revision Test Employee").await;
     create_ctc_record(&app, &hr_token, resource_id).await;
 
+    let components = build_valid_components_from_preview(
+        &app,
+        &hr_token,
+        resource_id,
+        22000000,
+        4000000,
+        1000000,
+        600000,
+        600000,
+        22,
+        1,
+    )
+    .await;
+
     let req_update = Request::builder()
         .method("PUT")
         .uri(format!("/api/v1/ctc/{}/components", resource_id))
@@ -267,14 +342,7 @@ async fn test_revision_storage_is_ciphertext_not_plaintext(pool: PgPool) {
         .header("Authorization", format!("Bearer {}", hr_token))
         .body(Body::from(
             json!({
-                "components": {
-                    "base_salary": 22000000,
-                    "hra_allowance": 4000000,
-                    "medical_allowance": 1000000,
-                    "transport_allowance": 600000,
-                    "meal_allowance": 600000,
-                    "daily_rate": "900000"
-                },
+                "components": components,
                 "reason": "Comp review update"
             })
             .to_string(),
@@ -323,6 +391,20 @@ async fn test_effective_date_policy_is_configurable_and_applied(pool: PgPool) {
     let resource_id = create_test_resource(&pool, "Policy Revision Test Employee").await;
     create_ctc_record(&app, &hr_token, resource_id).await;
 
+    let components = build_valid_components_from_preview(
+        &app,
+        &hr_token,
+        resource_id,
+        20000000,
+        3000000,
+        1000000,
+        500000,
+        500000,
+        22,
+        1,
+    )
+    .await;
+
     let req_update = Request::builder()
         .method("PUT")
         .uri(format!("/api/v1/ctc/{}/components", resource_id))
@@ -330,10 +412,7 @@ async fn test_effective_date_policy_is_configurable_and_applied(pool: PgPool) {
         .header("Authorization", format!("Bearer {}", hr_token))
         .body(Body::from(
             json!({
-                "components": {
-                    "base_salary": 20000000,
-                    "daily_rate": "810000"
-                },
+                "components": components,
                 "reason": "Policy behavior verification",
                 "effective_date_policy": "effective_first_of_month"
             })

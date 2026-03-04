@@ -1,7 +1,7 @@
 use axum::{
     extract::{Path, State},
     http::HeaderMap,
-    routing::{get, post},
+    routing::{get, put},
     Json, Router,
 };
 use chrono::NaiveDate;
@@ -96,6 +96,41 @@ pub struct ProjectBudgetResponse {
     pub overhead_pct: f64,
     pub spent_to_date_idr: i64,
     pub remaining_idr: i64,
+}
+
+// ── Expense DTOs ──────────────────────────────────────────────────────────
+
+#[derive(Debug, Deserialize)]
+pub struct CreateProjectExpenseRequest {
+    pub category: String,
+    pub description: String,
+    pub amount_idr: i64,
+    pub expense_date: NaiveDate,
+    pub vendor: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateProjectExpenseRequest {
+    pub category: Option<String>,
+    pub description: Option<String>,
+    pub amount_idr: Option<i64>,
+    pub expense_date: Option<NaiveDate>,
+    pub vendor: Option<String>,
+    pub edit_reason: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ProjectExpenseResponse {
+    pub id: Uuid,
+    pub project_id: Uuid,
+    pub category: String,
+    pub description: String,
+    pub amount_idr: i64,
+    pub expense_date: NaiveDate,
+    pub vendor: Option<String>,
+    pub created_by: Option<Uuid>,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub updated_at: chrono::DateTime<chrono::Utc>,
 }
 
 /// Assignable project response (minimal fields for assignment dropdown)
@@ -586,7 +621,13 @@ async fn get_project_budget(
         (0.0, 0.0, 0.0, 0.0)
     };
 
-    let spent_to_date_idr: i64 = 0;
+    let spent_to_date_idr: i64 = sqlx::query_scalar!(
+        "SELECT COALESCE(SUM(amount_idr), 0)::BIGINT AS \"total!: i64\" FROM project_expenses WHERE project_id = $1",
+        project_id
+    )
+    .fetch_one(&pool)
+    .await
+    .map_err(|e| AppError::Database(e.to_string()))?;
 
     Ok(Json(ProjectBudgetResponse {
         project_id: project.id,
@@ -719,7 +760,13 @@ async fn set_project_budget(
         (0.0, 0.0, 0.0, 0.0)
     };
 
-    let spent_to_date_idr: i64 = 0;
+    let spent_to_date_idr: i64 = sqlx::query_scalar!(
+        "SELECT COALESCE(SUM(amount_idr), 0)::BIGINT AS \"total!: i64\" FROM project_expenses WHERE project_id = $1",
+        project_id
+    )
+    .fetch_one(&pool)
+    .await
+    .map_err(|e| AppError::Database(e.to_string()))?;
 
     Ok(Json(ProjectBudgetResponse {
         project_id: project.id,
@@ -739,12 +786,292 @@ async fn set_project_budget(
     }))
 }
 
+// ── Expense CRUD Handlers ───────────────────────────────────────────────────
+
+/// Helper: enforce PM-owns-project or admin access for expense endpoints.
+async fn enforce_expense_access(
+    pool: &PgPool,
+    headers: &HeaderMap,
+    project_id: Uuid,
+    action_name: &str,
+) -> Result<Uuid> {
+    let claims = user_claims_from_headers(headers)?
+        .ok_or_else(|| AppError::Authentication("Missing token".into()))?;
+    let user_id = Uuid::parse_str(&claims.sub)
+        .map_err(|_| AppError::Authentication("Invalid user ID".into()))?;
+
+    if claims.role == "project_manager" {
+        let mut conn = pool
+            .acquire()
+            .await
+            .map_err(|e| AppError::Database(e.to_string()))?;
+        let is_pm = crate::services::rbac::is_project_manager(&mut conn, user_id, project_id).await?;
+        if !is_pm {
+            log_audit(
+                pool,
+                Some(user_id),
+                "ACCESS_DENIED",
+                "project_expense",
+                project_id,
+                serde_json::json!({"reason": "not_project_manager", "action": action_name}),
+            )
+            .await
+            .ok();
+            return Err(AppError::Forbidden("Insufficient permissions".into()));
+        }
+    } else if claims.role != "admin" {
+        log_audit(
+            pool,
+            Some(user_id),
+            "ACCESS_DENIED",
+            "project_expense",
+            project_id,
+            serde_json::json!({"reason": "insufficient_role", "attempted_role": claims.role, "action": action_name}),
+        )
+        .await
+        .ok();
+        return Err(AppError::Forbidden("Insufficient permissions".into()));
+    }
+
+    Ok(user_id)
+}
+
+/// Create a project expense.
+async fn create_project_expense(
+    State(pool): State<PgPool>,
+    headers: HeaderMap,
+    Path(project_id): Path<Uuid>,
+    Json(req): Json<CreateProjectExpenseRequest>,
+) -> Result<Json<ProjectExpenseResponse>> {
+    let user_id = enforce_expense_access(&pool, &headers, project_id, "create_expense").await?;
+
+    crate::services::project_service::validate_create_expense(
+        &req.category,
+        req.amount_idr,
+        &req.description,
+    )?;
+
+    // Verify project exists
+    sqlx::query_scalar!("SELECT id FROM projects WHERE id = $1", project_id)
+        .fetch_optional(&pool)
+        .await
+        .map_err(|e| AppError::Database(e.to_string()))?
+        .ok_or_else(|| AppError::NotFound(format!("Project {} not found", project_id)))?;
+
+    let expense = sqlx::query_as!(
+        ProjectExpenseResponse,
+        r#"INSERT INTO project_expenses (project_id, category, description, amount_idr, expense_date, vendor, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         RETURNING id, project_id, category, description, amount_idr, expense_date, vendor, created_by, created_at, updated_at"#,
+        project_id,
+        req.category,
+        req.description,
+        req.amount_idr,
+        req.expense_date,
+        req.vendor,
+        user_id
+    )
+    .fetch_one(&pool)
+    .await
+    .map_err(|e| AppError::Database(e.to_string()))?;
+
+    log_audit(
+        &pool,
+        Some(user_id),
+        "create",
+        "project_expense",
+        expense.id,
+        audit_payload(
+            None,
+            Some(serde_json::json!({
+                "project_id": project_id,
+                "category": req.category,
+                "description": req.description,
+                "amount_idr": req.amount_idr,
+                "expense_date": req.expense_date.to_string(),
+                "vendor": req.vendor,
+            })),
+        ),
+    )
+    .await?;
+
+    Ok(Json(expense))
+}
+
+/// List project expenses (newest first).
+async fn list_project_expenses(
+    State(pool): State<PgPool>,
+    headers: HeaderMap,
+    Path(project_id): Path<Uuid>,
+) -> Result<Json<Vec<ProjectExpenseResponse>>> {
+    let _user_id = enforce_expense_access(&pool, &headers, project_id, "list_expenses").await?;
+
+    sqlx::query_scalar!("SELECT id FROM projects WHERE id = $1", project_id)
+        .fetch_optional(&pool)
+        .await
+        .map_err(|e| AppError::Database(e.to_string()))?
+        .ok_or_else(|| AppError::NotFound(format!("Project {} not found", project_id)))?;
+
+    let expenses = sqlx::query_as!(
+        ProjectExpenseResponse,
+        r#"SELECT id, project_id, category, description, amount_idr, expense_date, vendor, created_by, created_at, updated_at
+         FROM project_expenses
+         WHERE project_id = $1
+         ORDER BY expense_date DESC, created_at DESC"#,
+        project_id
+    )
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| AppError::Database(e.to_string()))?;
+
+    Ok(Json(expenses))
+}
+
+/// Update a project expense (requires edit_reason).
+async fn update_project_expense(
+    State(pool): State<PgPool>,
+    headers: HeaderMap,
+    Path((project_id, expense_id)): Path<(Uuid, Uuid)>,
+    Json(req): Json<UpdateProjectExpenseRequest>,
+) -> Result<Json<ProjectExpenseResponse>> {
+    let user_id = enforce_expense_access(&pool, &headers, project_id, "update_expense").await?;
+
+    crate::services::project_service::validate_update_expense(
+        req.category.as_deref(),
+        req.description.as_deref(),
+        req.amount_idr,
+        &req.edit_reason,
+    )?;
+
+    // Fetch existing expense and verify it belongs to this project
+    let existing = sqlx::query!(
+        "SELECT id, project_id, category, description, amount_idr, expense_date, vendor FROM project_expenses WHERE id = $1 AND project_id = $2",
+        expense_id,
+        project_id
+    )
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| AppError::Database(e.to_string()))?
+    .ok_or_else(|| AppError::NotFound(format!("Expense {} not found in project {}", expense_id, project_id)))?;
+
+    let updated = sqlx::query_as!(
+        ProjectExpenseResponse,
+        r#"UPDATE project_expenses
+         SET category = COALESCE($1, category),
+             description = COALESCE($2, description),
+             amount_idr = COALESCE($3, amount_idr),
+             expense_date = COALESCE($4, expense_date),
+             vendor = CASE
+                 WHEN $5::text IS NULL THEN vendor
+                 WHEN $5::text = '' THEN NULL
+                 ELSE $5::text
+             END,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = $6 AND project_id = $7
+         RETURNING id, project_id, category, description, amount_idr, expense_date, vendor, created_by, created_at, updated_at"#,
+        req.category,
+        req.description,
+        req.amount_idr,
+        req.expense_date,
+        req.vendor,
+        expense_id,
+        project_id
+    )
+    .fetch_one(&pool)
+    .await
+    .map_err(|e| AppError::Database(e.to_string()))?;
+
+    log_audit(
+        &pool,
+        Some(user_id),
+        "update",
+        "project_expense",
+        expense_id,
+        audit_payload(
+            Some(serde_json::json!({
+                "category": existing.category,
+                "description": existing.description,
+                "amount_idr": existing.amount_idr,
+                "expense_date": existing.expense_date.to_string(),
+                "vendor": existing.vendor,
+            })),
+            Some(serde_json::json!({
+                "category": updated.category,
+                "description": updated.description,
+                "amount_idr": updated.amount_idr,
+                "expense_date": updated.expense_date.to_string(),
+                "vendor": updated.vendor,
+                "edit_reason": req.edit_reason,
+            })),
+        ),
+    )
+    .await?;
+
+    Ok(Json(updated))
+}
+
+/// Delete a project expense (hard delete).
+async fn delete_project_expense(
+    State(pool): State<PgPool>,
+    headers: HeaderMap,
+    Path((project_id, expense_id)): Path<(Uuid, Uuid)>,
+) -> Result<Json<serde_json::Value>> {
+    let user_id = enforce_expense_access(&pool, &headers, project_id, "delete_expense").await?;
+
+    // Fetch existing for audit snapshot, verify it belongs to this project
+    let existing = sqlx::query!(
+        "SELECT id, project_id, category, description, amount_idr, expense_date, vendor FROM project_expenses WHERE id = $1 AND project_id = $2",
+        expense_id,
+        project_id
+    )
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| AppError::Database(e.to_string()))?
+    .ok_or_else(|| AppError::NotFound(format!("Expense {} not found in project {}", expense_id, project_id)))?;
+
+    sqlx::query!("DELETE FROM project_expenses WHERE id = $1 AND project_id = $2", expense_id, project_id)
+        .execute(&pool)
+        .await
+        .map_err(|e| AppError::Database(e.to_string()))?;
+
+    log_audit(
+        &pool,
+        Some(user_id),
+        "expense_deleted",
+        "project_expense",
+        expense_id,
+        audit_payload(
+            Some(serde_json::json!({
+                "project_id": project_id,
+                "category": existing.category,
+                "description": existing.description,
+                "amount_idr": existing.amount_idr,
+                "expense_date": existing.expense_date.to_string(),
+                "vendor": existing.vendor,
+            })),
+            None,
+        ),
+    )
+    .await?;
+
+    Ok(Json(serde_json::json!({"message": "Expense deleted successfully"})))
+}
+
+
 /// Create project routes
 pub fn project_routes() -> Router<PgPool> {
     Router::new()
         .route("/projects", get(get_projects).post(create_project))
         .route("/projects/assignable", get(get_assignable_projects))
         .route("/projects/:id/budget", get(get_project_budget).post(set_project_budget))
+        .route(
+            "/projects/:id/expenses",
+            get(list_project_expenses).post(create_project_expense),
+        )
+        .route(
+            "/projects/:id/expenses/:expense_id",
+            put(update_project_expense).delete(delete_project_expense),
+        )
         .route(
             "/projects/:id",
             get(get_project).put(update_project).delete(delete_project),
