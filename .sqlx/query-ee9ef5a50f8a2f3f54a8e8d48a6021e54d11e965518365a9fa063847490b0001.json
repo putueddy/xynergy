@@ -1,0 +1,42 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO holidays (name, date, description)\n        VALUES ($1, $2, $3)\n        RETURNING \n            id,\n            name,\n            date::TEXT as \"date!\",\n            description\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "date!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "description",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Date",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      null,
+      true
+    ]
+  },
+  "hash": "ee9ef5a50f8a2f3f54a8e8d48a6021e54d11e965518365a9fa063847490b0001"
+}

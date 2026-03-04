@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT d.id, d.name, d.head_id, u.first_name || ' ' || u.last_name as head_name\n         FROM departments d\n         LEFT JOIN users u ON d.head_id = u.id\n         WHERE d.id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "head_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "head_name",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      null
+    ]
+  },
+  "hash": "3b1cfacbb7eae75fe4b5c143eb106482e9b50964c6d2deb47c22145837d9c7ce"
+}

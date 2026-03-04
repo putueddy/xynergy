@@ -1,0 +1,63 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO allocations (project_id, resource_id, start_date, end_date, allocation_percentage, include_weekend)\n         VALUES ($1, $2, $3, $4, $5, $6)\n         RETURNING id, project_id, resource_id, start_date, end_date, allocation_percentage, include_weekend",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "project_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "resource_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "start_date",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 4,
+        "name": "end_date",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 5,
+        "name": "allocation_percentage",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 6,
+        "name": "include_weekend",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Date",
+        "Date",
+        "Numeric",
+        "Bool"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "a4a7f8fc1b2a2218e81f659656f9717b98e056aee077c4e35c296427919d301a"
+}

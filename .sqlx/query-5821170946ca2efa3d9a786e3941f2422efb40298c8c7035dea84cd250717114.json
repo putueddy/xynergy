@@ -1,0 +1,105 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO projects (name, client, description, start_date, end_date, status, project_manager_id, total_budget_idr, budget_hr_idr, budget_software_idr, budget_hardware_idr, budget_overhead_idr)\n         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)\n         RETURNING id, name, client, description, start_date, end_date, status, project_manager_id, total_budget_idr, budget_hr_idr, budget_software_idr, budget_hardware_idr, budget_overhead_idr",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "client",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "start_date",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 5,
+        "name": "end_date",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 6,
+        "name": "status",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 7,
+        "name": "project_manager_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 8,
+        "name": "total_budget_idr",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 9,
+        "name": "budget_hr_idr",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 10,
+        "name": "budget_software_idr",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 11,
+        "name": "budget_hardware_idr",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 12,
+        "name": "budget_overhead_idr",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Text",
+        "Text",
+        "Date",
+        "Date",
+        "Varchar",
+        "Uuid",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "5821170946ca2efa3d9a786e3941f2422efb40298c8c7035dea84cd250717114"
+}

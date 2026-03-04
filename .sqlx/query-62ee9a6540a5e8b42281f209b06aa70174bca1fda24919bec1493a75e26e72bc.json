@@ -1,0 +1,63 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO resources (name, resource_type, capacity, department_id, skills, employment_start_date)\n         VALUES ($1, $2, $3, $4, $5, $6)\n         RETURNING id, name, resource_type, capacity, department_id, skills, employment_start_date",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "resource_type",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "capacity",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 4,
+        "name": "department_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 5,
+        "name": "skills",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 6,
+        "name": "employment_start_date",
+        "type_info": "Date"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar",
+        "Numeric",
+        "Uuid",
+        "Jsonb",
+        "Date"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "62ee9a6540a5e8b42281f209b06aa70174bca1fda24919bec1493a75e26e72bc"
+}

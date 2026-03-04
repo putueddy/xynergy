@@ -1,0 +1,64 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, name, client, total_budget_idr, budget_hr_idr, budget_software_idr, budget_hardware_idr, budget_overhead_idr FROM projects WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "client",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "total_budget_idr",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "budget_hr_idr",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 5,
+        "name": "budget_software_idr",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 6,
+        "name": "budget_hardware_idr",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 7,
+        "name": "budget_overhead_idr",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "54ee33a2f1dc78c308bf750cfb0f473156aa3f62bf3c8b61f6fdd398d0c5a81f"
+}

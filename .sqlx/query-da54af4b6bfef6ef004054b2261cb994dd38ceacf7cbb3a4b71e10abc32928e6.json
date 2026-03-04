@@ -1,0 +1,72 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT a.id, a.project_id, a.resource_id, a.start_date, a.end_date, a.allocation_percentage, a.include_weekend,\n                p.name as project_name, r.name as resource_name\n         FROM allocations a\n         JOIN projects p ON a.project_id = p.id\n         JOIN resources r ON a.resource_id = r.id\n         WHERE a.resource_id = $1\n           AND ($2 = FALSE OR p.project_manager_id = $3)\n         ORDER BY a.start_date DESC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "project_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "resource_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "start_date",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 4,
+        "name": "end_date",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 5,
+        "name": "allocation_percentage",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 6,
+        "name": "include_weekend",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 7,
+        "name": "project_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 8,
+        "name": "resource_name",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Bool",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "da54af4b6bfef6ef004054b2261cb994dd38ceacf7cbb3a4b71e10abc32928e6"
+}

@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT MIN(start_date) as min_start, MAX(end_date) as max_end\n             FROM allocations \n             WHERE resource_id = $1 AND id != $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "min_start",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 1,
+        "name": "max_end",
+        "type_info": "Date"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "2816ef7638e775c762c4f187519ef0d540dbdea0f28a4bf4666578253edd553e"
+}

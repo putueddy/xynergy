@@ -1,0 +1,58 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, name, resource_type, capacity, department_id, skills, employment_start_date FROM resources WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "resource_type",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "capacity",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 4,
+        "name": "department_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 5,
+        "name": "skills",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 6,
+        "name": "employment_start_date",
+        "type_info": "Date"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "2d5fb5949891c638eedd0b1ce6bf0e5872b3db538345d96bbe37e2f055b725ae"
+}

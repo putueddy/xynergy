@@ -1,0 +1,58 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, project_id, resource_id, start_date, end_date, allocation_percentage, include_weekend FROM allocations WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "project_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "resource_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "start_date",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 4,
+        "name": "end_date",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 5,
+        "name": "allocation_percentage",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 6,
+        "name": "include_weekend",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "33c1757a875deef054a530d2a3e07b04f712ec6337787097a44eefded5a434e9"
+}

@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS(\n                    SELECT 1\n                    FROM departments d\n                    JOIN resources r ON r.department_id = d.id\n                    JOIN allocations a ON a.resource_id = r.id\n                    WHERE d.head_id = $1\n                      AND a.project_id = $2\n                ) AS \"exists!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "exists!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "760d2fbf900ab1b5a27045d6623870de3e392b2583a3f3445eba9f2d3b908d92"
+}

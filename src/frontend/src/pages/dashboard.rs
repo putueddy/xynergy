@@ -67,7 +67,7 @@ pub fn Dashboard() -> impl IntoView {
 
             match fetch_projects().await {
                 Ok(projects) => {
-                    let active = projects.iter().filter(|p| p.status == "active").count();
+                    let active = projects.iter().filter(|p| p.status == "Active").count();
                     set_active_projects_count.set(active);
 
                     let today = chrono::Local::now().date_naive();

@@ -1,0 +1,57 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO users (email, password_hash, first_name, last_name, role, department_id)\n         VALUES ($1, $2, $3, $4, $5, $6)\n         RETURNING id, email, first_name, last_name, role, department_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "email",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "first_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "last_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "role",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "department_id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "f93a8b15f8ddfe882cb5b2898629b1e8396ad2c81117b3d8536393e181a52180"
+}

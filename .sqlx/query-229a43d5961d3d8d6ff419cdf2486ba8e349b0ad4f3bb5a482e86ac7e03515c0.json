@@ -1,0 +1,38 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, first_name, last_name, email \n         FROM users \n         WHERE role IN ('admin', 'project_manager')\n         ORDER BY last_name, first_name",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "first_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "last_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "email",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "229a43d5961d3d8d6ff419cdf2486ba8e349b0ad4f3bb5a482e86ac7e03515c0"
+}

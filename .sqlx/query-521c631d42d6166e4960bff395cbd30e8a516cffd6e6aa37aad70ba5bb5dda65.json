@@ -1,0 +1,62 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT r.id, r.name, r.resource_type, r.capacity, r.department_id, r.skills, r.employment_start_date,\n                d.name AS \"department_name?\"\n         FROM resources r\n         LEFT JOIN departments d ON d.id = r.department_id\n         ORDER BY r.name",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "resource_type",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "capacity",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 4,
+        "name": "department_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 5,
+        "name": "skills",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 6,
+        "name": "employment_start_date",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 7,
+        "name": "department_name?",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "521c631d42d6166e4960bff395cbd30e8a516cffd6e6aa37aad70ba5bb5dda65"
+}

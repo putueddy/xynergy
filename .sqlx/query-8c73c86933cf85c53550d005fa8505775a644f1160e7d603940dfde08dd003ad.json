@@ -1,0 +1,44 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, name, start_date, end_date, status\n             FROM projects\n             WHERE status = 'Active'\n             ORDER BY name ASC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "start_date",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 3,
+        "name": "end_date",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 4,
+        "name": "status",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "8c73c86933cf85c53550d005fa8505775a644f1160e7d603940dfde08dd003ad"
+}

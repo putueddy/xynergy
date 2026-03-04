@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT start_date, end_date FROM projects WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "start_date",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 1,
+        "name": "end_date",
+        "type_info": "Date"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "4b285d821f91a35305c9cb9feffc7c97614cb53cc38b4d3b530cc6e528f99344"
+}

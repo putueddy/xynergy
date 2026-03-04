@@ -1,0 +1,64 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE resources \n         SET name = COALESCE($1, name),\n             resource_type = COALESCE($2, resource_type),\n             capacity = COALESCE($3, capacity),\n             department_id = COALESCE($4, department_id),\n             skills = COALESCE($5, skills),\n             employment_start_date = COALESCE($6, employment_start_date)\n         WHERE id = $7\n         RETURNING id, name, resource_type, capacity, department_id, skills, employment_start_date",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "resource_type",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "capacity",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 4,
+        "name": "department_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 5,
+        "name": "skills",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 6,
+        "name": "employment_start_date",
+        "type_info": "Date"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar",
+        "Numeric",
+        "Uuid",
+        "Jsonb",
+        "Date",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "ce1b3b61125b121ee216a138b074b4ae92516cd2b0c7959e66afd00e35079629"
+}

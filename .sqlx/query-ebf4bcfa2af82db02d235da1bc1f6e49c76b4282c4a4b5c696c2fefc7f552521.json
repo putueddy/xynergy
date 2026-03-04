@@ -1,0 +1,49 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, start_date, end_date, allocation_percentage, include_weekend\n             FROM allocations \n             WHERE resource_id = $1 \n             AND id != $2\n             AND (\n                 (start_date <= $3 AND end_date >= $3) OR\n                 (start_date <= $4 AND end_date >= $4) OR\n                 (start_date >= $3 AND end_date <= $4)\n             )",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "start_date",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 2,
+        "name": "end_date",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 3,
+        "name": "allocation_percentage",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 4,
+        "name": "include_weekend",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Date",
+        "Date"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "ebf4bcfa2af82db02d235da1bc1f6e49c76b4282c4a4b5c696c2fefc7f552521"
+}

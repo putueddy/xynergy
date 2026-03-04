@@ -1,0 +1,69 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE projects SET total_budget_idr = $1, budget_hr_idr = $2, budget_software_idr = $3, budget_hardware_idr = $4, budget_overhead_idr = $5 WHERE id = $6 RETURNING id, name, client, total_budget_idr, budget_hr_idr, budget_software_idr, budget_hardware_idr, budget_overhead_idr",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "client",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "total_budget_idr",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "budget_hr_idr",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 5,
+        "name": "budget_software_idr",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 6,
+        "name": "budget_hardware_idr",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 7,
+        "name": "budget_overhead_idr",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "9208851adc7c93a303f26a121c0aceb572672d1c327afb622c2f336f2a3a6495"
+}
