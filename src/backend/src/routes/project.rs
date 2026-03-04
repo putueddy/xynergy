@@ -98,6 +98,37 @@ pub struct ProjectBudgetResponse {
     pub remaining_idr: i64,
 }
 
+// ── Resource Cost DTOs ────────────────────────────────────────────────────
+
+#[derive(Debug, Serialize)]
+pub struct ProjectResourceCostResponse {
+    pub project_id: Uuid,
+    pub total_resource_cost_idr: i64,
+    pub employees: Vec<EmployeeResourceCost>,
+    pub monthly_breakdown: Vec<MonthlyResourceCost>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct EmployeeResourceCost {
+    pub resource_id: Uuid,
+    pub resource_name: String,
+    pub daily_rate_idr: Option<i64>,
+    pub days_allocated: i32,
+    pub allocation_percentage: f64,
+    pub total_cost_idr: i64,
+    pub has_rate_change: bool,
+    pub rate_change_note: Option<String>,
+    pub missing_rate: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct MonthlyResourceCost {
+    pub month: String,      // "YYYY-MM"
+    pub working_days: i32,
+    pub cost_idr: i64,
+}
+
+
 // ── Expense DTOs ──────────────────────────────────────────────────────────
 
 #[derive(Debug, Deserialize)]
@@ -621,13 +652,16 @@ async fn get_project_budget(
         (0.0, 0.0, 0.0, 0.0)
     };
 
-    let spent_to_date_idr: i64 = sqlx::query_scalar!(
+    let expense_total_idr: i64 = sqlx::query_scalar!(
         "SELECT COALESCE(SUM(amount_idr), 0)::BIGINT AS \"total!: i64\" FROM project_expenses WHERE project_id = $1",
         project_id
     )
     .fetch_one(&pool)
     .await
     .map_err(|e| AppError::Database(e.to_string()))?;
+
+    let resource_costs = crate::services::project_cost_service::compute_project_resource_costs(&pool, project_id).await?;
+    let spent_to_date_idr = expense_total_idr + resource_costs.total_resource_cost_idr;
 
     Ok(Json(ProjectBudgetResponse {
         project_id: project.id,
@@ -760,13 +794,16 @@ async fn set_project_budget(
         (0.0, 0.0, 0.0, 0.0)
     };
 
-    let spent_to_date_idr: i64 = sqlx::query_scalar!(
+    let expense_total_idr: i64 = sqlx::query_scalar!(
         "SELECT COALESCE(SUM(amount_idr), 0)::BIGINT AS \"total!: i64\" FROM project_expenses WHERE project_id = $1",
         project_id
     )
     .fetch_one(&pool)
     .await
     .map_err(|e| AppError::Database(e.to_string()))?;
+
+    let resource_costs = crate::services::project_cost_service::compute_project_resource_costs(&pool, project_id).await?;
+    let spent_to_date_idr = expense_total_idr + resource_costs.total_resource_cost_idr;
 
     Ok(Json(ProjectBudgetResponse {
         project_id: project.id,
@@ -794,6 +831,7 @@ async fn enforce_expense_access(
     headers: &HeaderMap,
     project_id: Uuid,
     action_name: &str,
+    denied_entity_type: &str,
 ) -> Result<Uuid> {
     let claims = user_claims_from_headers(headers)?
         .ok_or_else(|| AppError::Authentication("Missing token".into()))?;
@@ -811,7 +849,7 @@ async fn enforce_expense_access(
                 pool,
                 Some(user_id),
                 "ACCESS_DENIED",
-                "project_expense",
+                denied_entity_type,
                 project_id,
                 serde_json::json!({"reason": "not_project_manager", "action": action_name}),
             )
@@ -824,7 +862,7 @@ async fn enforce_expense_access(
             pool,
             Some(user_id),
             "ACCESS_DENIED",
-            "project_expense",
+            denied_entity_type,
             project_id,
             serde_json::json!({"reason": "insufficient_role", "attempted_role": claims.role, "action": action_name}),
         )
@@ -843,7 +881,9 @@ async fn create_project_expense(
     Path(project_id): Path<Uuid>,
     Json(req): Json<CreateProjectExpenseRequest>,
 ) -> Result<Json<ProjectExpenseResponse>> {
-    let user_id = enforce_expense_access(&pool, &headers, project_id, "create_expense").await?;
+    let user_id =
+        enforce_expense_access(&pool, &headers, project_id, "create_expense", "project_expense")
+            .await?;
 
     crate::services::project_service::validate_create_expense(
         &req.category,
@@ -904,7 +944,9 @@ async fn list_project_expenses(
     headers: HeaderMap,
     Path(project_id): Path<Uuid>,
 ) -> Result<Json<Vec<ProjectExpenseResponse>>> {
-    let _user_id = enforce_expense_access(&pool, &headers, project_id, "list_expenses").await?;
+    let _user_id =
+        enforce_expense_access(&pool, &headers, project_id, "list_expenses", "project_expense")
+            .await?;
 
     sqlx::query_scalar!("SELECT id FROM projects WHERE id = $1", project_id)
         .fetch_optional(&pool)
@@ -934,7 +976,9 @@ async fn update_project_expense(
     Path((project_id, expense_id)): Path<(Uuid, Uuid)>,
     Json(req): Json<UpdateProjectExpenseRequest>,
 ) -> Result<Json<ProjectExpenseResponse>> {
-    let user_id = enforce_expense_access(&pool, &headers, project_id, "update_expense").await?;
+    let user_id =
+        enforce_expense_access(&pool, &headers, project_id, "update_expense", "project_expense")
+            .await?;
 
     crate::services::project_service::validate_update_expense(
         req.category.as_deref(),
@@ -1016,7 +1060,9 @@ async fn delete_project_expense(
     headers: HeaderMap,
     Path((project_id, expense_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>> {
-    let user_id = enforce_expense_access(&pool, &headers, project_id, "delete_expense").await?;
+    let user_id =
+        enforce_expense_access(&pool, &headers, project_id, "delete_expense", "project_expense")
+            .await?;
 
     // Fetch existing for audit snapshot, verify it belongs to this project
     let existing = sqlx::query!(
@@ -1057,6 +1103,52 @@ async fn delete_project_expense(
     Ok(Json(serde_json::json!({"message": "Expense deleted successfully"})))
 }
 
+// ── Resource Cost Endpoint ────────────────────────────────────────────────
+
+/// Get computed resource costs for a project.
+async fn get_project_resource_costs(
+    State(pool): State<PgPool>,
+    headers: HeaderMap,
+    Path(project_id): Path<Uuid>,
+) -> Result<Json<ProjectResourceCostResponse>> {
+    let _user_id = enforce_expense_access(
+        &pool,
+        &headers,
+        project_id,
+        "get_resource_costs",
+        "project_resource_costs",
+    )
+    .await?;
+
+    let result = crate::services::project_cost_service::compute_project_resource_costs(&pool, project_id).await?;
+
+    let employees = result.employees.into_iter().map(|e| EmployeeResourceCost {
+        resource_id: e.resource_id,
+        resource_name: e.resource_name,
+        daily_rate_idr: e.daily_rate_idr,
+        days_allocated: e.days_allocated,
+        allocation_percentage: e.allocation_percentage,
+        total_cost_idr: e.total_cost_idr,
+        has_rate_change: e.has_rate_change,
+        rate_change_note: e.rate_change_note,
+        missing_rate: e.missing_rate,
+    }).collect();
+
+    let monthly_breakdown = result.monthly_breakdown.into_iter().map(|m| MonthlyResourceCost {
+        month: m.month,
+        working_days: m.working_days,
+        cost_idr: m.cost_idr,
+    }).collect();
+
+    Ok(Json(ProjectResourceCostResponse {
+        project_id: result.project_id,
+        total_resource_cost_idr: result.total_resource_cost_idr,
+        employees,
+        monthly_breakdown,
+    }))
+}
+
+
 
 /// Create project routes
 pub fn project_routes() -> Router<PgPool> {
@@ -1064,6 +1156,7 @@ pub fn project_routes() -> Router<PgPool> {
         .route("/projects", get(get_projects).post(create_project))
         .route("/projects/assignable", get(get_assignable_projects))
         .route("/projects/:id/budget", get(get_project_budget).post(set_project_budget))
+        .route("/projects/:id/resource-costs", get(get_project_resource_costs))
         .route(
             "/projects/:id/expenses",
             get(list_project_expenses).post(create_project_expense),

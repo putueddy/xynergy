@@ -61,6 +61,35 @@ struct ExpenseEditData {
     pub edit_reason: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ResourceCostData {
+    pub project_id: Uuid,
+    pub total_resource_cost_idr: i64,
+    pub employees: Vec<EmployeeResourceCostData>,
+    pub monthly_breakdown: Vec<MonthlyResourceCostData>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct EmployeeResourceCostData {
+    pub resource_id: Uuid,
+    pub resource_name: String,
+    pub daily_rate_idr: Option<i64>,
+    pub days_allocated: i32,
+    pub allocation_percentage: f64,
+    pub total_cost_idr: i64,
+    pub has_rate_change: bool,
+    pub rate_change_note: Option<String>,
+    pub missing_rate: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct MonthlyResourceCostData {
+    pub month: String,
+    pub working_days: i32,
+    pub cost_idr: i64,
+}
+
+
 #[component]
 fn ExpenseFormPanel(
     category: ReadSignal<String>,
@@ -227,6 +256,7 @@ pub fn Projects() -> impl IntoView {
     let (expenses, set_expenses) = create_signal(Vec::<ProjectExpenseData>::new());
     let (show_expense_form, set_show_expense_form) = create_signal(false);
     let (editing_expense, set_editing_expense) = create_signal(Option::<ProjectExpenseData>::None);
+    let (resource_costs, set_resource_costs) = create_signal(Option::<ResourceCostData>::None);
 
     let (expense_category, set_expense_category) = create_signal(String::from("hr"));
     let (expense_description, set_expense_description) = create_signal(String::new());
@@ -327,6 +357,16 @@ pub fn Projects() -> impl IntoView {
         set_show_form.set(false);
         set_editing_project.set(None);
     };
+
+    let handle_view_resource_costs = move |id: Uuid| {
+        spawn_local(async move {
+            match fetch_resource_costs(id).await {
+                Ok(data) => set_resource_costs.set(Some(data)),
+                Err(e) => set_error.set(Some(e)),
+            }
+        });
+    };
+
 
     let handle_view_expenses = move |id: Uuid| {
         if let Some(project) = projects.get().iter().find(|p| p.id == id).cloned() {
@@ -574,6 +614,7 @@ pub fn Projects() -> impl IntoView {
                                                 on_delete=Callback::new(handle_delete)
                                                 on_view_budget=Callback::new(handle_view_budget)
                                                 on_view_expenses=Callback::new(handle_view_expenses)
+                                                on_view_resource_costs=Callback::new(handle_view_resource_costs)
                                             />
                                             {move || {
                                                 selected_budget.get().map(|budget| {
@@ -637,6 +678,101 @@ pub fn Projects() -> impl IntoView {
                                                                     </div>
                                                                 </div>
                                                             </div>
+                                                        </div>
+                                                    }
+                                                })
+                                            }}
+                                            {move || {
+                                                resource_costs.get().map(|costs| {
+                                                    view! {
+                                                        <div class="bg-white dark:bg-gray-800 shadow rounded-lg p-6 mt-6">
+                                                            <div class="flex items-center justify-between mb-4">
+                                                                <h2 class="text-xl font-semibold text-gray-900 dark:text-white">
+                                                                    "Resource Costs"
+                                                                </h2>
+                                                                <div class="flex items-center space-x-4">
+                                                                    <span class="text-lg font-bold text-gray-900 dark:text-white">{format_idr(costs.total_resource_cost_idr)}</span>
+                                                                    <button
+                                                                        class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                                                                        on:click=move |_| set_resource_costs.set(None)
+                                                                    >
+                                                                        "Close"
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+
+                                                            // Employee table
+                                                            <div class="overflow-x-auto mb-6">
+                                                                <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                                                                    <thead class="bg-gray-50 dark:bg-gray-700">
+                                                                        <tr>
+                                                                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">"Employee"</th>
+                                                                            <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">"Daily Rate"</th>
+                                                                            <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">"Days"</th>
+                                                                            <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">"Allocation"</th>
+                                                                            <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">"Total Cost"</th>
+                                                                        </tr>
+                                                                    </thead>
+                                                                    <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                                                                        {costs.employees.into_iter().map(|emp| {
+                                                                            let rate_display = if emp.missing_rate {
+                                                                                "Rate unavailable".to_string()
+                                                                            } else {
+                                                                                emp.daily_rate_idr.map(|r| format_idr(r)).unwrap_or_else(|| "N/A".to_string())
+                                                                            };
+                                                                            let rate_class = if emp.missing_rate {
+                                                                                "px-4 py-3 whitespace-nowrap text-sm text-right text-amber-600 dark:text-amber-400 italic"
+                                                                            } else {
+                                                                                "px-4 py-3 whitespace-nowrap text-sm text-right text-gray-900 dark:text-white"
+                                                                            };
+                                                                            let note = emp.rate_change_note.clone();
+                                                                            view! {
+                                                                                <tr class="hover:bg-gray-50 dark:hover:bg-gray-700">
+                                                                                    <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900 dark:text-white">
+                                                                                        {emp.resource_name}
+                                                                                        {if emp.has_rate_change {
+                                                                                            view! { <span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200">"Rate Changed"</span> }.into_view()
+                                                                                        } else {
+                                                                                            view! { <span></span> }.into_view()
+                                                                                        }}
+                                                                                    </td>
+                                                                                    <td class=rate_class>{rate_display}</td>
+                                                                                    <td class="px-4 py-3 whitespace-nowrap text-sm text-right text-gray-900 dark:text-white">{emp.days_allocated}</td>
+                                                                                    <td class="px-4 py-3 whitespace-nowrap text-sm text-right text-gray-900 dark:text-white">{format!("{:.0}%", emp.allocation_percentage)}</td>
+                                                                                    <td class="px-4 py-3 whitespace-nowrap text-sm text-right font-medium text-gray-900 dark:text-white">{format_idr(emp.total_cost_idr)}</td>
+                                                                                </tr>
+                                                                                {note.map(|n| view! {
+                                                                                    <tr class="bg-yellow-50 dark:bg-yellow-900/10">
+                                                                                        <td colspan="5" class="px-4 py-1 text-xs text-yellow-700 dark:text-yellow-300 italic">{n}</td>
+                                                                                    </tr>
+                                                                                })}
+                                                                            }
+                                                                        }).collect_view()}
+                                                                    </tbody>
+                                                                </table>
+                                                            </div>
+
+                                                            // Monthly breakdown
+                                                            {if !costs.monthly_breakdown.is_empty() {
+                                                                view! {
+                                                                    <div>
+                                                                        <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-3">"Monthly Breakdown"</h3>
+                                                                        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                                                                            {costs.monthly_breakdown.into_iter().map(|m| {
+                                                                                view! {
+                                                                                    <div class="bg-gray-50 dark:bg-gray-700 rounded-lg p-3">
+                                                                                        <p class="text-sm font-medium text-gray-600 dark:text-gray-300">{m.month}</p>
+                                                                                        <p class="text-lg font-bold text-gray-900 dark:text-white">{format_idr(m.cost_idr)}</p>
+                                                                                        <p class="text-xs text-gray-500 dark:text-gray-400">{format!("{} working days", m.working_days)}</p>
+                                                                                    </div>
+                                                                                }
+                                                                            }).collect_view()}
+                                                                        </div>
+                                                                    </div>
+                                                                }.into_view()
+                                                            } else {
+                                                                view! { <div></div> }.into_view()
+                                                            }}
                                                         </div>
                                                     }
                                                 })
@@ -1065,5 +1201,23 @@ async fn delete_project_expense(project_id: Uuid, expense_id: Uuid) -> Result<()
     } else {
         let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
         Err(format!("Failed to delete expense: {}", error_text))
+    }
+}
+
+async fn fetch_resource_costs(project_id: Uuid) -> Result<ResourceCostData, String> {
+    let response = authenticated_get(&format!(
+        "http://localhost:3000/api/v1/projects/{}/resource-costs",
+        project_id
+    ))
+    .await
+    .map_err(|e| format!("Failed to fetch resource costs: {}", e))?;
+
+    if response.status().is_success() {
+        response
+            .json::<ResourceCostData>()
+            .await
+            .map_err(|e| format!("Failed to parse resource costs: {}", e))
+    } else {
+        Err(format!("Failed to fetch resource costs: {}", response.status()))
     }
 }

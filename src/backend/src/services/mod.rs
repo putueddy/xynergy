@@ -8,6 +8,7 @@ pub mod ctc_completeness;
 pub mod ctc_crypto;
 pub mod ctc_validator;
 pub mod key_provider;
+pub mod project_cost_service;
 pub mod project_service;
 pub mod resource_service;
 pub mod rls_context;

@@ -140,7 +140,7 @@ fn period_start_end(period: &str) -> Result<(NaiveDate, NaiveDate)> {
     Ok((start, end))
 }
 
-fn bigdecimal_to_i64_trunc(value: &BigDecimal) -> Result<i64> {
+pub fn bigdecimal_to_i64_trunc(value: &BigDecimal) -> Result<i64> {
     value
         .to_string()
         .split('.')
@@ -150,7 +150,7 @@ fn bigdecimal_to_i64_trunc(value: &BigDecimal) -> Result<i64> {
         .map_err(|_| AppError::Internal("Failed to convert decimal to i64".to_string()))
 }
 
-fn parse_json_decimal(value: &serde_json::Value, field: &str) -> Result<BigDecimal> {
+pub fn parse_json_decimal(value: &serde_json::Value, field: &str) -> Result<BigDecimal> {
     match value {
         serde_json::Value::String(s) => s.parse::<BigDecimal>().map_err(|_| {
             AppError::Internal(format!(
@@ -171,7 +171,7 @@ fn parse_json_decimal(value: &serde_json::Value, field: &str) -> Result<BigDecim
     }
 }
 
-async fn extract_daily_rate_from_allocation_row(
+pub async fn extract_daily_rate_from_allocation_row(
     row: &sqlx::postgres::PgRow,
     crypto_svc: &DefaultCtcCryptoService<EnvKeyProvider>,
 ) -> Result<Option<i64>> {
@@ -222,7 +222,7 @@ async fn extract_daily_rate_from_allocation_row(
     Ok(None)
 }
 
-async fn load_holidays(tx: &mut Transaction<'_, Postgres>) -> Result<Vec<NaiveDate>> {
+pub async fn load_holidays(tx: &mut Transaction<'_, Postgres>) -> Result<Vec<NaiveDate>> {
     let holiday_rows = sqlx::query("SELECT date::TEXT as date FROM holidays")
         .fetch_all(&mut **tx)
         .await
