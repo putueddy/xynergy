@@ -4,7 +4,7 @@ use crate::auth::{
 };
 use crate::components::project_list::Project;
 use crate::components::{project_form::ProjectFormData, Footer, Header, ProjectForm, ProjectList};
-use chrono::NaiveDate;
+use chrono::{Datelike, NaiveDate};
 use leptos::*;
 use leptos_router::*;
 use serde::{Deserialize, Serialize};
@@ -35,7 +35,7 @@ struct ProjectExpenseData {
     pub category: String,
     pub description: String,
     pub amount_idr: i64,
-    pub expense_date: String,  // NaiveDate serializes as string
+    pub expense_date: String, // NaiveDate serializes as string
     pub vendor: Option<String>,
     pub created_by: Option<Uuid>,
     pub created_at: String,
@@ -88,7 +88,39 @@ struct MonthlyResourceCostData {
     pub working_days: i32,
     pub cost_idr: i64,
 }
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ProjectRevenueGridResponse {
+    pub project_id: Uuid,
+    pub year: i32,
+    pub months: Vec<MonthRevenueEntry>,
+    pub ytd_total_idr: i64,
+}
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct MonthRevenueEntry {
+    pub month: u32,
+    pub month_label: String,
+    pub revenue_id: Option<Uuid>,
+    pub amount_idr: i64,
+    pub source_type: Option<String>,
+    pub source_reference: Option<String>,
+    pub entered_by: Option<Uuid>,
+    pub entry_date: Option<String>, // NaiveDate serializes as string
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct UpsertProjectRevenueRequest {
+    pub revenue_month: String,
+    pub amount_idr: i64,
+    pub override_erp: bool,
+    pub source_reference: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct RevenueSavePayload {
+    project_id: Uuid,
+    request: UpsertProjectRevenueRequest,
+}
 
 #[component]
 fn ExpenseFormPanel(
@@ -252,11 +284,66 @@ pub fn Projects() -> impl IntoView {
     let (show_form, set_show_form) = create_signal(false);
     let (editing_project, set_editing_project) = create_signal(Option::<Project>::None);
     let (selected_budget, set_selected_budget) = create_signal(Option::<ProjectBudgetData>::None);
-    let (selected_project_for_expenses, set_selected_project_for_expenses) = create_signal(Option::<Project>::None);
+    let (selected_project_for_expenses, set_selected_project_for_expenses) =
+        create_signal(Option::<Project>::None);
     let (expenses, set_expenses) = create_signal(Vec::<ProjectExpenseData>::new());
     let (show_expense_form, set_show_expense_form) = create_signal(false);
     let (editing_expense, set_editing_expense) = create_signal(Option::<ProjectExpenseData>::None);
     let (resource_costs, set_resource_costs) = create_signal(Option::<ResourceCostData>::None);
+    let (revenue_year, set_revenue_year) = create_signal(chrono::Utc::now().year());
+    let (revenue_project_id, set_revenue_project_id) = create_signal(Option::<Uuid>::None);
+    let (revenue_reload_nonce, set_revenue_reload_nonce) = create_signal(0u64);
+    let (revenue_edit_month, set_revenue_edit_month) = create_signal(Option::<u32>::None);
+    let (revenue_edit_amount, set_revenue_edit_amount) = create_signal(String::new());
+
+    let revenue_grid_resource = create_resource(
+        move || {
+            (
+                revenue_project_id.get(),
+                revenue_year.get(),
+                revenue_reload_nonce.get(),
+            )
+        },
+        move |(project_id, year, _reload_nonce)| async move {
+            match project_id {
+                Some(pid) => Some(fetch_project_revenue(pid, year).await),
+                None => None,
+            }
+        },
+    );
+
+    let revenue_grid = Signal::derive(move || {
+        revenue_grid_resource
+            .get()
+            .and_then(|result| result)
+            .and_then(|result| result.ok())
+    });
+
+    let revenue_save_action = create_action(move |payload: &RevenueSavePayload| {
+        let payload = payload.clone();
+        async move { upsert_project_revenue(payload.project_id, payload.request).await }
+    });
+
+    let revenue_saving = Signal::derive(move || revenue_save_action.pending().get());
+
+    create_effect(move |_| {
+        if let Some(Some(Err(e))) = revenue_grid_resource.get() {
+            set_error.set(Some(e));
+        }
+    });
+
+    create_effect(move |_| {
+        if let Some(result) = revenue_save_action.value().get() {
+            match result {
+                Ok(_) => {
+                    set_revenue_edit_month.set(None);
+                    set_revenue_edit_amount.set(String::new());
+                    set_revenue_reload_nonce.update(|value| *value += 1);
+                }
+                Err(e) => set_error.set(Some(e)),
+            }
+        }
+    });
 
     let (expense_category, set_expense_category) = create_signal(String::from("hr"));
     let (expense_description, set_expense_description) = create_signal(String::new());
@@ -367,6 +454,44 @@ pub fn Projects() -> impl IntoView {
         });
     };
 
+    let handle_view_revenue = move |id: Uuid| {
+        set_revenue_project_id.set(Some(id));
+        set_revenue_edit_month.set(None);
+        set_revenue_edit_amount.set(String::new());
+    };
+
+    let handle_revenue_save = move |month: u32| {
+        let project_id = match revenue_project_id.get() {
+            Some(id) => id,
+            None => return,
+        };
+        let amount_str = revenue_edit_amount.get();
+        let amount: i64 = match amount_str.trim().parse() {
+            Ok(v) if v >= 0 => v,
+            _ => {
+                set_error.set(Some("Amount must be a non-negative integer".to_string()));
+                return;
+            }
+        };
+        let year = revenue_year.get();
+        let revenue_month = format!("{}-{:02}", year, month);
+        let override_erp = revenue_grid
+            .get()
+            .and_then(|g| g.months.iter().find(|m| m.month == month).cloned())
+            .and_then(|m| m.source_type)
+            .map(|s| s == "erp_synced")
+            .unwrap_or(false);
+        let req = UpsertProjectRevenueRequest {
+            revenue_month,
+            amount_idr: amount,
+            override_erp,
+            source_reference: None,
+        };
+        revenue_save_action.dispatch(RevenueSavePayload {
+            project_id,
+            request: req,
+        });
+    };
 
     let handle_view_expenses = move |id: Uuid| {
         if let Some(project) = projects.get().iter().find(|p| p.id == id).cloned() {
@@ -379,7 +504,7 @@ pub fn Projects() -> impl IntoView {
                         let mut sorted_data = data;
                         sorted_data.sort_by(|a, b| b.expense_date.cmp(&a.expense_date));
                         set_expenses.set(sorted_data);
-                    },
+                    }
                     Err(e) => set_error.set(Some(e)),
                 }
                 set_loading.set(false);
@@ -407,11 +532,11 @@ pub fn Projects() -> impl IntoView {
             Some(p) => p.id,
             None => return,
         };
-        
+
         let editing = editing_expense.get();
         let is_edit = editing.is_some();
         let expense_id = editing.map(|e| e.id);
-        
+
         let form_data = ExpenseEditData {
             category: expense_category.get(),
             description: expense_description.get(),
@@ -428,13 +553,17 @@ pub fn Projects() -> impl IntoView {
             let result = if is_edit {
                 update_project_expense(project_id, expense_id.unwrap(), form_data).await
             } else {
-                create_project_expense(project_id, ExpenseFormData {
-                    category: form_data.category,
-                    description: form_data.description,
-                    amount_idr: form_data.amount_idr,
-                    expense_date: form_data.expense_date,
-                    vendor: form_data.vendor,
-                }).await
+                create_project_expense(
+                    project_id,
+                    ExpenseFormData {
+                        category: form_data.category,
+                        description: form_data.description,
+                        amount_idr: form_data.amount_idr,
+                        expense_date: form_data.expense_date,
+                        vendor: form_data.vendor,
+                    },
+                )
+                .await
             };
 
             match result {
@@ -446,10 +575,10 @@ pub fn Projects() -> impl IntoView {
                             set_expenses.set(sorted_data);
                             set_show_expense_form.set(false);
                             set_editing_expense.set(None);
-                        },
+                        }
                         Err(e) => set_error.set(Some(e)),
                     }
-                    
+
                     match fetch_projects().await {
                         Ok(data) => set_projects.set(data),
                         Err(e) => set_error.set(Some(e)),
@@ -475,7 +604,7 @@ pub fn Projects() -> impl IntoView {
             Some(p) => p.id,
             None => return,
         };
-        
+
         spawn_local(async move {
             set_loading.set(true);
             set_error.set(None);
@@ -487,10 +616,10 @@ pub fn Projects() -> impl IntoView {
                             let mut sorted_data = data;
                             sorted_data.sort_by(|a, b| b.expense_date.cmp(&a.expense_date));
                             set_expenses.set(sorted_data);
-                        },
+                        }
                         Err(e) => set_error.set(Some(e)),
                     }
-                    
+
                     match fetch_projects().await {
                         Ok(data) => set_projects.set(data),
                         Err(e) => set_error.set(Some(e)),
@@ -615,6 +744,7 @@ pub fn Projects() -> impl IntoView {
                                                 on_view_budget=Callback::new(handle_view_budget)
                                                 on_view_expenses=Callback::new(handle_view_expenses)
                                                 on_view_resource_costs=Callback::new(handle_view_resource_costs)
+                                                on_view_revenue=Callback::new(handle_view_revenue)
                                             />
                                             {move || {
                                                 selected_budget.get().map(|budget| {
@@ -779,6 +909,159 @@ pub fn Projects() -> impl IntoView {
                                             }}
                                         }.into_view()
                                     }
+                                }}
+                                {move || {
+                                    revenue_grid.get().map(|grid| {
+                                        let year = grid.year;
+                                        let ytd = grid.ytd_total_idr;
+                                        view! {
+                                            <div class="bg-white dark:bg-gray-800 shadow rounded-lg p-6 mt-6">
+                                                <div class="flex items-center justify-between mb-4">
+                                                    <h2 class="text-xl font-semibold text-gray-900 dark:text-white">
+                                                        "Revenue"
+                                                    </h2>
+                                                    <div class="flex items-center space-x-4">
+                                                        <button
+                                                            class="text-gray-600 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200 px-2"
+                                                            on:click=move |_| {
+                                                                let new_year = revenue_year.get() - 1;
+                                                                set_revenue_year.set(new_year);
+                                                            }
+                                                        >
+                                                            "◀"
+                                                        </button>
+                                                        <span class="text-lg font-bold text-gray-900 dark:text-white">{year}</span>
+                                                        <button
+                                                            class="text-gray-600 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200 px-2"
+                                                            on:click=move |_| {
+                                                                let new_year = revenue_year.get() + 1;
+                                                                set_revenue_year.set(new_year);
+                                                            }
+                                                        >
+                                                            "▶"
+                                                        </button>
+                                                        <button
+                                                            class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                                                            on:click=move |_| {
+                                                                set_revenue_project_id.set(None);
+                                                                set_revenue_edit_month.set(None);
+                                                                set_revenue_edit_amount.set(String::new());
+                                                            }
+                                                        >
+                                                            "Close"
+                                                        </button>
+                                                    </div>
+                                                </div>
+
+                                                <div class="overflow-x-auto mb-4">
+                                                    <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                                                        <thead class="bg-gray-50 dark:bg-gray-700">
+                                                            <tr>
+                                                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">"Month"</th>
+                                                                <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">"Amount (IDR)"</th>
+                                                                <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">"Source"</th>
+                                                                <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">"Entry Date"</th>
+                                                                <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">"Entered By"</th>
+                                                                <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">"Actions"</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                                                            {grid.months.into_iter().map(|entry| {
+                                                                let month_num = entry.month;
+                                                                let is_erp = entry.source_type.as_deref() == Some("erp_synced");
+                                                                let has_data = entry.revenue_id.is_some();
+                                                                let source_badge = match entry.source_type.as_deref() {
+                                                                    Some("manual") => view! { <span class="px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">"Manual"</span> }.into_view(),
+                                                                    Some("erp_synced") => view! { <span class="px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">"ERP Synced"</span> }.into_view(),
+                                                                    Some("manual_override") => view! { <span class="px-2 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200">"Override"</span> }.into_view(),
+                                                                    _ => view! { <span class="text-xs text-gray-400">"—"</span> }.into_view(),
+                                                                };
+                                                                let entry_date_str = entry.entry_date.unwrap_or_else(|| "—".to_string());
+                                                                let entered_by_str = entry
+                                                                    .entered_by
+                                                                    .map(|user_id| user_id.to_string())
+                                                                    .unwrap_or_else(|| "—".to_string());
+                                                                view! {
+                                                                    <tr class="hover:bg-gray-50 dark:hover:bg-gray-700">
+                                                                        <td class="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">{entry.month_label}</td>
+                                                                        <td class="px-4 py-3 whitespace-nowrap text-sm text-right text-gray-900 dark:text-white">
+                                                                            {move || {
+                                                                                if revenue_edit_month.get() == Some(month_num) {
+                                                                                    view! {
+                                                                                        <input
+                                                                                            type="number"
+                                                                                            class="input w-32 text-right"
+                                                                                            prop:value=revenue_edit_amount
+                                                                                            on:input=move |ev| set_revenue_edit_amount.set(event_target_value(&ev))
+                                                                                        />
+                                                                                    }.into_view()
+                                                                                } else {
+                                                                                    view! { <span>{format_idr(entry.amount_idr)}</span> }.into_view()
+                                                                                }
+                                                                            }}
+                                                                        </td>
+                                                                        <td class="px-4 py-3 whitespace-nowrap text-sm text-center">{source_badge}</td>
+                                                                        <td class="px-4 py-3 whitespace-nowrap text-sm text-center text-gray-500 dark:text-gray-400">{entry_date_str}</td>
+                                                                        <td class="px-4 py-3 whitespace-nowrap text-xs text-center font-mono text-gray-500 dark:text-gray-400">{entered_by_str}</td>
+                                                                        <td class="px-4 py-3 whitespace-nowrap text-right text-sm font-medium">
+                                                                            {move || {
+                                                                                if revenue_edit_month.get() == Some(month_num) {
+                                                                                    view! {
+                                                                                        <button
+                                                                                            class="text-green-600 hover:text-green-900 dark:text-green-400 mr-2"
+                                                                                            prop:disabled=revenue_saving
+                                                                                            on:click=move |_| handle_revenue_save(month_num)
+                                                                                        >
+                                                                                            "Save"
+                                                                                        </button>
+                                                                                        <button
+                                                                                            class="text-gray-500 hover:text-gray-700 dark:text-gray-400"
+                                                                                            on:click=move |_| set_revenue_edit_month.set(None)
+                                                                                        >
+                                                                                            "Cancel"
+                                                                                        </button>
+                                                                                    }.into_view()
+                                                                                } else if is_erp {
+                                                                                    view! {
+                                                                                        <button
+                                                                                            class="text-orange-600 hover:text-orange-900 dark:text-orange-400"
+                                                                                            on:click=move |_| {
+                                                                                                set_revenue_edit_month.set(Some(month_num));
+                                                                                                set_revenue_edit_amount.set(entry.amount_idr.to_string());
+                                                                                            }
+                                                                                        >
+                                                                                            "Override"
+                                                                                        </button>
+                                                                                    }.into_view()
+                                                                                } else {
+                                                                                    view! {
+                                                                                        <button
+                                                                                            class="text-blue-600 hover:text-blue-900 dark:text-blue-400"
+                                                                                            on:click=move |_| {
+                                                                                                set_revenue_edit_month.set(Some(month_num));
+                                                                                                set_revenue_edit_amount.set(if has_data { entry.amount_idr.to_string() } else { String::new() });
+                                                                                            }
+                                                                                        >
+                                                                                            {if has_data { "Edit" } else { "Enter" }}
+                                                                                        </button>
+                                                                                    }.into_view()
+                                                                                }
+                                                                            }}
+                                                                        </td>
+                                                                    </tr>
+                                                                }
+                                                            }).collect_view()}
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+
+                                                <div class="flex justify-between items-center p-3 bg-teal-50 dark:bg-teal-900/20 rounded">
+                                                    <span class="text-sm font-medium text-teal-700 dark:text-teal-300">"Year-to-Date Total"</span>
+                                                    <span class="text-lg font-bold text-teal-800 dark:text-teal-200">{format_idr(ytd)}</span>
+                                                </div>
+                                            </div>
+                                        }
+                                    })
                                 }}
                                 {move || {
                                     selected_project_for_expenses.get().map(|project| {
@@ -955,9 +1238,12 @@ fn parse_budget_input(raw: &str, field_name: &str) -> Result<i64, String> {
 }
 
 /// Create a new project
-async fn create_project(form_data: ProjectFormData, current_user_id: Option<Uuid>) -> Result<(), String> {
-    let project_manager_id = current_user_id
-        .ok_or_else(|| "Unable to determine authenticated user".to_string())?;
+async fn create_project(
+    form_data: ProjectFormData,
+    current_user_id: Option<Uuid>,
+) -> Result<(), String> {
+    let project_manager_id =
+        current_user_id.ok_or_else(|| "Unable to determine authenticated user".to_string())?;
 
     let start_date = NaiveDate::parse_from_str(&form_data.start_date, "%Y-%m-%d")
         .map_err(|_| "Invalid start date".to_string())?;
@@ -969,14 +1255,18 @@ async fn create_project(form_data: ProjectFormData, current_user_id: Option<Uuid
 
     let total_budget_idr = parse_budget_input(&form_data.total_budget_idr, "Total budget")?;
     let budget_hr_idr = parse_budget_input(&form_data.budget_hr_idr, "HR budget")?;
-    let budget_software_idr = parse_budget_input(&form_data.budget_software_idr, "Software budget")?;
-    let budget_hardware_idr = parse_budget_input(&form_data.budget_hardware_idr, "Hardware budget")?;
-    let budget_overhead_idr = parse_budget_input(&form_data.budget_overhead_idr, "Overhead budget")?;
+    let budget_software_idr =
+        parse_budget_input(&form_data.budget_software_idr, "Software budget")?;
+    let budget_hardware_idr =
+        parse_budget_input(&form_data.budget_hardware_idr, "Hardware budget")?;
+    let budget_overhead_idr =
+        parse_budget_input(&form_data.budget_overhead_idr, "Overhead budget")?;
 
     if total_budget_idr <= 0 {
         return Err("Total budget must be greater than 0".to_string());
     }
-    let budget_sum = budget_hr_idr + budget_software_idr + budget_hardware_idr + budget_overhead_idr;
+    let budget_sum =
+        budget_hr_idr + budget_software_idr + budget_hardware_idr + budget_overhead_idr;
     if budget_sum != total_budget_idr {
         return Err(format!(
             "Budget categories sum ({}) must equal total budget ({})",
@@ -1031,14 +1321,18 @@ async fn update_project(
 
     let total_budget_idr = parse_budget_input(&form_data.total_budget_idr, "Total budget")?;
     let budget_hr_idr = parse_budget_input(&form_data.budget_hr_idr, "HR budget")?;
-    let budget_software_idr = parse_budget_input(&form_data.budget_software_idr, "Software budget")?;
-    let budget_hardware_idr = parse_budget_input(&form_data.budget_hardware_idr, "Hardware budget")?;
-    let budget_overhead_idr = parse_budget_input(&form_data.budget_overhead_idr, "Overhead budget")?;
+    let budget_software_idr =
+        parse_budget_input(&form_data.budget_software_idr, "Software budget")?;
+    let budget_hardware_idr =
+        parse_budget_input(&form_data.budget_hardware_idr, "Hardware budget")?;
+    let budget_overhead_idr =
+        parse_budget_input(&form_data.budget_overhead_idr, "Overhead budget")?;
 
     if total_budget_idr <= 0 {
         return Err("Total budget must be greater than 0".to_string());
     }
-    let budget_sum = budget_hr_idr + budget_software_idr + budget_hardware_idr + budget_overhead_idr;
+    let budget_sum =
+        budget_hr_idr + budget_software_idr + budget_hardware_idr + budget_overhead_idr;
     if budget_sum != total_budget_idr {
         return Err(format!(
             "Budget categories sum ({}) must equal total budget ({})",
@@ -1143,12 +1437,19 @@ async fn create_project_expense(project_id: Uuid, data: ExpenseFormData) -> Resu
     if response.status().is_success() {
         Ok(())
     } else {
-        let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+        let error_text = response
+            .text()
+            .await
+            .unwrap_or_else(|_| "Unknown error".to_string());
         Err(format!("Failed to create expense: {}", error_text))
     }
 }
 
-async fn update_project_expense(project_id: Uuid, expense_id: Uuid, data: ExpenseEditData) -> Result<(), String> {
+async fn update_project_expense(
+    project_id: Uuid,
+    expense_id: Uuid,
+    data: ExpenseEditData,
+) -> Result<(), String> {
     let amount_idr = parse_budget_input(&data.amount_idr, "Amount")?;
     if amount_idr <= 0 {
         return Err("Amount must be greater than 0".to_string());
@@ -1183,7 +1484,10 @@ async fn update_project_expense(project_id: Uuid, expense_id: Uuid, data: Expens
     if response.status().is_success() {
         Ok(())
     } else {
-        let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+        let error_text = response
+            .text()
+            .await
+            .unwrap_or_else(|_| "Unknown error".to_string());
         Err(format!("Failed to update expense: {}", error_text))
     }
 }
@@ -1199,7 +1503,10 @@ async fn delete_project_expense(project_id: Uuid, expense_id: Uuid) -> Result<()
     if response.status().is_success() {
         Ok(())
     } else {
-        let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+        let error_text = response
+            .text()
+            .await
+            .unwrap_or_else(|_| "Unknown error".to_string());
         Err(format!("Failed to delete expense: {}", error_text))
     }
 }
@@ -1218,6 +1525,55 @@ async fn fetch_resource_costs(project_id: Uuid) -> Result<ResourceCostData, Stri
             .await
             .map_err(|e| format!("Failed to parse resource costs: {}", e))
     } else {
-        Err(format!("Failed to fetch resource costs: {}", response.status()))
+        Err(format!(
+            "Failed to fetch resource costs: {}",
+            response.status()
+        ))
+    }
+}
+
+async fn fetch_project_revenue(
+    project_id: Uuid,
+    year: i32,
+) -> Result<ProjectRevenueGridResponse, String> {
+    let response = authenticated_get(&format!(
+        "http://localhost:3000/api/v1/projects/{}/revenue?year={}",
+        project_id, year
+    ))
+    .await
+    .map_err(|e| format!("Failed to fetch revenue: {}", e))?;
+
+    if response.status().is_success() {
+        response
+            .json::<ProjectRevenueGridResponse>()
+            .await
+            .map_err(|e| format!("Failed to parse revenue: {}", e))
+    } else {
+        Err(format!("Failed to fetch revenue: {}", response.status()))
+    }
+}
+
+async fn upsert_project_revenue(
+    project_id: Uuid,
+    req: UpsertProjectRevenueRequest,
+) -> Result<(), String> {
+    let response = authenticated_post_json(
+        &format!(
+            "http://localhost:3000/api/v1/projects/{}/revenue",
+            project_id
+        ),
+        &req,
+    )
+    .await
+    .map_err(|e| format!("Failed to save revenue: {}", e))?;
+
+    if response.status().is_success() {
+        Ok(())
+    } else {
+        let error_text = response
+            .text()
+            .await
+            .unwrap_or_else(|_| "Unknown error".to_string());
+        Err(format!("Failed to save revenue: {}", error_text))
     }
 }

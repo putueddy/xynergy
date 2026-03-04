@@ -1,12 +1,12 @@
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::HeaderMap,
     routing::{get, put},
     Json, Router,
 };
-use chrono::NaiveDate;
+use chrono::{Datelike, NaiveDate};
 use serde::{Deserialize, Serialize};
-use sqlx::PgPool;
+use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
 use crate::error::{AppError, Result};
@@ -123,11 +123,10 @@ pub struct EmployeeResourceCost {
 
 #[derive(Debug, Serialize)]
 pub struct MonthlyResourceCost {
-    pub month: String,      // "YYYY-MM"
+    pub month: String, // "YYYY-MM"
     pub working_days: i32,
     pub cost_idr: i64,
 }
-
 
 // ── Expense DTOs ──────────────────────────────────────────────────────────
 
@@ -162,6 +161,66 @@ pub struct ProjectExpenseResponse {
     pub created_by: Option<Uuid>,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpsertProjectRevenueRequest {
+    pub revenue_month: String,
+    pub amount_idr: i64,
+    #[serde(default)]
+    pub override_erp: bool,
+    pub source_reference: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ProjectRevenueRowResponse {
+    pub id: Uuid,
+    pub project_id: Uuid,
+    pub revenue_month: NaiveDate,
+    pub amount_idr: i64,
+    pub source_type: String,
+    pub source_reference: Option<String>,
+    pub entered_by: Option<Uuid>,
+    pub entry_date: NaiveDate,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub updated_at: chrono::DateTime<chrono::Utc>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ProjectRevenueGridResponse {
+    pub project_id: Uuid,
+    pub year: i32,
+    pub months: Vec<MonthRevenueEntry>,
+    pub ytd_total_idr: i64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct MonthRevenueEntry {
+    pub month: u32,
+    pub month_label: String,
+    pub revenue_id: Option<Uuid>,
+    pub amount_idr: i64,
+    pub source_type: Option<String>,
+    pub source_reference: Option<String>,
+    pub entered_by: Option<Uuid>,
+    pub entry_date: Option<NaiveDate>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct IngestErpRevenueRequest {
+    pub revenue_month: String,
+    pub amount_idr: i64,
+    pub source_reference: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct ProjectRevenueQuery {
+    #[serde(default = "default_revenue_year")]
+    year: i32,
+}
+
+fn default_revenue_year() -> i32 {
+    chrono::Utc::now().date_naive().year()
 }
 
 /// Assignable project response (minimal fields for assignment dropdown)
@@ -324,15 +383,14 @@ async fn create_project(
 ) -> Result<Json<ProjectResponse>> {
     let user_id = user_id_from_headers(&headers)?;
     let claims = user_claims_from_headers(&headers)?;
-    let assigned_project_manager_id = if claims
-        .as_ref()
-        .is_some_and(|c| c.role == "project_manager")
-        && req.project_manager_id.is_none()
-    {
-        user_id
-    } else {
-        req.project_manager_id
-    };
+    let assigned_project_manager_id =
+        if claims.as_ref().is_some_and(|c| c.role == "project_manager")
+            && req.project_manager_id.is_none()
+        {
+            user_id
+        } else {
+            req.project_manager_id
+        };
 
     let has_budget_values = req.total_budget_idr != 0
         || req.budget_hr_idr != 0
@@ -445,15 +503,9 @@ async fn update_project(
     let after_budget_overhead_idr = existing.budget_overhead_idr;
     let merged_total_budget_idr = req.total_budget_idr.unwrap_or(after_total_budget_idr);
     let merged_budget_hr_idr = req.budget_hr_idr.unwrap_or(after_budget_hr_idr);
-    let merged_budget_software_idr = req
-        .budget_software_idr
-        .unwrap_or(after_budget_software_idr);
-    let merged_budget_hardware_idr = req
-        .budget_hardware_idr
-        .unwrap_or(after_budget_hardware_idr);
-    let merged_budget_overhead_idr = req
-        .budget_overhead_idr
-        .unwrap_or(after_budget_overhead_idr);
+    let merged_budget_software_idr = req.budget_software_idr.unwrap_or(after_budget_software_idr);
+    let merged_budget_hardware_idr = req.budget_hardware_idr.unwrap_or(after_budget_hardware_idr);
+    let merged_budget_overhead_idr = req.budget_overhead_idr.unwrap_or(after_budget_overhead_idr);
 
     if req.total_budget_idr.is_some()
         || req.budget_hr_idr.is_some()
@@ -613,7 +665,8 @@ async fn get_project_budget(
             .acquire()
             .await
             .map_err(|e| AppError::Database(e.to_string()))?;
-        let is_pm = crate::services::rbac::is_project_manager(&mut conn, user_id, project_id).await?;
+        let is_pm =
+            crate::services::rbac::is_project_manager(&mut conn, user_id, project_id).await?;
         if !is_pm {
             log_audit(
                 &pool,
@@ -660,7 +713,9 @@ async fn get_project_budget(
     .await
     .map_err(|e| AppError::Database(e.to_string()))?;
 
-    let resource_costs = crate::services::project_cost_service::compute_project_resource_costs(&pool, project_id).await?;
+    let resource_costs =
+        crate::services::project_cost_service::compute_project_resource_costs(&pool, project_id)
+            .await?;
     let spent_to_date_idr = expense_total_idr + resource_costs.total_resource_cost_idr;
 
     Ok(Json(ProjectBudgetResponse {
@@ -697,7 +752,8 @@ async fn set_project_budget(
             .acquire()
             .await
             .map_err(|e| AppError::Database(e.to_string()))?;
-        let is_pm = crate::services::rbac::is_project_manager(&mut conn, user_id, project_id).await?;
+        let is_pm =
+            crate::services::rbac::is_project_manager(&mut conn, user_id, project_id).await?;
         if !is_pm {
             log_audit(
                 &pool,
@@ -802,7 +858,9 @@ async fn set_project_budget(
     .await
     .map_err(|e| AppError::Database(e.to_string()))?;
 
-    let resource_costs = crate::services::project_cost_service::compute_project_resource_costs(&pool, project_id).await?;
+    let resource_costs =
+        crate::services::project_cost_service::compute_project_resource_costs(&pool, project_id)
+            .await?;
     let spent_to_date_idr = expense_total_idr + resource_costs.total_resource_cost_idr;
 
     Ok(Json(ProjectBudgetResponse {
@@ -843,7 +901,8 @@ async fn enforce_expense_access(
             .acquire()
             .await
             .map_err(|e| AppError::Database(e.to_string()))?;
-        let is_pm = crate::services::rbac::is_project_manager(&mut conn, user_id, project_id).await?;
+        let is_pm =
+            crate::services::rbac::is_project_manager(&mut conn, user_id, project_id).await?;
         if !is_pm {
             log_audit(
                 pool,
@@ -881,9 +940,14 @@ async fn create_project_expense(
     Path(project_id): Path<Uuid>,
     Json(req): Json<CreateProjectExpenseRequest>,
 ) -> Result<Json<ProjectExpenseResponse>> {
-    let user_id =
-        enforce_expense_access(&pool, &headers, project_id, "create_expense", "project_expense")
-            .await?;
+    let user_id = enforce_expense_access(
+        &pool,
+        &headers,
+        project_id,
+        "create_expense",
+        "project_expense",
+    )
+    .await?;
 
     crate::services::project_service::validate_create_expense(
         &req.category,
@@ -944,9 +1008,14 @@ async fn list_project_expenses(
     headers: HeaderMap,
     Path(project_id): Path<Uuid>,
 ) -> Result<Json<Vec<ProjectExpenseResponse>>> {
-    let _user_id =
-        enforce_expense_access(&pool, &headers, project_id, "list_expenses", "project_expense")
-            .await?;
+    let _user_id = enforce_expense_access(
+        &pool,
+        &headers,
+        project_id,
+        "list_expenses",
+        "project_expense",
+    )
+    .await?;
 
     sqlx::query_scalar!("SELECT id FROM projects WHERE id = $1", project_id)
         .fetch_optional(&pool)
@@ -976,9 +1045,14 @@ async fn update_project_expense(
     Path((project_id, expense_id)): Path<(Uuid, Uuid)>,
     Json(req): Json<UpdateProjectExpenseRequest>,
 ) -> Result<Json<ProjectExpenseResponse>> {
-    let user_id =
-        enforce_expense_access(&pool, &headers, project_id, "update_expense", "project_expense")
-            .await?;
+    let user_id = enforce_expense_access(
+        &pool,
+        &headers,
+        project_id,
+        "update_expense",
+        "project_expense",
+    )
+    .await?;
 
     crate::services::project_service::validate_update_expense(
         req.category.as_deref(),
@@ -1060,9 +1134,14 @@ async fn delete_project_expense(
     headers: HeaderMap,
     Path((project_id, expense_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>> {
-    let user_id =
-        enforce_expense_access(&pool, &headers, project_id, "delete_expense", "project_expense")
-            .await?;
+    let user_id = enforce_expense_access(
+        &pool,
+        &headers,
+        project_id,
+        "delete_expense",
+        "project_expense",
+    )
+    .await?;
 
     // Fetch existing for audit snapshot, verify it belongs to this project
     let existing = sqlx::query!(
@@ -1075,10 +1154,14 @@ async fn delete_project_expense(
     .map_err(|e| AppError::Database(e.to_string()))?
     .ok_or_else(|| AppError::NotFound(format!("Expense {} not found in project {}", expense_id, project_id)))?;
 
-    sqlx::query!("DELETE FROM project_expenses WHERE id = $1 AND project_id = $2", expense_id, project_id)
-        .execute(&pool)
-        .await
-        .map_err(|e| AppError::Database(e.to_string()))?;
+    sqlx::query!(
+        "DELETE FROM project_expenses WHERE id = $1 AND project_id = $2",
+        expense_id,
+        project_id
+    )
+    .execute(&pool)
+    .await
+    .map_err(|e| AppError::Database(e.to_string()))?;
 
     log_audit(
         &pool,
@@ -1100,7 +1183,308 @@ async fn delete_project_expense(
     )
     .await?;
 
-    Ok(Json(serde_json::json!({"message": "Expense deleted successfully"})))
+    Ok(Json(
+        serde_json::json!({"message": "Expense deleted successfully"}),
+    ))
+}
+
+fn parse_revenue_month_for_lookup(input: &str) -> Result<NaiveDate> {
+    let trimmed = input.trim();
+    if trimmed.len() != 7 || trimmed.chars().nth(4) != Some('-') {
+        return Err(AppError::Validation(
+            "revenue_month must use YYYY-MM format".into(),
+        ));
+    }
+
+    NaiveDate::parse_from_str(&format!("{}-01", trimmed), "%Y-%m-%d")
+        .map_err(|_| AppError::Validation("revenue_month must use YYYY-MM format".into()))
+}
+
+fn extract_idempotency_key(headers: &HeaderMap) -> Option<String> {
+    headers
+        .get("Idempotency-Key")
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToString::to_string)
+}
+
+fn map_revenue_row_response(
+    row: crate::services::project_revenue_service::ProjectRevenueRow,
+) -> ProjectRevenueRowResponse {
+    ProjectRevenueRowResponse {
+        id: row.id,
+        project_id: row.project_id,
+        revenue_month: row.revenue_month,
+        amount_idr: row.amount_idr,
+        source_type: row.source_type,
+        source_reference: row.source_reference,
+        entered_by: row.entered_by,
+        entry_date: row.entry_date,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+    }
+}
+
+#[derive(Debug, Clone)]
+struct RevenueBeforeAudit {
+    id: Uuid,
+    amount_idr: i64,
+    source_type: String,
+    source_reference: Option<String>,
+}
+
+async fn fetch_revenue_before_audit(
+    pool: &PgPool,
+    project_id: Uuid,
+    revenue_month: NaiveDate,
+) -> Result<Option<RevenueBeforeAudit>> {
+    let row_opt = sqlx::query(
+        r#"SELECT id, amount_idr, source_type, source_reference
+           FROM project_revenues
+           WHERE project_id = $1 AND revenue_month = $2"#,
+    )
+    .bind(project_id)
+    .bind(revenue_month)
+    .fetch_optional(pool)
+    .await
+    .map_err(|e| AppError::Database(e.to_string()))?;
+
+    if let Some(row) = row_opt {
+        Ok(Some(RevenueBeforeAudit {
+            id: row
+                .try_get("id")
+                .map_err(|e| AppError::Database(e.to_string()))?,
+            amount_idr: row
+                .try_get("amount_idr")
+                .map_err(|e| AppError::Database(e.to_string()))?,
+            source_type: row
+                .try_get("source_type")
+                .map_err(|e| AppError::Database(e.to_string()))?,
+            source_reference: row
+                .try_get("source_reference")
+                .map_err(|e| AppError::Database(e.to_string()))?,
+        }))
+    } else {
+        Ok(None)
+    }
+}
+
+async fn upsert_project_revenue(
+    State(pool): State<PgPool>,
+    headers: HeaderMap,
+    Path(project_id): Path<Uuid>,
+    Json(req): Json<UpsertProjectRevenueRequest>,
+) -> Result<Json<ProjectRevenueRowResponse>> {
+    let user_id = enforce_expense_access(
+        &pool,
+        &headers,
+        project_id,
+        "upsert_revenue",
+        "project_revenue",
+    )
+    .await?;
+
+    sqlx::query_scalar!("SELECT id FROM projects WHERE id = $1", project_id)
+        .fetch_optional(&pool)
+        .await
+        .map_err(|e| AppError::Database(e.to_string()))?
+        .ok_or_else(|| AppError::NotFound(format!("Project {} not found", project_id)))?;
+
+    let lookup_month = parse_revenue_month_for_lookup(&req.revenue_month)?;
+    let before = fetch_revenue_before_audit(&pool, project_id, lookup_month).await?;
+
+    let row = crate::services::project_revenue_service::upsert_project_revenue(
+        &pool, project_id, user_id, &req,
+    )
+    .await?;
+
+    let action = if before.is_some() { "update" } else { "create" };
+    let audit_changes = if let Some(before_row) = before {
+        audit_payload(
+            Some(serde_json::json!({
+                "amount_idr": before_row.amount_idr,
+                "source_type": before_row.source_type,
+                "source_reference": before_row.source_reference,
+            })),
+            Some(serde_json::json!({
+                "amount_idr": row.amount_idr,
+                "source_type": row.source_type,
+                "source_reference": row.source_reference,
+                "override_erp": req.override_erp,
+            })),
+        )
+    } else {
+        audit_payload(
+            None,
+            Some(serde_json::json!({
+                "project_id": project_id,
+                "revenue_month": row.revenue_month.to_string(),
+                "amount_idr": row.amount_idr,
+                "source_type": row.source_type,
+                "source_reference": row.source_reference,
+            })),
+        )
+    };
+
+    log_audit(
+        &pool,
+        Some(user_id),
+        action,
+        "project_revenue",
+        row.id,
+        audit_changes,
+    )
+    .await?;
+
+    Ok(Json(map_revenue_row_response(row)))
+}
+
+async fn get_project_revenue(
+    State(pool): State<PgPool>,
+    headers: HeaderMap,
+    Path(project_id): Path<Uuid>,
+    Query(query): Query<ProjectRevenueQuery>,
+) -> Result<Json<ProjectRevenueGridResponse>> {
+    let _user_id = enforce_expense_access(
+        &pool,
+        &headers,
+        project_id,
+        "get_revenue",
+        "project_revenue",
+    )
+    .await?;
+
+    sqlx::query_scalar!("SELECT id FROM projects WHERE id = $1", project_id)
+        .fetch_optional(&pool)
+        .await
+        .map_err(|e| AppError::Database(e.to_string()))?
+        .ok_or_else(|| AppError::NotFound(format!("Project {} not found", project_id)))?;
+
+    let grid =
+        crate::services::project_revenue_service::get_revenue_grid(&pool, project_id, query.year)
+            .await?;
+
+    let months = grid
+        .months
+        .into_iter()
+        .map(|m| MonthRevenueEntry {
+            month: m.month,
+            month_label: m.month_label,
+            revenue_id: m.revenue_id,
+            amount_idr: m.amount_idr,
+            source_type: m.source_type,
+            source_reference: m.source_reference,
+            entered_by: m.entered_by,
+            entry_date: m.entry_date,
+        })
+        .collect();
+
+    Ok(Json(ProjectRevenueGridResponse {
+        project_id: grid.project_id,
+        year: grid.year,
+        months,
+        ytd_total_idr: grid.ytd_total_idr,
+    }))
+}
+
+async fn ingest_erp_revenue(
+    State(pool): State<PgPool>,
+    headers: HeaderMap,
+    Path(project_id): Path<Uuid>,
+    Json(req): Json<IngestErpRevenueRequest>,
+) -> Result<Json<ProjectRevenueRowResponse>> {
+    let idempotency_key = extract_idempotency_key(&headers);
+
+    let claims = user_claims_from_headers(&headers)?
+        .ok_or_else(|| AppError::Authentication("Missing token".into()))?;
+    let user_id = Uuid::parse_str(&claims.sub)
+        .map_err(|_| AppError::Authentication("Invalid user ID".into()))?;
+
+    if !matches!(claims.role.as_str(), "admin" | "finance") {
+        log_audit(
+            &pool,
+            Some(user_id),
+            "ACCESS_DENIED",
+            "project_revenue_erp",
+            project_id,
+            serde_json::json!({
+                "reason": "insufficient_role",
+                "attempted_role": claims.role,
+                "action": "ingest_erp_revenue"
+            }),
+        )
+        .await
+        .ok();
+        return Err(AppError::Forbidden("Insufficient permissions".into()));
+    }
+
+    sqlx::query_scalar!("SELECT id FROM projects WHERE id = $1", project_id)
+        .fetch_optional(&pool)
+        .await
+        .map_err(|e| AppError::Database(e.to_string()))?
+        .ok_or_else(|| AppError::NotFound(format!("Project {} not found", project_id)))?;
+
+    let lookup_month = parse_revenue_month_for_lookup(&req.revenue_month)?;
+    let before = fetch_revenue_before_audit(&pool, project_id, lookup_month).await?;
+
+    let row = crate::services::project_revenue_service::ingest_erp_revenue(
+        &pool,
+        project_id,
+        user_id,
+        &req,
+        idempotency_key.as_deref(),
+    )
+    .await?;
+
+    let preserved_manual = before
+        .as_ref()
+        .map(|existing| {
+            (existing.source_type == "manual" || existing.source_type == "manual_override")
+                && existing.id == row.id
+        })
+        .unwrap_or(false);
+
+    if !preserved_manual {
+        let action = if before.is_some() { "update" } else { "create" };
+        let audit_changes = if let Some(before_row) = before {
+            audit_payload(
+                Some(serde_json::json!({
+                    "amount_idr": before_row.amount_idr,
+                    "source_type": before_row.source_type,
+                    "source_reference": before_row.source_reference,
+                })),
+                Some(serde_json::json!({
+                    "amount_idr": row.amount_idr,
+                    "source_type": row.source_type,
+                    "source_reference": row.source_reference,
+                })),
+            )
+        } else {
+            audit_payload(
+                None,
+                Some(serde_json::json!({
+                    "project_id": project_id,
+                    "revenue_month": row.revenue_month.to_string(),
+                    "amount_idr": row.amount_idr,
+                    "source_type": row.source_type,
+                    "source_reference": row.source_reference,
+                })),
+            )
+        };
+
+        log_audit(
+            &pool,
+            Some(user_id),
+            action,
+            "project_revenue",
+            row.id,
+            audit_changes,
+        )
+        .await?;
+    }
+
+    Ok(Json(map_revenue_row_response(row)))
 }
 
 // ── Resource Cost Endpoint ────────────────────────────────────────────────
@@ -1120,25 +1504,35 @@ async fn get_project_resource_costs(
     )
     .await?;
 
-    let result = crate::services::project_cost_service::compute_project_resource_costs(&pool, project_id).await?;
+    let result =
+        crate::services::project_cost_service::compute_project_resource_costs(&pool, project_id)
+            .await?;
 
-    let employees = result.employees.into_iter().map(|e| EmployeeResourceCost {
-        resource_id: e.resource_id,
-        resource_name: e.resource_name,
-        daily_rate_idr: e.daily_rate_idr,
-        days_allocated: e.days_allocated,
-        allocation_percentage: e.allocation_percentage,
-        total_cost_idr: e.total_cost_idr,
-        has_rate_change: e.has_rate_change,
-        rate_change_note: e.rate_change_note,
-        missing_rate: e.missing_rate,
-    }).collect();
+    let employees = result
+        .employees
+        .into_iter()
+        .map(|e| EmployeeResourceCost {
+            resource_id: e.resource_id,
+            resource_name: e.resource_name,
+            daily_rate_idr: e.daily_rate_idr,
+            days_allocated: e.days_allocated,
+            allocation_percentage: e.allocation_percentage,
+            total_cost_idr: e.total_cost_idr,
+            has_rate_change: e.has_rate_change,
+            rate_change_note: e.rate_change_note,
+            missing_rate: e.missing_rate,
+        })
+        .collect();
 
-    let monthly_breakdown = result.monthly_breakdown.into_iter().map(|m| MonthlyResourceCost {
-        month: m.month,
-        working_days: m.working_days,
-        cost_idr: m.cost_idr,
-    }).collect();
+    let monthly_breakdown = result
+        .monthly_breakdown
+        .into_iter()
+        .map(|m| MonthlyResourceCost {
+            month: m.month,
+            working_days: m.working_days,
+            cost_idr: m.cost_idr,
+        })
+        .collect();
 
     Ok(Json(ProjectResourceCostResponse {
         project_id: result.project_id,
@@ -1148,15 +1542,19 @@ async fn get_project_resource_costs(
     }))
 }
 
-
-
 /// Create project routes
 pub fn project_routes() -> Router<PgPool> {
     Router::new()
         .route("/projects", get(get_projects).post(create_project))
         .route("/projects/assignable", get(get_assignable_projects))
-        .route("/projects/:id/budget", get(get_project_budget).post(set_project_budget))
-        .route("/projects/:id/resource-costs", get(get_project_resource_costs))
+        .route(
+            "/projects/:id/budget",
+            get(get_project_budget).post(set_project_budget),
+        )
+        .route(
+            "/projects/:id/resource-costs",
+            get(get_project_resource_costs),
+        )
         .route(
             "/projects/:id/expenses",
             get(list_project_expenses).post(create_project_expense),
@@ -1164,6 +1562,14 @@ pub fn project_routes() -> Router<PgPool> {
         .route(
             "/projects/:id/expenses/:expense_id",
             put(update_project_expense).delete(delete_project_expense),
+        )
+        .route(
+            "/projects/:id/revenue",
+            get(get_project_revenue).post(upsert_project_revenue),
+        )
+        .route(
+            "/projects/:id/revenue/erp-sync",
+            axum::routing::post(ingest_erp_revenue),
         )
         .route(
             "/projects/:id",
