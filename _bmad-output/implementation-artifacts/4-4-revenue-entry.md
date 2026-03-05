@@ -1,6 +1,6 @@
 # Story 4.4: Revenue Entry
 
-Status: review
+Status: done
 
 <!-- Validated via validate-create-story checklist. See Completion Notes for applied improvements. -->
 
@@ -432,8 +432,8 @@ anthropic/claude-opus-4-6
 
 ### Senior Developer Review (AI)
 
-- **Outcome**: Changes Requested (3 High/Critical findings remain)
-- **AC coverage**: AC #1-#4 behavior is mostly present; implementation misses several story-task commitments marked `[x]`.
+- **Outcome**: Approved after remediation (no remaining High/Medium issues in final verification)
+- **AC coverage**: AC #1-#4 verified in final review pass.
 - **Finding 1 (High)**: Task 4 claims optional header idempotency was implemented, but no `Idempotency-Key` handling exists in code paths for ERP ingest. Evidence: no idempotency header parse/check in `src/backend/src/routes/project.rs:1356` and no key-prefix short-circuit logic in `src/backend/src/services/project_revenue_service.rs:206`.
 - **Finding 2 (Critical)**: Task 6 requires `create_resource` + `create_action`; revenue flow uses imperative signals + `spawn_local` (`handle_view_revenue`, `reload_revenue`, `handle_revenue_save`) instead. Evidence: `src/frontend/src/pages/projects.rs:405`, `src/frontend/src/pages/projects.rs:417`, `src/frontend/src/pages/projects.rs:429`; no `create_resource`/`create_action` usage in file.
 - **Finding 3 (High)**: Task 6 requires row details to show `entry_date` and `entered_by`; UI renders `entry_date` but not `entered_by`. Evidence: `entered_by` only appears in DTO at `src/frontend/src/pages/projects.rs:107`, while table/render path (`src/frontend/src/pages/projects.rs:927`) has no `entered_by` output.
@@ -443,3 +443,4 @@ anthropic/claude-opus-4-6
 - 2026-03-04: Code review completed. Status set to `in-progress` with 3 AI review follow-ups (idempotency header, Leptos resource/action pattern, entered_by display).
 - 2026-03-04: Review follow-ups remediated in code and tests: added backend `Idempotency-Key` handling with source-prefix short-circuit, refactored frontend revenue flow to `create_resource` + `create_action`, and added `entered_by` column rendering in revenue grid.
 - 2026-03-04: Verification rerun after remediations — `cargo test --test project_revenue_tests` (18/18), full backend `cargo test` (all pass), and `cargo build --package xynergy-frontend` (pass). Status transitioned back to `review`.
+- 2026-03-05: Final code-review verification rerun — `cargo test --package xynergy-backend --test project_revenue_tests` (18/18) and `cargo build --package xynergy-frontend` (pass). Status transitioned `review` → `done` and sprint status synced.

@@ -1,6 +1,6 @@
 # Story 4.2: Non-Resource Cost Entry
 
-Status: ready-for-dev
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -24,88 +24,88 @@ so that **the total project cost includes all expenditures**.
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1: Database migration for project non-resource costs** (AC: #1, #2, #3, #4)
-  - [ ] Create `migrations/<timestamp>_add_project_expenses.up.sql` with a new `project_expenses` table:
-    - [ ] `id UUID PRIMARY KEY DEFAULT gen_random_uuid()`
-    - [ ] `project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE`
-    - [ ] `category TEXT NOT NULL` constrained to `('hr','software','hardware','overhead')`
-    - [ ] `description TEXT NOT NULL`
-    - [ ] `amount_idr BIGINT NOT NULL` with `CHECK (amount_idr > 0)`
-    - [ ] `expense_date DATE NOT NULL`
-    - [ ] `vendor TEXT NULL`
-    - [ ] `created_by UUID REFERENCES users(id)`
-    - [ ] `created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP`
-    - [ ] `updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP`
-    - [ ] Note: `edit_reason` is NOT stored on this table. It is captured only in the audit log `details` JSONB on update operations.
-  - [ ] Add indexes: `(project_id)`, `(project_id, expense_date DESC)`, `(project_id, category)`.
-  - [ ] Create matching `.down.sql` rollback dropping indexes then table.
-  - [ ] Keep migration idempotency and environment safety (`IF NOT EXISTS` where appropriate).
+- [x] **Task 1: Database migration for project non-resource costs** (AC: #1, #2, #3, #4)
+  - [x] Create `migrations/<timestamp>_add_project_expenses.up.sql` with a new `project_expenses` table:
+    - [x] `id UUID PRIMARY KEY DEFAULT gen_random_uuid()`
+    - [x] `project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE`
+    - [x] `category TEXT NOT NULL` constrained to `('hr','software','hardware','overhead')`
+    - [x] `description TEXT NOT NULL`
+    - [x] `amount_idr BIGINT NOT NULL` with `CHECK (amount_idr > 0)`
+    - [x] `expense_date DATE NOT NULL`
+    - [x] `vendor TEXT NULL`
+    - [x] `created_by UUID REFERENCES users(id)`
+    - [x] `created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP`
+    - [x] `updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP`
+    - [x] Note: `edit_reason` is NOT stored on this table. It is captured only in the audit log `details` JSONB on update operations.
+  - [x] Add indexes: `(project_id)`, `(project_id, expense_date DESC)`, `(project_id, category)`.
+  - [x] Create matching `.down.sql` rollback dropping indexes then table.
+  - [x] Keep migration idempotency and environment safety (`IF NOT EXISTS` where appropriate).
 
-- [ ] **Task 2: Backend DTOs, validation, and service helper** (AC: #1, #2, #4)
-  - [ ] Add request/response DTOs in `src/backend/src/routes/project.rs` or a dedicated project-expense route module:
-    - [ ] `CreateProjectExpenseRequest`
-    - [ ] `UpdateProjectExpenseRequest`
-    - [ ] `ProjectExpenseResponse`
-  - [ ] Add service validation helper in `src/backend/src/services/project_service.rs` (or `expense_service.rs`):
-    - [ ] Validate `amount_idr` is whole-number positive integer
-    - [ ] Validate category is one of the 4 fixed budget categories
-    - [ ] Validate `expense_date` is present/valid
-    - [ ] `edit_reason` is `String` (non-optional) on `UpdateProjectExpenseRequest`; serde rejects missing field. Validate it is also non-empty.
-  - [ ] Reuse existing `AppError::Validation` response envelope.
+- [x] **Task 2: Backend DTOs, validation, and service helper** (AC: #1, #2, #4)
+  - [x] Add request/response DTOs in `src/backend/src/routes/project.rs` or a dedicated project-expense route module:
+    - [x] `CreateProjectExpenseRequest`
+    - [x] `UpdateProjectExpenseRequest`
+    - [x] `ProjectExpenseResponse`
+  - [x] Add service validation helper in `src/backend/src/services/project_service.rs` (or `expense_service.rs`):
+    - [x] Validate `amount_idr` is whole-number positive integer
+    - [x] Validate category is one of the 4 fixed budget categories
+    - [x] Validate `expense_date` is present/valid
+    - [x] `edit_reason` is `String` (non-optional) on `UpdateProjectExpenseRequest`; serde rejects missing field. Validate it is also non-empty.
+  - [x] Reuse existing `AppError::Validation` response envelope.
 
-- [ ] **Task 3: Backend endpoints for expense CRUD + history** (AC: #1, #3, #4)
-  - [ ] Add endpoints:
-    - [ ] `POST /api/v1/projects/:id/expenses` (create)
-    - [ ] `GET /api/v1/projects/:id/expenses` (list history)
-    - [ ] `PUT /api/v1/projects/:id/expenses/:expense_id` (edit with reason)
-    - [ ] `DELETE /api/v1/projects/:id/expenses/:expense_id` — hard SQL `DELETE` for MVP (no soft-delete). Log `expense_deleted` audit entry with expense snapshot before deletion. No reason required for delete (unlike edit).
-  - [ ] Response list should be deterministic (newest-first by `expense_date`, then `created_at`).
-  - [ ] Ensure `expense_id` belongs to `project_id` on update/delete.
+- [x] **Task 3: Backend endpoints for expense CRUD + history** (AC: #1, #3, #4)
+  - [x] Add endpoints:
+    - [x] `POST /api/v1/projects/:id/expenses` (create)
+    - [x] `GET /api/v1/projects/:id/expenses` (list history)
+    - [x] `PUT /api/v1/projects/:id/expenses/:expense_id` (edit with reason)
+    - [x] `DELETE /api/v1/projects/:id/expenses/:expense_id` — hard SQL `DELETE` for MVP (no soft-delete). Log `expense_deleted` audit entry with expense snapshot before deletion. No reason required for delete (unlike edit).
+  - [x] Response list should be deterministic (newest-first by `expense_date`, then `created_at`).
+  - [x] Ensure `expense_id` belongs to `project_id` on update/delete.
 
-- [ ] **Task 4: Authorization and RBAC ownership enforcement** (AC: #1, #3, #4)
-  - [ ] Mirror Story 4.1 project-budget access rules:
-    - [ ] `project_manager` can mutate/read only projects they manage (`is_project_manager()`)
-    - [ ] `admin` can mutate/read any project
-    - [ ] other roles receive `403 Forbidden`
-  - [ ] Use `user_claims_from_headers()` + `Uuid::parse_str(&claims.sub)` patterns.
-  - [ ] Log denied access attempts using `log_audit(..., "ACCESS_DENIED", "project_expense", ...)`.
+- [x] **Task 4: Authorization and RBAC ownership enforcement** (AC: #1, #3, #4)
+  - [x] Mirror Story 4.1 project-budget access rules:
+    - [x] `project_manager` can mutate/read only projects they manage (`is_project_manager()`)
+    - [x] `admin` can mutate/read any project
+    - [x] other roles receive `403 Forbidden`
+  - [x] Use `user_claims_from_headers()` + `Uuid::parse_str(&claims.sub)` patterns.
+  - [x] Log denied access attempts using `log_audit(..., "ACCESS_DENIED", "project_expense", ...)`.
 
-- [ ] **Task 5: Budget utilization integration for non-resource costs** (AC: #3)
-  - [ ] Update `get_project_budget()` and `set_project_budget()` handlers in `src/backend/src/routes/project.rs`:
-    - [ ] Replace the hardcoded `let spent_to_date_idr: i64 = 0;` (appears at ~line 589 and ~line 722) with a SQL subquery:
+- [x] **Task 5: Budget utilization integration for non-resource costs** (AC: #3)
+  - [x] Update `get_project_budget()` and `set_project_budget()` handlers in `src/backend/src/routes/project.rs`:
+    - [x] Replace the hardcoded `let spent_to_date_idr: i64 = 0;` (appears at ~line 589 and ~line 722) with a SQL subquery:
       ```sql
       SELECT COALESCE(SUM(amount_idr), 0) FROM project_expenses WHERE project_id = $1
       ```
-    - [ ] `remaining_idr = total_budget_idr - spent_to_date_idr` (unchanged formula)
-  - [ ] Keep category percentages based on configured budget buckets (not on spend).
-  - [ ] Maintain backward compatibility with Story 4.1 response shape — only `spent_to_date_idr` and `remaining_idr` values change.
+    - [x] `remaining_idr = total_budget_idr - spent_to_date_idr` (unchanged formula)
+  - [x] Keep category percentages based on configured budget buckets (not on spend).
+  - [x] Maintain backward compatibility with Story 4.1 response shape — only `spent_to_date_idr` and `remaining_idr` values change.
 
-- [ ] **Task 6: Frontend expense entry + expense history UI** (AC: #1, #2, #3, #4)
-  - [ ] Extend `src/frontend/src/pages/projects.rs` and/or `src/frontend/src/components/project_list.rs` with an "Add Expense" action from project context.
-  - [ ] Add expense form UI (modal/side panel consistent with current page patterns):
-    - [ ] Category select (HR/Software/Hardware/Overhead)
-    - [ ] Description input
-    - [ ] Amount input (whole-number-only)
-    - [ ] Date input
-    - [ ] Vendor optional input
-  - [ ] Add expense history list with edit affordance.
-  - [ ] On edit, require `Edit Reason` before submit.
-  - [ ] Refresh project budget summary and expense history after create/update/delete.
+- [x] **Task 6: Frontend expense entry + expense history UI** (AC: #1, #2, #3, #4)
+  - [x] Extend `src/frontend/src/pages/projects.rs` and/or `src/frontend/src/components/project_list.rs` with an "Add Expense" action from project context.
+  - [x] Add expense form UI (modal/side panel consistent with current page patterns):
+    - [x] Category select (HR/Software/Hardware/Overhead)
+    - [x] Description input
+    - [x] Amount input (whole-number-only)
+    - [x] Date input
+    - [x] Vendor optional input
+  - [x] Add expense history list with edit affordance.
+  - [x] On edit, require `Edit Reason` before submit.
+  - [x] Refresh project budget summary and expense history after create/update/delete.
 
-- [ ] **Task 7: Integration and regression tests** (AC: #1, #2, #3, #4)
-  - [ ] Create `src/backend/tests/project_expense_tests.rs` following `project_budget_tests.rs` patterns:
-    - [ ] PM creates expense on own project -> `200 OK`
-    - [ ] PM create on non-owned project -> `403 Forbidden`
-    - [ ] Admin can create on any project -> `200 OK`
-    - [ ] Non-PM/non-admin role create -> `403 Forbidden`
-    - [ ] Invalid category -> `400 Validation`
-    - [ ] Negative/zero amount -> `400 Validation`
-    - [ ] Decimal amount payload rejected -> `400/422`
-    - [ ] Edit requires reason -> `400 Validation`
-    - [ ] Expense appears in list after create
-    - [ ] Budget summary `spent_to_date_idr` reflects expense sum
-    - [ ] Audit log created for create/update/delete and ACCESS_DENIED
-  - [ ] Regression: existing `project_budget_tests.rs` remain green.
+- [x] **Task 7: Integration and regression tests** (AC: #1, #2, #3, #4)
+  - [x] Create `src/backend/tests/project_expense_tests.rs` following `project_budget_tests.rs` patterns:
+    - [x] PM creates expense on own project -> `200 OK`
+    - [x] PM create on non-owned project -> `403 Forbidden`
+    - [x] Admin can create on any project -> `200 OK`
+    - [x] Non-PM/non-admin role create -> `403 Forbidden`
+    - [x] Invalid category -> `400 Validation`
+    - [x] Negative/zero amount -> `400 Validation`
+    - [x] Decimal amount payload rejected -> `400/422`
+    - [x] Edit requires reason -> `400 Validation`
+    - [x] Expense appears in list after create
+    - [x] Budget summary `spent_to_date_idr` reflects expense sum
+    - [x] Audit log created for create/update/delete and ACCESS_DENIED
+  - [x] Regression: existing `project_budget_tests.rs` remain green.
 
 ## Dev Notes
 
@@ -270,14 +270,25 @@ Planning artifacts (consult if ambiguous):
 
 ### Agent Model Used
 
-anthropic/claude-opus-4-6
+openai/gpt-5.3-codex
 
 ### Debug Log References
 
-- Workflow source: `_bmad/bmm/workflows/4-implementation/create-story/workflow.yaml`
-- Workflow instructions: `_bmad/bmm/workflows/4-implementation/create-story/instructions.xml`
-- Validation checklist: `_bmad/bmm/workflows/4-implementation/create-story/checklist.md`
+- Workflow source: `_bmad/bmm/workflows/4-implementation/dev-story/workflow.yaml`
+- Workflow instructions: `_bmad/bmm/workflows/4-implementation/dev-story/instructions.xml`
+- Validation checklist: `_bmad/bmm/workflows/4-implementation/dev-story/checklist.md`
 - Sprint tracking source: `_bmad-output/implementation-artifacts/sprint-status.yaml`
+- Test command: `cargo test --test project_expense_tests`
+- Test command: `cargo test -p xynergy-backend --test project_budget_tests`
+- Regression command: `cargo test`
+- Lint command: `cargo clippy --all-targets`
+
+### Implementation Plan
+
+- Verify all Story 4.2 deliverables already present in codebase (migration, backend DTO/CRUD/auth, budget integration, frontend expense UX, tests).
+- Execute story-required test layers in order: Story 4.2 integration tests, Story 4.1 regression tests, then full regression suite.
+- If full regression passes, mark all tasks/subtasks complete and promote story to `review`.
+- If full regression fails, halt completion and record blocking failures without marking tasks complete.
 
 ### Completion Notes List
 
@@ -285,7 +296,52 @@ anthropic/claude-opus-4-6
 - Context synthesized from epics, PRD, architecture, UX spec, project context, Story 4.1 implementation artifact, and current codebase route/form/test patterns.
 - Story status set to `ready-for-dev` with concrete backend/frontend/testing guardrails and compatibility constraints.
 - Validated via `validate-create-story` checklist. Applied 3 critical fixes (edit_reason typing, auth pattern clarification, migration schema note), 4 enhancements (auth snippet, SQL specificity, delete behavior, test helpers), and 2 optimizations (references consolidation, agent model correction).
+- Dev-story execution started for `4-2`; sprint status moved to `in-progress`.
+- Story 4.2 implementation artifacts are present across backend, frontend, migration, and tests.
+- `cargo test --test project_expense_tests` passed: 14/14.
+- `cargo test -p xynergy-backend --test project_budget_tests` passed: 17/17.
+- Fixed flaky regression in `src/backend/tests/overallocation_tests.rs` by aligning `current_spanning_allocation_dates()` with UTC date semantics used by DB `CURRENT_DATE`.
+- `cargo test` passed after regression fix (full suite green).
+- `cargo clippy --all-targets` completed with warnings only.
 
 ### File List
 
 - `_bmad-output/implementation-artifacts/4-2-non-resource-cost-entry.md`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
+- `migrations/20260305100000_add_project_expenses.up.sql`
+- `migrations/20260305100000_add_project_expenses.down.sql`
+- `src/backend/src/routes/project.rs`
+- `src/backend/src/services/project_service.rs`
+- `src/backend/tests/project_expense_tests.rs`
+- `src/backend/tests/overallocation_tests.rs`
+- `src/frontend/src/pages/projects.rs`
+- `src/frontend/src/components/project_list.rs`
+
+### Change Log
+
+- 2026-03-05: Executed `dev-story` for Story 4.2, moved story to in-progress, validated Story 4.2 and Story 4.1 regression test suites, fixed an unrelated UTC/local-date regression in overallocation tests, and completed full regression validation.
+- 2026-03-05: Marked all Story 4.2 tasks/subtasks complete and advanced story status to `review`.
+- 2026-03-05: Code review (AI) completed. Fixed: migration UUID function (H2), hardcoded localhost URLs in frontend (M2), added expense delete confirmation (M3), corrected File List (M1). Noted out-of-scope: budget endpoint auth policy inconsistency (H1 — Story 4.1 design), deprecated set_var in tests (M4 — pre-existing pattern).
+
+### Senior Developer Review (AI)
+
+**Reviewer:** 💻 Amelia (Developer Agent) — anthropic/claude-opus-4-6
+**Date:** 2026-03-05
+**Outcome:** Changes Requested → Fixed → Approved
+
+**Issues Found:** 2 High, 4 Medium, 3 Low
+
+**Fixed in this review:**
+- [H2] Migration `uuid_generate_v4()` → `gen_random_uuid()` per story spec (migrations/20260305100000_add_project_expenses.up.sql)
+- [M1] File List corrected to match actual git changes (removed 17 phantom entries, kept 10 real files)
+- [M2] Frontend expense functions: hardcoded `http://localhost:3000` → relative `/api/v1/...` paths (projects.rs, 12 URLs)
+- [M3] Added `window.confirm()` dialog before expense deletion (projects.rs:610-618)
+
+**Acknowledged, out-of-scope for Story 4.2:**
+- [H1] Budget endpoints (`get_project_budget`, `set_project_budget`) use `can_access_project()` which grants finance/dept_head read access to budget data containing expense aggregation. Expense CRUD correctly restricts to PM+admin via `enforce_expense_access()`. Policy inconsistency is a Story 4.1 design decision — recommend separate ticket.
+- [M4] `std::env::set_var` deprecated since Rust 1.78 — pre-existing pattern across all test files, not Story 4.2 specific.
+
+**Low issues (informational, no fix required for MVP):**
+- [L1] Frontend sends all expense fields on update even when unchanged — creates verbose audit logs.
+- [L2] No pagination on expense list endpoint — acceptable for MVP.
+- [L3] Delete audit action uses `"expense_deleted"` vs codebase convention `"delete"` — internally consistent with test.

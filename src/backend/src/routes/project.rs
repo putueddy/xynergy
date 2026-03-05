@@ -1,4 +1,5 @@
 use axum::{
+    extract::rejection::JsonRejection,
     extract::{Path, Query, State},
     http::HeaderMap,
     routing::{get, put},
@@ -96,6 +97,15 @@ pub struct ProjectBudgetResponse {
     pub overhead_pct: f64,
     pub spent_to_date_idr: i64,
     pub remaining_idr: i64,
+    pub spent_hr_idr: i64,
+    pub spent_software_idr: i64,
+    pub spent_hardware_idr: i64,
+    pub spent_overhead_idr: i64,
+    pub remaining_hr_idr: i64,
+    pub remaining_software_idr: i64,
+    pub remaining_hardware_idr: i64,
+    pub remaining_overhead_idr: i64,
+    pub resource_cost_idr: i64,
 }
 
 // ── Resource Cost DTOs ────────────────────────────────────────────────────
@@ -221,6 +231,92 @@ struct ProjectRevenueQuery {
 
 fn default_revenue_year() -> i32 {
     chrono::Utc::now().date_naive().year()
+}
+
+fn build_project_budget_response(
+    project_id: Uuid,
+    project_name: String,
+    client: Option<String>,
+    total_budget_idr: i64,
+    budget_hr_idr: i64,
+    budget_software_idr: i64,
+    budget_hardware_idr: i64,
+    budget_overhead_idr: i64,
+    spent_hr_idr: i64,
+    spent_software_idr: i64,
+    spent_hardware_idr: i64,
+    spent_overhead_idr: i64,
+    resource_cost_idr: i64,
+) -> ProjectBudgetResponse {
+    let (hr_pct, sw_pct, hw_pct, oh_pct) = if total_budget_idr > 0 {
+        (
+            budget_hr_idr as f64 / total_budget_idr as f64 * 100.0,
+            budget_software_idr as f64 / total_budget_idr as f64 * 100.0,
+            budget_hardware_idr as f64 / total_budget_idr as f64 * 100.0,
+            budget_overhead_idr as f64 / total_budget_idr as f64 * 100.0,
+        )
+    } else {
+        (0.0, 0.0, 0.0, 0.0)
+    };
+
+    let expense_total = spent_hr_idr + spent_software_idr + spent_hardware_idr + spent_overhead_idr;
+    let spent_to_date_idr = expense_total + resource_cost_idr;
+    let remaining_hr_idr = budget_hr_idr - spent_hr_idr;
+    let remaining_software_idr = budget_software_idr - spent_software_idr;
+    let remaining_hardware_idr = budget_hardware_idr - spent_hardware_idr;
+    let remaining_overhead_idr = budget_overhead_idr - spent_overhead_idr;
+
+    ProjectBudgetResponse {
+        project_id,
+        project_name,
+        client,
+        total_budget_idr,
+        budget_hr_idr,
+        budget_software_idr,
+        budget_hardware_idr,
+        budget_overhead_idr,
+        hr_pct,
+        software_pct: sw_pct,
+        hardware_pct: hw_pct,
+        overhead_pct: oh_pct,
+        spent_to_date_idr,
+        remaining_idr: total_budget_idr - spent_to_date_idr,
+        spent_hr_idr,
+        spent_software_idr,
+        spent_hardware_idr,
+        spent_overhead_idr,
+        remaining_hr_idr,
+        remaining_software_idr,
+        remaining_hardware_idr,
+        remaining_overhead_idr,
+        resource_cost_idr,
+    }
+}
+
+async fn get_expense_spend_by_category(
+    pool: &PgPool,
+    project_id: Uuid,
+) -> Result<(i64, i64, i64, i64)> {
+    let row = sqlx::query!(
+        r#"SELECT
+              COALESCE(SUM(CASE WHEN category = 'hr' THEN amount_idr ELSE 0 END), 0)::BIGINT AS "spent_hr!: i64",
+              COALESCE(SUM(CASE WHEN category = 'software' THEN amount_idr ELSE 0 END), 0)::BIGINT AS "spent_software!: i64",
+              COALESCE(SUM(CASE WHEN category = 'hardware' THEN amount_idr ELSE 0 END), 0)::BIGINT AS "spent_hardware!: i64",
+              COALESCE(SUM(CASE WHEN category = 'overhead' THEN amount_idr ELSE 0 END), 0)::BIGINT AS "spent_overhead!: i64"
+           FROM project_expenses
+           WHERE project_id = $1"#,
+        project_id
+    )
+    .fetch_one(pool)
+    .await
+    .map_err(|e| AppError::Database(e.to_string()))?;
+
+    Ok((
+        row.spent_hr,
+        row.spent_software,
+        row.spent_hardware,
+        row.spent_overhead,
+    ))
 }
 
 /// Assignable project response (minimal fields for assignment dropdown)
@@ -660,27 +756,39 @@ async fn get_project_budget(
     let user_id = Uuid::parse_str(&claims.sub)
         .map_err(|_| AppError::Authentication("Invalid user ID".into()))?;
 
-    if claims.role == "project_manager" {
-        let mut conn = pool
-            .acquire()
-            .await
-            .map_err(|e| AppError::Database(e.to_string()))?;
-        let is_pm =
-            crate::services::rbac::is_project_manager(&mut conn, user_id, project_id).await?;
-        if !is_pm {
-            log_audit(
-                &pool,
-                Some(user_id),
-                "ACCESS_DENIED",
-                "project_budget",
-                project_id,
-                serde_json::json!({"reason": "not_project_manager", "action": "get_project_budget"}),
-            )
-            .await
-            .ok();
-            return Err(AppError::Forbidden("Insufficient permissions".into()));
+    let mut conn = pool
+        .acquire()
+        .await
+        .map_err(|e| AppError::Database(e.to_string()))?;
+    let is_authorized = match claims.role.as_str() {
+        "admin" => true,
+        "project_manager" => {
+            crate::services::rbac::can_access_project(&mut conn, user_id, &claims.role, project_id)
+                .await?
         }
-    } else if claims.role != "admin" {
+        _ => false,
+    };
+
+    if !is_authorized {
+        let deny_reason = if claims.role == "project_manager" {
+            "not_project_manager"
+        } else {
+            "insufficient_role"
+        };
+        log_audit(
+            &pool,
+            Some(user_id),
+            "ACCESS_DENIED",
+            "project_budget",
+            project_id,
+            serde_json::json!({
+                "reason": deny_reason,
+                "attempted_role": claims.role,
+                "action": "get_project_budget"
+            }),
+        )
+        .await
+        .ok();
         return Err(AppError::Forbidden("Insufficient permissions".into()));
     }
 
@@ -693,88 +801,80 @@ async fn get_project_budget(
     .map_err(|e| AppError::Database(e.to_string()))?
     .ok_or_else(|| AppError::NotFound(format!("Project {} not found", project_id)))?;
 
-    let total = project.total_budget_idr;
-    let (hr_pct, sw_pct, hw_pct, oh_pct) = if total > 0 {
-        (
-            project.budget_hr_idr as f64 / total as f64 * 100.0,
-            project.budget_software_idr as f64 / total as f64 * 100.0,
-            project.budget_hardware_idr as f64 / total as f64 * 100.0,
-            project.budget_overhead_idr as f64 / total as f64 * 100.0,
-        )
-    } else {
-        (0.0, 0.0, 0.0, 0.0)
-    };
-
-    let expense_total_idr: i64 = sqlx::query_scalar!(
-        "SELECT COALESCE(SUM(amount_idr), 0)::BIGINT AS \"total!: i64\" FROM project_expenses WHERE project_id = $1",
-        project_id
-    )
-    .fetch_one(&pool)
-    .await
-    .map_err(|e| AppError::Database(e.to_string()))?;
-
+    let (expense_hr_idr, expense_software_idr, expense_hardware_idr, expense_overhead_idr) =
+        get_expense_spend_by_category(&pool, project_id).await?;
     let resource_costs =
         crate::services::project_cost_service::compute_project_resource_costs(&pool, project_id)
             .await?;
-    let spent_to_date_idr = expense_total_idr + resource_costs.total_resource_cost_idr;
 
-    Ok(Json(ProjectBudgetResponse {
-        project_id: project.id,
-        project_name: project.name,
-        client: project.client,
-        total_budget_idr: total,
-        budget_hr_idr: project.budget_hr_idr,
-        budget_software_idr: project.budget_software_idr,
-        budget_hardware_idr: project.budget_hardware_idr,
-        budget_overhead_idr: project.budget_overhead_idr,
-        hr_pct,
-        software_pct: sw_pct,
-        hardware_pct: hw_pct,
-        overhead_pct: oh_pct,
-        spent_to_date_idr,
-        remaining_idr: total - spent_to_date_idr,
-    }))
+    Ok(Json(build_project_budget_response(
+        project.id,
+        project.name,
+        project.client,
+        project.total_budget_idr,
+        project.budget_hr_idr,
+        project.budget_software_idr,
+        project.budget_hardware_idr,
+        project.budget_overhead_idr,
+        expense_hr_idr,
+        expense_software_idr,
+        expense_hardware_idr,
+        expense_overhead_idr,
+        resource_costs.total_resource_cost_idr,
+    )))
 }
 
 async fn set_project_budget(
     State(pool): State<PgPool>,
     headers: HeaderMap,
     Path(project_id): Path<Uuid>,
-    Json(req): Json<SetProjectBudgetRequest>,
+    payload: std::result::Result<Json<SetProjectBudgetRequest>, JsonRejection>,
 ) -> Result<Json<ProjectBudgetResponse>> {
+    let req = match payload {
+        Ok(Json(req)) => req,
+        Err(rejection) => {
+            return Err(AppError::Validation(format!(
+                "Invalid budget payload: {}",
+                rejection.body_text()
+            )));
+        }
+    };
+
     let claims = user_claims_from_headers(&headers)?
         .ok_or_else(|| AppError::Authentication("Missing token".into()))?;
     let user_id = Uuid::parse_str(&claims.sub)
         .map_err(|_| AppError::Authentication("Invalid user ID".into()))?;
 
-    if claims.role == "project_manager" {
-        let mut conn = pool
-            .acquire()
-            .await
-            .map_err(|e| AppError::Database(e.to_string()))?;
-        let is_pm =
-            crate::services::rbac::is_project_manager(&mut conn, user_id, project_id).await?;
-        if !is_pm {
-            log_audit(
-                &pool,
-                Some(user_id),
-                "ACCESS_DENIED",
-                "project_budget",
-                project_id,
-                serde_json::json!({"reason": "not_project_manager", "action": "set_project_budget"}),
-            )
-            .await
-            .ok();
-            return Err(AppError::Forbidden("Insufficient permissions".into()));
+    let mut conn = pool
+        .acquire()
+        .await
+        .map_err(|e| AppError::Database(e.to_string()))?;
+    let is_authorized = match claims.role.as_str() {
+        "admin" => true,
+        "project_manager" => {
+            crate::services::rbac::can_access_project(&mut conn, user_id, &claims.role, project_id)
+                .await?
         }
-    } else if claims.role != "admin" {
+        _ => false,
+    };
+
+    if !is_authorized {
+        let deny_reason = if claims.role == "project_manager" {
+            "not_project_manager"
+        } else {
+            "insufficient_role"
+        };
         log_audit(
             &pool,
             Some(user_id),
             "ACCESS_DENIED",
             "project_budget",
             project_id,
-            serde_json::json!({"reason": "insufficient_role", "attempted_role": claims.role, "action": "set_project_budget"}),
+            serde_json::json!({
+                "reason": deny_reason,
+                "attempted_role": claims.role,
+                "action": "set_project_budget"
+            }),
         )
         .await
         .ok();
@@ -838,53 +938,33 @@ async fn set_project_budget(
     )
     .await?;
 
-    let total = project.total_budget_idr;
-    let (hr_pct, sw_pct, hw_pct, oh_pct) = if total > 0 {
-        (
-            project.budget_hr_idr as f64 / total as f64 * 100.0,
-            project.budget_software_idr as f64 / total as f64 * 100.0,
-            project.budget_hardware_idr as f64 / total as f64 * 100.0,
-            project.budget_overhead_idr as f64 / total as f64 * 100.0,
-        )
-    } else {
-        (0.0, 0.0, 0.0, 0.0)
-    };
-
-    let expense_total_idr: i64 = sqlx::query_scalar!(
-        "SELECT COALESCE(SUM(amount_idr), 0)::BIGINT AS \"total!: i64\" FROM project_expenses WHERE project_id = $1",
-        project_id
-    )
-    .fetch_one(&pool)
-    .await
-    .map_err(|e| AppError::Database(e.to_string()))?;
-
+    let (expense_hr_idr, expense_software_idr, expense_hardware_idr, expense_overhead_idr) =
+        get_expense_spend_by_category(&pool, project_id).await?;
     let resource_costs =
         crate::services::project_cost_service::compute_project_resource_costs(&pool, project_id)
             .await?;
-    let spent_to_date_idr = expense_total_idr + resource_costs.total_resource_cost_idr;
 
-    Ok(Json(ProjectBudgetResponse {
-        project_id: project.id,
-        project_name: project.name,
-        client: project.client,
-        total_budget_idr: total,
-        budget_hr_idr: project.budget_hr_idr,
-        budget_software_idr: project.budget_software_idr,
-        budget_hardware_idr: project.budget_hardware_idr,
-        budget_overhead_idr: project.budget_overhead_idr,
-        hr_pct,
-        software_pct: sw_pct,
-        hardware_pct: hw_pct,
-        overhead_pct: oh_pct,
-        spent_to_date_idr,
-        remaining_idr: total - spent_to_date_idr,
-    }))
+    Ok(Json(build_project_budget_response(
+        project.id,
+        project.name,
+        project.client,
+        project.total_budget_idr,
+        project.budget_hr_idr,
+        project.budget_software_idr,
+        project.budget_hardware_idr,
+        project.budget_overhead_idr,
+        expense_hr_idr,
+        expense_software_idr,
+        expense_hardware_idr,
+        expense_overhead_idr,
+        resource_costs.total_resource_cost_idr,
+    )))
 }
 
 // ── Expense CRUD Handlers ───────────────────────────────────────────────────
 
-/// Helper: enforce PM-owns-project or admin access for expense endpoints.
-async fn enforce_expense_access(
+/// Helper: enforce PM-owns-project or admin access for project mutation endpoints (expenses, resource costs).
+async fn enforce_project_mutation_access(
     pool: &PgPool,
     headers: &HeaderMap,
     project_id: Uuid,
@@ -940,7 +1020,7 @@ async fn create_project_expense(
     Path(project_id): Path<Uuid>,
     Json(req): Json<CreateProjectExpenseRequest>,
 ) -> Result<Json<ProjectExpenseResponse>> {
-    let user_id = enforce_expense_access(
+    let user_id = enforce_project_mutation_access(
         &pool,
         &headers,
         project_id,
@@ -1008,7 +1088,7 @@ async fn list_project_expenses(
     headers: HeaderMap,
     Path(project_id): Path<Uuid>,
 ) -> Result<Json<Vec<ProjectExpenseResponse>>> {
-    let _user_id = enforce_expense_access(
+    let _user_id = enforce_project_mutation_access(
         &pool,
         &headers,
         project_id,
@@ -1045,7 +1125,7 @@ async fn update_project_expense(
     Path((project_id, expense_id)): Path<(Uuid, Uuid)>,
     Json(req): Json<UpdateProjectExpenseRequest>,
 ) -> Result<Json<ProjectExpenseResponse>> {
-    let user_id = enforce_expense_access(
+    let user_id = enforce_project_mutation_access(
         &pool,
         &headers,
         project_id,
@@ -1134,7 +1214,7 @@ async fn delete_project_expense(
     headers: HeaderMap,
     Path((project_id, expense_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>> {
-    let user_id = enforce_expense_access(
+    let user_id = enforce_project_mutation_access(
         &pool,
         &headers,
         project_id,
@@ -1276,7 +1356,7 @@ async fn upsert_project_revenue(
     Path(project_id): Path<Uuid>,
     Json(req): Json<UpsertProjectRevenueRequest>,
 ) -> Result<Json<ProjectRevenueRowResponse>> {
-    let user_id = enforce_expense_access(
+    let user_id = enforce_project_mutation_access(
         &pool,
         &headers,
         project_id,
@@ -1346,7 +1426,7 @@ async fn get_project_revenue(
     Path(project_id): Path<Uuid>,
     Query(query): Query<ProjectRevenueQuery>,
 ) -> Result<Json<ProjectRevenueGridResponse>> {
-    let _user_id = enforce_expense_access(
+    let _user_id = enforce_project_mutation_access(
         &pool,
         &headers,
         project_id,
@@ -1495,7 +1575,7 @@ async fn get_project_resource_costs(
     headers: HeaderMap,
     Path(project_id): Path<Uuid>,
 ) -> Result<Json<ProjectResourceCostResponse>> {
-    let _user_id = enforce_expense_access(
+    let _user_id = enforce_project_mutation_access(
         &pool,
         &headers,
         project_id,
@@ -1503,6 +1583,12 @@ async fn get_project_resource_costs(
         "project_resource_costs",
     )
     .await?;
+
+    sqlx::query_scalar!("SELECT id FROM projects WHERE id = $1", project_id)
+        .fetch_optional(&pool)
+        .await
+        .map_err(|e| AppError::Database(e.to_string()))?
+        .ok_or_else(|| AppError::NotFound(format!("Project {} not found", project_id)))?;
 
     let result =
         crate::services::project_cost_service::compute_project_resource_costs(&pool, project_id)

@@ -2,7 +2,7 @@
 -- Adds project_expenses table for tracking non-resource costs (vendor payments, software licenses, etc.)
 
 CREATE TABLE IF NOT EXISTS project_expenses (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
     category TEXT NOT NULL CHECK (category IN ('hr', 'software', 'hardware', 'overhead')),
     description TEXT NOT NULL,

@@ -463,6 +463,22 @@ async fn admin_can_view_resource_costs_on_any_project(pool: PgPool) {
     );
 }
 
+#[sqlx::test(migrations = "../../migrations")]
+async fn admin_get_resource_costs_returns_not_found_for_missing_project(pool: PgPool) {
+    set_test_env();
+    let app = xynergy_backend::create_app(pool.clone());
+
+    let admin_email = test_email();
+    let _admin_id = create_test_user_with_role(&pool, &admin_email, "admin").await;
+    let admin_token = get_auth_token(&app, &admin_email).await;
+    let missing_project_id = Uuid::new_v4();
+
+    let (status, body) = get_resource_costs(&app, &admin_token, missing_project_id).await;
+
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(body["error"]["code"].as_str().unwrap(), "NOT_FOUND");
+}
+
 // ── Test 9: Non-PM/non-admin role denied ────────────────────────────────────
 
 #[sqlx::test(migrations = "../../migrations")]
@@ -569,6 +585,23 @@ async fn budget_spent_includes_resource_costs(pool: PgPool) {
         body["remaining_idr"].as_i64().unwrap(),
         50_000_000 - 5_500_000,
         "remaining_idr should be total minus spent"
+    );
+
+    // Per-category breakdowns should reflect expenses only (not inflated by resource costs)
+    assert_eq!(
+        body["spent_hr_idr"].as_i64().unwrap(),
+        0,
+        "spent_hr_idr should be HR expenses only (none in this test)"
+    );
+    assert_eq!(
+        body["spent_software_idr"].as_i64().unwrap(),
+        500_000,
+        "spent_software_idr should be software expenses only"
+    );
+    assert_eq!(
+        body["resource_cost_idr"].as_i64().unwrap(),
+        5_000_000,
+        "resource_cost_idr should reflect computed resource costs"
     );
 }
 

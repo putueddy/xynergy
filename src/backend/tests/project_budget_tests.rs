@@ -130,6 +130,24 @@ async fn pm_can_set_budget_on_own_project(pool: PgPool) {
             .expect("spent_to_date_idr should be present"),
         0_i64
     );
+    assert_eq!(
+        body["remaining_idr"]
+            .as_i64()
+            .expect("remaining_idr should be present"),
+        100000000_i64
+    );
+    assert_eq!(
+        body["spent_hr_idr"]
+            .as_i64()
+            .expect("spent_hr_idr should be present"),
+        0_i64
+    );
+    assert_eq!(
+        body["remaining_hr_idr"]
+            .as_i64()
+            .expect("remaining_hr_idr should be present"),
+        50000000_i64
+    );
 
     let hr_pct = body["hr_pct"].as_f64().expect("hr_pct should be present");
     let software_pct = body["software_pct"]
@@ -530,11 +548,18 @@ async fn decimal_budget_value_rejected(pool: PgPool) {
         .await
         .expect("should return response");
 
-    assert!(
-        resp.status() == StatusCode::BAD_REQUEST
-            || resp.status() == StatusCode::UNPROCESSABLE_ENTITY,
-        "decimal payload should be rejected; got status {}",
-        resp.status()
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+
+    let bytes = to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .expect("decimal validation body should be readable");
+    let body: Value =
+        serde_json::from_slice(&bytes).expect("decimal validation body should be valid JSON");
+    assert_eq!(
+        body["error"]["code"]
+            .as_str()
+            .expect("error code should be present"),
+        "VALIDATION_ERROR"
     );
 }
 
@@ -859,7 +884,9 @@ async fn existing_project_crud_still_works(pool: PgPool) {
         .expect("get response body should be readable");
     let got: Value = serde_json::from_slice(&get_bytes).expect("get response should be valid JSON");
     assert_eq!(
-        got["name"].as_str().expect("project name should be present"),
+        got["name"]
+            .as_str()
+            .expect("project name should be present"),
         "CRUD Project Updated"
     );
 
@@ -888,4 +915,170 @@ async fn existing_project_crud_still_works(pool: PgPool) {
         .await
         .expect("get deleted project should return response");
     assert_eq!(get_deleted_resp.status(), StatusCode::NOT_FOUND);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn non_pm_role_denied_budget_read_is_audited(pool: PgPool) {
+    set_test_env();
+    let app = xynergy_backend::create_app(pool.clone());
+
+    let pm_email = test_email();
+    let pm_id = create_test_user_with_role(&pool, &pm_email, "project_manager").await;
+    let project_id = create_test_project_with_pm(&pool, "Budget Read Audit Project", pm_id).await;
+
+    let dept_head_email = test_email();
+    let _dept_head_id =
+        create_test_user_with_role(&pool, &dept_head_email, "department_head").await;
+    let dept_head_token = get_auth_token(&app, &dept_head_email).await;
+
+    let req = Request::builder()
+        .method("GET")
+        .uri(format!("/api/v1/projects/{}/budget", project_id))
+        .header("Authorization", format!("Bearer {}", dept_head_token))
+        .body(Body::empty())
+        .expect("request should be built");
+    let resp = app
+        .clone()
+        .oneshot(req)
+        .await
+        .expect("should return response");
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+
+    let audit_count = sqlx::query_scalar::<_, i64>(
+        "SELECT count(*)
+         FROM audit_logs
+         WHERE entity_type = 'project_budget'
+           AND action = 'ACCESS_DENIED'
+           AND entity_id = $1",
+    )
+    .bind(project_id)
+    .fetch_one(&pool)
+    .await
+    .expect("audit log query should succeed");
+
+    assert!(
+        audit_count > 0,
+        "audit log should contain ACCESS_DENIED entry for budget read"
+    );
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn budget_read_returns_category_spend_and_remaining(pool: PgPool) {
+    set_test_env();
+    let app = xynergy_backend::create_app(pool.clone());
+
+    let pm_email = test_email();
+    let pm_id = create_test_user_with_role(&pool, &pm_email, "project_manager").await;
+    let project_id = create_test_project_with_pm(&pool, "Spent Zero Project", pm_id).await;
+    let token = get_auth_token(&app, &pm_email).await;
+
+    let set_req = Request::builder()
+        .method("POST")
+        .uri(format!("/api/v1/projects/{}/budget", project_id))
+        .header("Authorization", format!("Bearer {}", token))
+        .header("content-type", "application/json")
+        .body(Body::from(
+            json!({
+                "total_budget_idr": 100000000_i64,
+                "budget_hr_idr": 50000000_i64,
+                "budget_software_idr": 20000000_i64,
+                "budget_hardware_idr": 15000000_i64,
+                "budget_overhead_idr": 15000000_i64,
+            })
+            .to_string(),
+        ))
+        .expect("set budget request should be built");
+    let set_resp = app
+        .clone()
+        .oneshot(set_req)
+        .await
+        .expect("set budget should return response");
+    assert_eq!(set_resp.status(), StatusCode::OK);
+
+    sqlx::query(
+        "INSERT INTO project_expenses (project_id, category, description, amount_idr, expense_date)
+         VALUES ($1, 'hr', 'Legacy expense', 1500000, CURRENT_DATE)",
+    )
+    .bind(project_id)
+    .execute(&pool)
+    .await
+    .expect("expense seed should succeed");
+
+    let get_req = Request::builder()
+        .method("GET")
+        .uri(format!("/api/v1/projects/{}/budget", project_id))
+        .header("Authorization", format!("Bearer {}", token))
+        .body(Body::empty())
+        .expect("get budget request should be built");
+    let get_resp = app
+        .clone()
+        .oneshot(get_req)
+        .await
+        .expect("get budget should return response");
+    assert_eq!(get_resp.status(), StatusCode::OK);
+
+    let bytes = to_bytes(get_resp.into_body(), usize::MAX)
+        .await
+        .expect("get response body should be readable");
+    let body: Value = serde_json::from_slice(&bytes).expect("get response should be valid JSON");
+    assert_eq!(body["spent_to_date_idr"].as_i64(), Some(1500000_i64));
+    assert_eq!(body["remaining_idr"].as_i64(), Some(98500000_i64));
+    assert_eq!(body["spent_hr_idr"].as_i64(), Some(1500000_i64));
+    assert_eq!(body["remaining_hr_idr"].as_i64(), Some(48500000_i64));
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn pm_create_project_respects_requested_status_and_explicit_manager(pool: PgPool) {
+    set_test_env();
+    let app = xynergy_backend::create_app(pool.clone());
+
+    let pm_email = test_email();
+    let _pm_id = create_test_user_with_role(&pool, &pm_email, "project_manager").await;
+    let pm_token = get_auth_token(&app, &pm_email).await;
+
+    let other_pm_email = test_email();
+    let other_pm_id = create_test_user_with_role(&pool, &other_pm_email, "project_manager").await;
+
+    let req = Request::builder()
+        .method("POST")
+        .uri("/api/v1/projects")
+        .header("Authorization", format!("Bearer {}", pm_token))
+        .header("content-type", "application/json")
+        .body(Body::from(
+            json!({
+                "name": "PM Ownership Guard",
+                "client": "ACME Corp",
+                "description": "should respect requested status and explicit PM",
+                "start_date": "2026-04-01",
+                "end_date": "2026-06-30",
+                "status": "planning",
+                "project_manager_id": other_pm_id,
+                "total_budget_idr": 0,
+                "budget_hr_idr": 0,
+                "budget_software_idr": 0,
+                "budget_hardware_idr": 0,
+                "budget_overhead_idr": 0
+            })
+            .to_string(),
+        ))
+        .expect("request should be built");
+
+    let resp = app
+        .clone()
+        .oneshot(req)
+        .await
+        .expect("create project should return response");
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let bytes = to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .expect("create response body should be readable");
+    let body: Value = serde_json::from_slice(&bytes).expect("create response should be valid JSON");
+
+    let other_pm_id_str = other_pm_id.to_string();
+    assert_eq!(body["status"].as_str(), Some("planning"));
+    assert_eq!(
+        body["project_manager_id"].as_str(),
+        Some(other_pm_id_str.as_str())
+    );
 }

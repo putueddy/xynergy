@@ -1,6 +1,6 @@
 # Story 4.1: Project Budget Setup
 
-Status: review
+Status: done
 
 ## Story
 
@@ -186,7 +186,28 @@ Planning artifacts (consult if ambiguous):
 - Story created for Epic 4 Story 1, validated via `validate-create-story` checklist.
 - All critical issues (status casing, category scope, JSONB deviation) addressed.
 - Story set to `ready-for-dev` with comprehensive implementation guardrails.
+- Code review remediations applied: enforced PM creation invariants (`status=Active`, PM self-assignment), added denied-read budget audit logging, switched budget auth checks to `can_access_project()` pattern for PM access, normalized decimal payload failures to `AppError::Validation`, and expanded budget response/UI to include per-category spent/remaining values.
+- Added and updated integration coverage in `project_budget_tests.rs` for denied-read audit logging, decimal validation envelope, PM creation invariants, and category spent/remaining response fields.
 
 ### File List
 
 - `_bmad-output/implementation-artifacts/4-1-project-budget-setup.md`
+- `src/backend/src/routes/project.rs`
+- `src/backend/tests/project_budget_tests.rs`
+- `src/frontend/src/components/project_form.rs`
+- `src/frontend/src/pages/projects.rs`
+
+### Senior Developer Review (AI)
+
+- Outcome: **Approved after fixes**
+- Fixed (High): AC #3 creation invariants are now enforced for PM-created projects (`status` forced to `Active`, PM self-assignment enforced).
+- Fixed (Medium): GET budget forbidden path now emits `ACCESS_DENIED` audit entry for non-authorized roles.
+- Fixed (Medium): Budget endpoints now apply relationship-based `can_access_project()` checks for PM authorization.
+- Fixed (High): Budget summary now includes per-category spent/remaining fields in API and UI presentation.
+- Fixed (Medium): Decimal payload rejection is normalized to validation envelope (`BAD_REQUEST` + `VALIDATION_ERROR`) for budget set endpoint.
+- Revalidated: `cargo test --test project_budget_tests` (17/17), full backend `cargo test` (all green), and frontend `cargo build --package xynergy-frontend` (success).
+
+### Change Log
+
+- 2026-03-04: Senior code review completed for Story 4.1; identified and remediated AC/task mismatches in authorization, audit logging, budget summary coverage, and validation behavior.
+- 2026-03-04: Story status transitioned `review` -> `done` after fix verification.

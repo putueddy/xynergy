@@ -1,7 +1,7 @@
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::Serialize;
 use sqlx::types::BigDecimal;
-use sqlx::{Postgres, Row, Transaction};
+use sqlx::{PgPool, Postgres, Row, Transaction};
 use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 
@@ -225,6 +225,28 @@ pub async fn extract_daily_rate_from_allocation_row(
 pub async fn load_holidays(tx: &mut Transaction<'_, Postgres>) -> Result<Vec<NaiveDate>> {
     let holiday_rows = sqlx::query("SELECT date::TEXT as date FROM holidays")
         .fetch_all(&mut **tx)
+        .await
+        .map_err(|e| AppError::Database(e.to_string()))?;
+
+    let mut holidays = Vec::new();
+    for row in holiday_rows {
+        let date_str: String = row
+            .try_get("date")
+            .map_err(|e| AppError::Database(e.to_string()))?;
+        let parsed = NaiveDate::parse_from_str(&date_str, "%Y-%m-%d")
+            .map_err(|_| AppError::Internal("Failed to parse holiday date".to_string()))?;
+        if !is_weekend(parsed) {
+            holidays.push(parsed);
+        }
+    }
+
+    Ok(holidays)
+}
+
+/// Pool-based variant of `load_holidays` for non-transactional callers.
+pub async fn load_holidays_pool(pool: &PgPool) -> Result<Vec<NaiveDate>> {
+    let holiday_rows = sqlx::query("SELECT date::TEXT as date FROM holidays")
+        .fetch_all(pool)
         .await
         .map_err(|e| AppError::Database(e.to_string()))?;
 

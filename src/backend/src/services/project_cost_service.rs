@@ -7,7 +7,8 @@ use uuid::Uuid;
 
 use crate::error::{AppError, Result};
 use crate::services::budget_service::{
-    bigdecimal_to_i64_trunc, extract_daily_rate_from_allocation_row, parse_json_decimal,
+    bigdecimal_to_i64_trunc, extract_daily_rate_from_allocation_row, load_holidays_pool,
+    parse_json_decimal,
 };
 use crate::services::cost_preview::{calculate_cost_preview, count_working_days};
 use crate::services::ctc_crypto::{CtcCryptoService, DefaultCtcCryptoService, EncryptedPayload};
@@ -66,30 +67,6 @@ struct RateWindow {
     effective_until: NaiveDate,
 }
 
-// ── Load holidays from pool (non-transaction variant) ────────────────────────
-
-async fn load_holidays_from_pool(pool: &PgPool) -> Result<Vec<NaiveDate>> {
-    use crate::services::cost_preview::is_weekend;
-
-    let holiday_rows = sqlx::query("SELECT date::TEXT as date FROM holidays")
-        .fetch_all(pool)
-        .await
-        .map_err(|e| AppError::Database(e.to_string()))?;
-
-    let mut holidays = Vec::new();
-    for row in holiday_rows {
-        let date_str: String = row
-            .try_get("date")
-            .map_err(|e| AppError::Database(e.to_string()))?;
-        let parsed = NaiveDate::parse_from_str(&date_str, "%Y-%m-%d")
-            .map_err(|_| AppError::Internal("Failed to parse holiday date".to_string()))?;
-        if !is_weekend(parsed) {
-            holidays.push(parsed);
-        }
-    }
-
-    Ok(holidays)
-}
 
 // ── CTC revision rate extraction ─────────────────────────────────────────────
 
@@ -253,7 +230,7 @@ pub async fn compute_project_resource_costs(
     pool: &PgPool,
     project_id: Uuid,
 ) -> Result<ProjectResourceCostResult> {
-    let holidays = load_holidays_from_pool(pool).await?;
+    let holidays = load_holidays_pool(pool).await?;
     let crypto_svc = DefaultCtcCryptoService::new(EnvKeyProvider::new());
     let mut revision_points_cache: HashMap<Uuid, Vec<(NaiveDate, i64)>> = HashMap::new();
 

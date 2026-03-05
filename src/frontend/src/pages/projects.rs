@@ -26,6 +26,14 @@ struct ProjectBudgetData {
     pub overhead_pct: f64,
     pub spent_to_date_idr: i64,
     pub remaining_idr: i64,
+    pub spent_hr_idr: i64,
+    pub spent_software_idr: i64,
+    pub spent_hardware_idr: i64,
+    pub spent_overhead_idr: i64,
+    pub remaining_hr_idr: i64,
+    pub remaining_software_idr: i64,
+    pub remaining_hardware_idr: i64,
+    pub remaining_overhead_idr: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -600,6 +608,13 @@ pub fn Projects() -> impl IntoView {
     };
 
     let handle_delete_expense = move |expense_id: Uuid| {
+        let window = web_sys::window().expect("no window");
+        let confirmed = window
+            .confirm_with_message("Are you sure you want to delete this expense? This action cannot be undone.")
+            .unwrap_or(false);
+        if !confirmed {
+            return;
+        }
         let project_id = match selected_project_for_expenses.get() {
             Some(p) => p.id,
             None => return,
@@ -778,35 +793,48 @@ pub fn Projects() -> impl IntoView {
                                                             </div>
 
                                                             <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-3">"Category Breakdown"</h3>
-                                                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                                                <div class="flex justify-between items-center p-3 bg-gray-50 dark:bg-gray-700 rounded">
-                                                                    <span class="text-sm text-gray-600 dark:text-gray-300">"HR"</span>
-                                                                    <div class="text-right">
-                                                                        <span class="text-sm font-medium text-gray-900 dark:text-white">{format_idr(budget.budget_hr_idr)}</span>
-                                                                        <span class="text-xs text-gray-500 dark:text-gray-400 ml-2">{format!("{:.1}%", budget.hr_pct)}</span>
-                                                                    </div>
-                                                                </div>
-                                                                <div class="flex justify-between items-center p-3 bg-gray-50 dark:bg-gray-700 rounded">
-                                                                    <span class="text-sm text-gray-600 dark:text-gray-300">"Software"</span>
-                                                                    <div class="text-right">
-                                                                        <span class="text-sm font-medium text-gray-900 dark:text-white">{format_idr(budget.budget_software_idr)}</span>
-                                                                        <span class="text-xs text-gray-500 dark:text-gray-400 ml-2">{format!("{:.1}%", budget.software_pct)}</span>
-                                                                    </div>
-                                                                </div>
-                                                                <div class="flex justify-between items-center p-3 bg-gray-50 dark:bg-gray-700 rounded">
-                                                                    <span class="text-sm text-gray-600 dark:text-gray-300">"Hardware"</span>
-                                                                    <div class="text-right">
-                                                                        <span class="text-sm font-medium text-gray-900 dark:text-white">{format_idr(budget.budget_hardware_idr)}</span>
-                                                                        <span class="text-xs text-gray-500 dark:text-gray-400 ml-2">{format!("{:.1}%", budget.hardware_pct)}</span>
-                                                                    </div>
-                                                                </div>
-                                                                <div class="flex justify-between items-center p-3 bg-gray-50 dark:bg-gray-700 rounded">
-                                                                    <span class="text-sm text-gray-600 dark:text-gray-300">"Overhead"</span>
-                                                                    <div class="text-right">
-                                                                        <span class="text-sm font-medium text-gray-900 dark:text-white">{format_idr(budget.budget_overhead_idr)}</span>
-                                                                        <span class="text-xs text-gray-500 dark:text-gray-400 ml-2">{format!("{:.1}%", budget.overhead_pct)}</span>
-                                                                    </div>
-                                                                </div>
+                                                            <div class="overflow-x-auto">
+                                                                <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                                                                    <thead class="bg-gray-50 dark:bg-gray-700">
+                                                                        <tr>
+                                                                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">"Category"</th>
+                                                                            <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">"Total"</th>
+                                                                            <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">"Spent"</th>
+                                                                            <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">"Remaining"</th>
+                                                                            <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">"%"</th>
+                                                                        </tr>
+                                                                    </thead>
+                                                                    <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                                                                        <tr>
+                                                                            <td class="px-4 py-2 text-sm text-gray-600 dark:text-gray-300">"HR"</td>
+                                                                            <td class="px-4 py-2 text-sm text-right font-medium text-gray-900 dark:text-white">{format_idr(budget.budget_hr_idr)}</td>
+                                                                            <td class="px-4 py-2 text-sm text-right text-gray-700 dark:text-gray-300">{format_idr(budget.spent_hr_idr)}</td>
+                                                                            <td class="px-4 py-2 text-sm text-right text-gray-700 dark:text-gray-300">{format_idr(budget.remaining_hr_idr)}</td>
+                                                                            <td class="px-4 py-2 text-sm text-right text-gray-500 dark:text-gray-400">{format!("{:.1}%", budget.hr_pct)}</td>
+                                                                        </tr>
+                                                                        <tr>
+                                                                            <td class="px-4 py-2 text-sm text-gray-600 dark:text-gray-300">"Software"</td>
+                                                                            <td class="px-4 py-2 text-sm text-right font-medium text-gray-900 dark:text-white">{format_idr(budget.budget_software_idr)}</td>
+                                                                            <td class="px-4 py-2 text-sm text-right text-gray-700 dark:text-gray-300">{format_idr(budget.spent_software_idr)}</td>
+                                                                            <td class="px-4 py-2 text-sm text-right text-gray-700 dark:text-gray-300">{format_idr(budget.remaining_software_idr)}</td>
+                                                                            <td class="px-4 py-2 text-sm text-right text-gray-500 dark:text-gray-400">{format!("{:.1}%", budget.software_pct)}</td>
+                                                                        </tr>
+                                                                        <tr>
+                                                                            <td class="px-4 py-2 text-sm text-gray-600 dark:text-gray-300">"Hardware"</td>
+                                                                            <td class="px-4 py-2 text-sm text-right font-medium text-gray-900 dark:text-white">{format_idr(budget.budget_hardware_idr)}</td>
+                                                                            <td class="px-4 py-2 text-sm text-right text-gray-700 dark:text-gray-300">{format_idr(budget.spent_hardware_idr)}</td>
+                                                                            <td class="px-4 py-2 text-sm text-right text-gray-700 dark:text-gray-300">{format_idr(budget.remaining_hardware_idr)}</td>
+                                                                            <td class="px-4 py-2 text-sm text-right text-gray-500 dark:text-gray-400">{format!("{:.1}%", budget.hardware_pct)}</td>
+                                                                        </tr>
+                                                                        <tr>
+                                                                            <td class="px-4 py-2 text-sm text-gray-600 dark:text-gray-300">"Overhead"</td>
+                                                                            <td class="px-4 py-2 text-sm text-right font-medium text-gray-900 dark:text-white">{format_idr(budget.budget_overhead_idr)}</td>
+                                                                            <td class="px-4 py-2 text-sm text-right text-gray-700 dark:text-gray-300">{format_idr(budget.spent_overhead_idr)}</td>
+                                                                            <td class="px-4 py-2 text-sm text-right text-gray-700 dark:text-gray-300">{format_idr(budget.remaining_overhead_idr)}</td>
+                                                                            <td class="px-4 py-2 text-sm text-right text-gray-500 dark:text-gray-400">{format!("{:.1}%", budget.overhead_pct)}</td>
+                                                                        </tr>
+                                                                    </tbody>
+                                                                </table>
                                                             </div>
                                                         </div>
                                                     }
@@ -838,8 +866,7 @@ pub fn Projects() -> impl IntoView {
                                                                         <tr>
                                                                             <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">"Employee"</th>
                                                                             <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">"Daily Rate"</th>
-                                                                            <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">"Days"</th>
-                                                                            <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">"Allocation"</th>
+                                                                            <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">"Days Allocated"</th>
                                                                             <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">"Total Cost"</th>
                                                                         </tr>
                                                                     </thead>
@@ -868,12 +895,11 @@ pub fn Projects() -> impl IntoView {
                                                                                     </td>
                                                                                     <td class=rate_class>{rate_display}</td>
                                                                                     <td class="px-4 py-3 whitespace-nowrap text-sm text-right text-gray-900 dark:text-white">{emp.days_allocated}</td>
-                                                                                    <td class="px-4 py-3 whitespace-nowrap text-sm text-right text-gray-900 dark:text-white">{format!("{:.0}%", emp.allocation_percentage)}</td>
                                                                                     <td class="px-4 py-3 whitespace-nowrap text-sm text-right font-medium text-gray-900 dark:text-white">{format_idr(emp.total_cost_idr)}</td>
                                                                                 </tr>
                                                                                 {note.map(|n| view! {
                                                                                     <tr class="bg-yellow-50 dark:bg-yellow-900/10">
-                                                                                        <td colspan="5" class="px-4 py-1 text-xs text-yellow-700 dark:text-yellow-300 italic">{n}</td>
+                                                                                        <td colspan="4" class="px-4 py-1 text-xs text-yellow-700 dark:text-yellow-300 italic">{n}</td>
                                                                                     </tr>
                                                                                 })}
                                                                             }
@@ -1189,7 +1215,7 @@ pub fn Projects() -> impl IntoView {
 
 /// Fetch all projects from API
 async fn fetch_projects() -> Result<Vec<Project>, String> {
-    let response = authenticated_get("http://localhost:3000/api/v1/projects")
+    let response = authenticated_get("/api/v1/projects")
         .await
         .map_err(|e| format!("Failed to fetch projects: {}", e))?;
 
@@ -1205,7 +1231,7 @@ async fn fetch_projects() -> Result<Vec<Project>, String> {
 
 async fn fetch_project_budget(project_id: Uuid) -> Result<ProjectBudgetData, String> {
     let response = authenticated_get(&format!(
-        "http://localhost:3000/api/v1/projects/{}/budget",
+        "/api/v1/projects/{}/budget",
         project_id
     ))
     .await
@@ -1275,14 +1301,14 @@ async fn create_project(
     }
 
     let response = authenticated_post_json(
-        "http://localhost:3000/api/v1/projects",
+        "/api/v1/projects",
         &serde_json::json!({
             "name": form_data.name,
             "client": if form_data.client.is_empty() { None } else { Some(form_data.client) },
             "description": if form_data.description.is_empty() { None } else { Some(form_data.description) },
             "start_date": start_date,
             "end_date": end_date,
-            "status": form_data.status,
+            "status": "Active",
             "project_manager_id": project_manager_id,
             "total_budget_idr": total_budget_idr,
             "budget_hr_idr": budget_hr_idr,
@@ -1341,7 +1367,7 @@ async fn update_project(
     }
 
     let response = authenticated_put_json(
-        &format!("http://localhost:3000/api/v1/projects/{}", id),
+        &format!("/api/v1/projects/{}", id),
         &serde_json::json!({
             "name": form_data.name,
             "client": if form_data.client.is_empty() { None } else { Some(form_data.client) },
@@ -1373,7 +1399,7 @@ async fn update_project(
 
 /// Delete a project
 async fn delete_project(id: Uuid) -> Result<(), String> {
-    let response = authenticated_delete(&format!("http://localhost:3000/api/v1/projects/{}", id))
+    let response = authenticated_delete(&format!("/api/v1/projects/{}", id))
         .await
         .map_err(|e| format!("Failed to delete project: {}", e))?;
 
@@ -1390,7 +1416,7 @@ async fn delete_project(id: Uuid) -> Result<(), String> {
 
 async fn fetch_project_expenses(project_id: Uuid) -> Result<Vec<ProjectExpenseData>, String> {
     let response = authenticated_get(&format!(
-        "http://localhost:3000/api/v1/projects/{}/expenses",
+        "/api/v1/projects/{}/expenses",
         project_id
     ))
     .await
@@ -1422,7 +1448,7 @@ async fn create_project_expense(project_id: Uuid, data: ExpenseFormData) -> Resu
     }
 
     let response = authenticated_post_json(
-        &format!("http://localhost:3000/api/v1/projects/{}/expenses", project_id),
+        &format!("/api/v1/projects/{}/expenses", project_id),
         &serde_json::json!({
             "category": data.category,
             "description": data.description,
@@ -1468,7 +1494,7 @@ async fn update_project_expense(
     }
 
     let response = authenticated_put_json(
-        &format!("http://localhost:3000/api/v1/projects/{}/expenses/{}", project_id, expense_id),
+        &format!("/api/v1/projects/{}/expenses/{}", project_id, expense_id),
         &serde_json::json!({
             "category": data.category,
             "description": data.description,
@@ -1494,7 +1520,7 @@ async fn update_project_expense(
 
 async fn delete_project_expense(project_id: Uuid, expense_id: Uuid) -> Result<(), String> {
     let response = authenticated_delete(&format!(
-        "http://localhost:3000/api/v1/projects/{}/expenses/{}",
+        "/api/v1/projects/{}/expenses/{}",
         project_id, expense_id
     ))
     .await
@@ -1513,7 +1539,7 @@ async fn delete_project_expense(project_id: Uuid, expense_id: Uuid) -> Result<()
 
 async fn fetch_resource_costs(project_id: Uuid) -> Result<ResourceCostData, String> {
     let response = authenticated_get(&format!(
-        "http://localhost:3000/api/v1/projects/{}/resource-costs",
+        "/api/v1/projects/{}/resource-costs",
         project_id
     ))
     .await
@@ -1537,7 +1563,7 @@ async fn fetch_project_revenue(
     year: i32,
 ) -> Result<ProjectRevenueGridResponse, String> {
     let response = authenticated_get(&format!(
-        "http://localhost:3000/api/v1/projects/{}/revenue?year={}",
+        "/api/v1/projects/{}/revenue?year={}",
         project_id, year
     ))
     .await
@@ -1559,7 +1585,7 @@ async fn upsert_project_revenue(
 ) -> Result<(), String> {
     let response = authenticated_post_json(
         &format!(
-            "http://localhost:3000/api/v1/projects/{}/revenue",
+            "/api/v1/projects/{}/revenue",
             project_id
         ),
         &req,

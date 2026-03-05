@@ -2,7 +2,7 @@ use axum::{
     body::{to_bytes, Body},
     http::{Request, StatusCode},
 };
-use chrono::Local;
+use chrono::{Local, Utc};
 use serde_json::{json, Value};
 use sqlx::PgPool;
 use tower::ServiceExt;
@@ -34,7 +34,7 @@ fn allocation_dates() -> (String, String) {
 /// Returns dates that span CURRENT_DATE for team endpoint tests.
 /// start = today (matches project start), end = today + 60d.
 fn current_spanning_allocation_dates() -> (String, String) {
-    let today = Local::now().date_naive();
+    let today = Utc::now().date_naive();
     let start = today;
     let end = today + chrono::Duration::days(60);
     (
