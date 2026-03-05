@@ -100,7 +100,11 @@ async fn build_valid_ctc_components(app: &axum::Router, token: &str, resource_id
         ))
         .expect("request should be built");
 
-    let res = app.clone().oneshot(req).await.expect("preview should respond");
+    let res = app
+        .clone()
+        .oneshot(req)
+        .await
+        .expect("preview should respond");
     assert_eq!(res.status(), StatusCode::OK);
     let bytes = to_bytes(res.into_body(), usize::MAX)
         .await

@@ -68,10 +68,7 @@ async fn fetch_completeness(
 ) -> Result<(Vec<DepartmentRow>, i64, i64, i64, f64), String> {
     let url = match department_id {
         Some(ref id) if !id.is_empty() => {
-            format!(
-                "/api/v1/ctc/completeness?department_id={}",
-                id
-            )
+            format!("/api/v1/ctc/completeness?department_id={}", id)
         }
         _ => "/api/v1/ctc/completeness".to_string(),
     };

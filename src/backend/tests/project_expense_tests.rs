@@ -145,10 +145,7 @@ async fn pm_can_create_expense_on_own_project(pool: PgPool) {
     assert_eq!(body["expense_date"].as_str().unwrap(), "2026-03-01");
     assert_eq!(body["vendor"].as_str().unwrap(), "JetBrains");
     assert!(body["id"].as_str().is_some());
-    assert_eq!(
-        body["project_id"].as_str().unwrap(),
-        project_id.to_string()
-    );
+    assert_eq!(body["project_id"].as_str().unwrap(), project_id.to_string());
 }
 
 // ── Test 2: PM denied on non-owned project ────────────────────────────────
@@ -178,10 +175,7 @@ async fn pm_denied_expense_on_non_owned_project(pool: PgPool) {
     .await;
 
     assert_eq!(status, StatusCode::FORBIDDEN);
-    assert_eq!(
-        body["error"]["code"].as_str().unwrap(),
-        "FORBIDDEN_ERROR"
-    );
+    assert_eq!(body["error"]["code"].as_str().unwrap(), "FORBIDDEN_ERROR");
 
     let audit_entry = sqlx::query!(
         "SELECT action, entity_type, entity_id, user_id FROM audit_logs WHERE action = 'ACCESS_DENIED' AND entity_type = 'project_expense' AND entity_id = $1 AND user_id = $2 ORDER BY created_at DESC LIMIT 1",
@@ -261,10 +255,7 @@ async fn non_pm_non_admin_denied_expense(pool: PgPool) {
     .await;
 
     assert_eq!(status, StatusCode::FORBIDDEN);
-    assert_eq!(
-        body["error"]["code"].as_str().unwrap(),
-        "FORBIDDEN_ERROR"
-    );
+    assert_eq!(body["error"]["code"].as_str().unwrap(), "FORBIDDEN_ERROR");
 }
 
 // ── Test 5: Invalid category rejected ─────────────────────────────────────
@@ -292,16 +283,11 @@ async fn invalid_category_rejected(pool: PgPool) {
     .await;
 
     assert_eq!(status, StatusCode::BAD_REQUEST);
-    assert_eq!(
-        body["error"]["code"].as_str().unwrap(),
-        "VALIDATION_ERROR"
-    );
-    assert!(
-        body["error"]["message"]
-            .as_str()
-            .unwrap()
-            .contains("Invalid category")
-    );
+    assert_eq!(body["error"]["code"].as_str().unwrap(), "VALIDATION_ERROR");
+    assert!(body["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("Invalid category"));
 }
 
 // ── Test 6: Zero and negative amount rejected ─────────────────────────────
@@ -330,16 +316,11 @@ async fn zero_and_negative_amount_rejected(pool: PgPool) {
     .await;
 
     assert_eq!(status, StatusCode::BAD_REQUEST);
-    assert_eq!(
-        body["error"]["code"].as_str().unwrap(),
-        "VALIDATION_ERROR"
-    );
-    assert!(
-        body["error"]["message"]
-            .as_str()
-            .unwrap()
-            .contains("positive integer")
-    );
+    assert_eq!(body["error"]["code"].as_str().unwrap(), "VALIDATION_ERROR");
+    assert!(body["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("positive integer"));
 
     // Negative amount
     let (status2, body2) = create_expense_via_api(
@@ -355,10 +336,7 @@ async fn zero_and_negative_amount_rejected(pool: PgPool) {
     .await;
 
     assert_eq!(status2, StatusCode::BAD_REQUEST);
-    assert_eq!(
-        body2["error"]["code"].as_str().unwrap(),
-        "VALIDATION_ERROR"
-    );
+    assert_eq!(body2["error"]["code"].as_str().unwrap(), "VALIDATION_ERROR");
 }
 
 #[sqlx::test(migrations = "../../migrations")]
@@ -459,16 +437,11 @@ async fn update_requires_edit_reason(pool: PgPool) {
         .await
         .expect("readable response body");
     let body: Value = serde_json::from_slice(&bytes).expect("valid JSON response");
-    assert_eq!(
-        body["error"]["code"].as_str().unwrap(),
-        "VALIDATION_ERROR"
-    );
-    assert!(
-        body["error"]["message"]
-            .as_str()
-            .unwrap()
-            .contains("edit_reason")
-    );
+    assert_eq!(body["error"]["code"].as_str().unwrap(), "VALIDATION_ERROR");
+    assert!(body["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("edit_reason"));
 
     // Update with valid edit_reason — should succeed
     let req2 = Request::builder()
@@ -639,14 +612,8 @@ async fn expense_appears_in_list(pool: PgPool) {
 
     assert_eq!(expenses.len(), 2);
     // Should be ordered by expense_date DESC
-    assert_eq!(
-        expenses[0]["expense_date"].as_str().unwrap(),
-        "2026-03-02"
-    );
-    assert_eq!(
-        expenses[1]["expense_date"].as_str().unwrap(),
-        "2026-03-01"
-    );
+    assert_eq!(expenses[0]["expense_date"].as_str().unwrap(), "2026-03-02");
+    assert_eq!(expenses[1]["expense_date"].as_str().unwrap(), "2026-03-01");
 }
 
 // ── Test 9: Delete removes expense ────────────────────────────────────────

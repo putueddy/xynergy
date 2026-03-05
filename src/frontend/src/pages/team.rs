@@ -431,44 +431,76 @@ async fn fetch_capacity_report(
 
 fn current_month_string() -> String {
     let now = Date::new_0();
-    format!("{:04}-{:02}", now.get_full_year(), now.get_month() as u32 + 1)
+    format!(
+        "{:04}-{:02}",
+        now.get_full_year(),
+        now.get_month() as u32 + 1
+    )
 }
 
 async fn fetch_budget_summary(period: &str) -> Result<DepartmentBudgetSummary, String> {
     let url = format!("/api/v1/team/budget?period={}", period);
-    let response = authenticated_get(&url).await.map_err(|e| format!("Failed: {}", e))?;
+    let response = authenticated_get(&url)
+        .await
+        .map_err(|e| format!("Failed: {}", e))?;
     if !response.status().is_success() {
         let body: Value = response.json().await.unwrap_or_default();
-        let msg = body.pointer("/error/message").and_then(|v| v.as_str()).unwrap_or("Failed to fetch budget summary.");
+        let msg = body
+            .pointer("/error/message")
+            .and_then(|v| v.as_str())
+            .unwrap_or("Failed to fetch budget summary.");
         return Err(msg.to_string());
     }
-    response.json::<DepartmentBudgetSummary>().await.map_err(|e| format!("Failed to parse: {}", e))
+    response
+        .json::<DepartmentBudgetSummary>()
+        .await
+        .map_err(|e| format!("Failed to parse: {}", e))
 }
 
 async fn fetch_budget_breakdown(period: &str) -> Result<BudgetBreakdownResponse, String> {
     let url = format!("/api/v1/team/budget/breakdown?period={}", period);
-    let response = authenticated_get(&url).await.map_err(|e| format!("Failed: {}", e))?;
+    let response = authenticated_get(&url)
+        .await
+        .map_err(|e| format!("Failed: {}", e))?;
     if !response.status().is_success() {
         let body: Value = response.json().await.unwrap_or_default();
-        let msg = body.pointer("/error/message").and_then(|v| v.as_str()).unwrap_or("Failed to fetch breakdown.");
+        let msg = body
+            .pointer("/error/message")
+            .and_then(|v| v.as_str())
+            .unwrap_or("Failed to fetch breakdown.");
         return Err(msg.to_string());
     }
-    response.json::<BudgetBreakdownResponse>().await.map_err(|e| format!("Failed to parse: {}", e))
+    response
+        .json::<BudgetBreakdownResponse>()
+        .await
+        .map_err(|e| format!("Failed to parse: {}", e))
 }
 
-async fn set_budget(period: &str, total_budget_idr: i64, alert_threshold_pct: i32) -> Result<Value, String> {
+async fn set_budget(
+    period: &str,
+    total_budget_idr: i64,
+    alert_threshold_pct: i32,
+) -> Result<Value, String> {
     let body = serde_json::json!({
         "budget_period": period,
         "total_budget_idr": total_budget_idr,
         "alert_threshold_pct": alert_threshold_pct,
     });
-    let response = authenticated_post_json("/api/v1/team/budget", &body).await.map_err(|e| format!("Failed: {}", e))?;
+    let response = authenticated_post_json("/api/v1/team/budget", &body)
+        .await
+        .map_err(|e| format!("Failed: {}", e))?;
     if !response.status().is_success() {
         let body: Value = response.json().await.unwrap_or_default();
-        let msg = body.pointer("/error/message").and_then(|v| v.as_str()).unwrap_or("Failed to set budget.");
+        let msg = body
+            .pointer("/error/message")
+            .and_then(|v| v.as_str())
+            .unwrap_or("Failed to set budget.");
         return Err(msg.to_string());
     }
-    response.json::<Value>().await.map_err(|e| format!("Failed to parse: {}", e))
+    response
+        .json::<Value>()
+        .await
+        .map_err(|e| format!("Failed to parse: {}", e))
 }
 
 fn format_idr(amount: i64) -> String {

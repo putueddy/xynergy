@@ -5,6 +5,7 @@ use crate::auth::{
 use crate::components::project_list::Project;
 use crate::components::{project_form::ProjectFormData, Footer, Header, ProjectForm, ProjectList};
 use chrono::{Datelike, NaiveDate};
+use gloo_timers::callback::Interval;
 use leptos::*;
 use leptos_router::*;
 use serde::{Deserialize, Serialize};
@@ -140,6 +141,41 @@ struct PlMonthEntry {
     pub total_cost_idr: i64,
     pub gross_profit_idr: i64,
     pub margin_pct: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ProjectPlForecastResponse {
+    pub project_id: Uuid,
+    pub year: i32,
+    pub as_of_date: String,
+    pub elapsed_days: i64,
+    pub total_project_days: i64,
+    pub current_spend_idr: i64,
+    pub current_revenue_idr: i64,
+    pub burn_rate_idr_per_day: f64,
+    pub projected_total_cost_idr: i64,
+    pub remaining_cost_projection_idr: i64,
+    pub forecast_margin_pct: f64,
+    pub target_margin_pct: f64,
+    pub variance_from_target_pct: f64,
+    pub categories: Vec<ForecastCategoryEntry>,
+    pub resource_drivers: Vec<ForecastResourceDriver>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ForecastCategoryEntry {
+    pub category: String,
+    pub budget_idr: i64,
+    pub current_spend_idr: i64,
+    pub projected_idr: i64,
+    pub overrun_idr: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ForecastResourceDriver {
+    pub resource_name: String,
+    pub total_cost_idr: i64,
+    pub share_pct: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -336,6 +372,43 @@ pub fn Projects() -> impl IntoView {
     let pnl_target_ref: NodeRef<html::Input> = create_node_ref();
     let pnl_alert_ref: NodeRef<html::Input> = create_node_ref();
     let (pnl_hover_month, set_pnl_hover_month) = create_signal(Option::<u32>::None);
+    let (show_forecast, set_show_forecast) = create_signal(false);
+
+    let forecast_resource = create_resource(
+        move || {
+            (
+                pnl_project_id.get(),
+                pnl_year.get(),
+                pnl_reload_nonce.get(),
+                show_forecast.get(),
+            )
+        },
+        move |(project_id, year, _nonce, show)| async move {
+            if !show {
+                return None;
+            }
+            match project_id {
+                Some(pid) => Some(fetch_pl_forecast(pid, year).await),
+                None => None,
+            }
+        },
+    );
+
+    create_effect(move |_| {
+        if show_forecast.get() && pnl_project_id.get().is_some() {
+            let interval = Interval::new(30_000, move || {
+                set_pnl_reload_nonce.update(|value| *value += 1);
+            });
+            on_cleanup(move || drop(interval));
+        }
+    });
+
+    let forecast_data = Signal::derive(move || {
+        forecast_resource
+            .get()
+            .and_then(|result| result)
+            .and_then(|result| result.ok())
+    });
 
     let pnl_resource = create_resource(
         move || (pnl_project_id.get(), pnl_year.get(), pnl_reload_nonce.get()),
@@ -356,6 +429,12 @@ pub fn Projects() -> impl IntoView {
 
     create_effect(move |_| {
         if let Some(Some(Err(e))) = pnl_resource.get() {
+            set_error.set(Some(e));
+        }
+    });
+
+    create_effect(move |_| {
+        if let Some(Some(Err(e))) = forecast_resource.get() {
             set_error.set(Some(e));
         }
     });
@@ -403,6 +482,7 @@ pub fn Projects() -> impl IntoView {
                     set_revenue_edit_month.set(None);
                     set_revenue_edit_amount.set(String::new());
                     set_revenue_reload_nonce.update(|value| *value += 1);
+                    set_pnl_reload_nonce.update(|value| *value += 1);
                 }
                 Err(e) => set_error.set(Some(e)),
             }
@@ -689,6 +769,8 @@ pub fn Projects() -> impl IntoView {
                             }
                         }
                     }
+
+                    set_pnl_reload_nonce.update(|value| *value += 1);
                 }
                 Err(e) => set_error.set(Some(e)),
             }
@@ -699,7 +781,9 @@ pub fn Projects() -> impl IntoView {
     let handle_delete_expense = move |expense_id: Uuid| {
         let window = web_sys::window().expect("no window");
         let confirmed = window
-            .confirm_with_message("Are you sure you want to delete this expense? This action cannot be undone.")
+            .confirm_with_message(
+                "Are you sure you want to delete this expense? This action cannot be undone.",
+            )
             .unwrap_or(false);
         if !confirmed {
             return;
@@ -737,6 +821,8 @@ pub fn Projects() -> impl IntoView {
                             }
                         }
                     }
+
+                    set_pnl_reload_nonce.update(|value| *value += 1);
                 }
                 Err(e) => set_error.set(Some(e)),
             }
@@ -1191,15 +1277,15 @@ pub fn Projects() -> impl IntoView {
                                         let months_for_chart = pnl.months.clone();
                                         let months_for_tooltip = pnl.months.clone();
                                         let months_for_table = pnl.months.clone();
-                                        
+
                                         let mut max_val: i64 = 1;
                                         for m in &pnl.months {
                                             if m.revenue_idr > max_val { max_val = m.revenue_idr; }
                                             if m.total_cost_idr > max_val { max_val = m.total_cost_idr; }
                                         }
-                                        
+
                                         let chart_height = 150.0;
-                                        
+
                                         view! {
                                             <div class="bg-white dark:bg-gray-800 shadow rounded-lg p-6 mt-6">
                                                 {pnl.margin_alert.clone().map(|alert| view! {
@@ -1208,7 +1294,7 @@ pub fn Projects() -> impl IntoView {
                                                         <span class="font-medium">"Alert: "</span> <span class="ml-1">{alert}</span>
                                                     </div>
                                                 })}
-                                                
+
                                                 <div class="flex items-center justify-between mb-4">
                                                     <h2 class="text-xl font-semibold text-gray-900 dark:text-white">
                                                         "P&L Dashboard"
@@ -1228,6 +1314,17 @@ pub fn Projects() -> impl IntoView {
                                                             "▶"
                                                         </button>
                                                         <button
+                                                            class=move || if show_forecast.get() {
+                                                                "px-3 py-1 text-sm font-medium rounded-md bg-indigo-600 text-white"
+                                                            } else {
+                                                                "px-3 py-1 text-sm font-medium rounded-md bg-gray-200 text-gray-700 dark:bg-gray-600 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-500"
+                                                            }
+                                                            on:click=move |_| set_show_forecast.update(|v| *v = !*v)
+                                                            aria-pressed=move || show_forecast.get().to_string()
+                                                        >
+                                                            "Forecast"
+                                                        </button>
+                                                        <button
                                                             class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
                                                             on:click=move |_| set_pnl_project_id.set(None)
                                                         >
@@ -1235,7 +1332,7 @@ pub fn Projects() -> impl IntoView {
                                                         </button>
                                                     </div>
                                                 </div>
-                                                
+
                                                 <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
                                                     <div class="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 border border-gray-100 dark:border-gray-600">
                                                         <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">"Revenue"</p>
@@ -1254,7 +1351,7 @@ pub fn Projects() -> impl IntoView {
                                                         <p class=format!("text-xl font-bold {}", margin_color)>{format!("{:.1}%", pnl.margin_pct)}</p>
                                                     </div>
                                                 </div>
-                                                
+
                                                 <div class="mb-6 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4">
                                                     <h3 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-4">"Revenue vs Cost (Monthly)"</h3>
                                                     <div class="w-full overflow-x-auto">
@@ -1349,7 +1446,7 @@ pub fn Projects() -> impl IntoView {
                                                         }}
                                                     </div>
                                                 </div>
-                                                
+
                                                 <div class="overflow-x-auto mb-6">
                                                     <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
                                                         <thead class="bg-gray-50 dark:bg-gray-700">
@@ -1385,7 +1482,7 @@ pub fn Projects() -> impl IntoView {
                                                         </tbody>
                                                     </table>
                                                 </div>
-                                                
+
                                                 <div class="bg-gray-50 dark:bg-gray-700/50 p-4 rounded-lg border border-gray-200 dark:border-gray-700">
                                                     <h3 class="text-sm font-medium text-gray-900 dark:text-white mb-3">"Target Margin Settings"</h3>
                                                     <div class="flex items-end space-x-4">
@@ -1397,7 +1494,7 @@ pub fn Projects() -> impl IntoView {
                                                             <label class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">"Alert Threshold (%)"</label>
                                                             <input type="number" step="0.1" _ref=pnl_alert_ref class="input w-32" prop:value=pnl.margin_alert_threshold_pct.to_string() />
                                                         </div>
-                                                        <button 
+                                                        <button
                                                             class="btn-primary"
                                                             on:click=move |_| {
                                                                 let t_val = pnl_target_ref.get().map(|i| i.value()).unwrap_or_default();
@@ -1437,6 +1534,122 @@ pub fn Projects() -> impl IntoView {
                                                         </button>
                                                     </div>
                                                 </div>
+
+                                                {move || {
+                                                    if !show_forecast.get() {
+                                                        return None;
+                                                    }
+                                                    forecast_data.get().map(|fc| {
+                                                        let variance_color = if fc.variance_from_target_pct >= 0.0 {
+                                                            "text-green-600 dark:text-green-400"
+                                                        } else {
+                                                            "text-red-600 dark:text-red-400"
+                                                        };
+                                                        let margin_color = if fc.forecast_margin_pct >= fc.target_margin_pct {
+                                                            "text-green-600 dark:text-green-400"
+                                                        } else {
+                                                            "text-red-600 dark:text-red-400"
+                                                        };
+                                                        let categories = fc.categories.clone();
+                                                        let drivers = fc.resource_drivers.clone();
+
+                                                        view! {
+                                                            <div class="bg-white dark:bg-gray-800 shadow rounded-lg p-6 mt-6 border-l-4 border-indigo-500">
+                                                                <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-1">"Profitability Forecast"</h3>
+                                                                <p class="text-xs text-gray-500 dark:text-gray-400 mb-4">
+                                                                    {format!("As of {} · {} of {} project days elapsed", fc.as_of_date, fc.elapsed_days, fc.total_project_days)}
+                                                                </p>
+
+                                                                <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                                                                    <div class="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 border border-gray-100 dark:border-gray-600">
+                                                                        <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">"Current Spend"</p>
+                                                                        <p class="text-xl font-bold text-gray-900 dark:text-white">{format_idr(fc.current_spend_idr)}</p>
+                                                                    </div>
+                                                                    <div class="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 border border-gray-100 dark:border-gray-600">
+                                                                        <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">"Projected Total"</p>
+                                                                        <p class="text-xl font-bold text-gray-900 dark:text-white">{format_idr(fc.projected_total_cost_idr)}</p>
+                                                                    </div>
+                                                                    <div class="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 border border-gray-100 dark:border-gray-600">
+                                                                        <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">"Forecast Margin"</p>
+                                                                        <p class=format!("text-xl font-bold {}", margin_color)>{format!("{:.1}%", fc.forecast_margin_pct)}</p>
+                                                                    </div>
+                                                                    <div class="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 border border-gray-100 dark:border-gray-600">
+                                                                        <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">"Variance from Target"</p>
+                                                                        <p class=format!("text-xl font-bold {}", variance_color)>{format!("{:+.1}%", fc.variance_from_target_pct)}</p>
+                                                                    </div>
+                                                                </div>
+
+                                                                <div class="mb-6">
+                                                                    <h4 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">"Cost Category Forecast"</h4>
+                                                                    <div class="overflow-x-auto">
+                                                                        <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                                                                            <thead class="bg-gray-50 dark:bg-gray-700">
+                                                                                <tr>
+                                                                                    <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">"Category"</th>
+                                                                                    <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">"Budget"</th>
+                                                                                    <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">"Current Spend"</th>
+                                                                                    <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">"Projected"</th>
+                                                                                    <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">"Overrun"</th>
+                                                                                    <th class="px-3 py-2 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">"Status"</th>
+                                                                                </tr>
+                                                                            </thead>
+                                                                            <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                                                                                {categories.into_iter().map(|cat| {
+                                                                                    let status_badge = if cat.overrun_idr > 0 {
+                                                                                        ("Overrun", "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300")
+                                                                                    } else if cat.budget_idr > 0 && cat.projected_idr as f64 > cat.budget_idr as f64 * 0.9 {
+                                                                                        ("At Risk", "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300")
+                                                                                    } else {
+                                                                                        ("On Track", "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300")
+                                                                                    };
+                                                                                    view! {
+                                                                                        <tr class="hover:bg-gray-50 dark:hover:bg-gray-700">
+                                                                                            <td class="px-3 py-2 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white capitalize">{cat.category}</td>
+                                                                                            <td class="px-3 py-2 whitespace-nowrap text-sm text-right text-gray-600 dark:text-gray-300">{format_idr(cat.budget_idr)}</td>
+                                                                                            <td class="px-3 py-2 whitespace-nowrap text-sm text-right text-gray-600 dark:text-gray-300">{format_idr(cat.current_spend_idr)}</td>
+                                                                                            <td class="px-3 py-2 whitespace-nowrap text-sm text-right text-gray-600 dark:text-gray-300">{format_idr(cat.projected_idr)}</td>
+                                                                                            <td class="px-3 py-2 whitespace-nowrap text-sm text-right font-medium text-red-600 dark:text-red-400">
+                                                                                                {if cat.overrun_idr > 0 { format_idr(cat.overrun_idr) } else { "—".to_string() }}
+                                                                                            </td>
+                                                                                            <td class="px-3 py-2 whitespace-nowrap text-center">
+                                                                                                <span class=format!("inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {}", status_badge.1)>
+                                                                                                    {status_badge.0}
+                                                                                                </span>
+                                                                                            </td>
+                                                                                        </tr>
+                                                                                    }
+                                                                                }).collect_view()}
+                                                                            </tbody>
+                                                                        </table>
+                                                                    </div>
+                                                                </div>
+
+                                                                {if !drivers.is_empty() {
+                                                                    Some(view! {
+                                                                        <div>
+                                                                            <h4 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">"Top Resource Cost Drivers"</h4>
+                                                                            <div class="space-y-2">
+                                                                                {drivers.into_iter().map(|d| {
+                                                                                    view! {
+                                                                                        <div class="flex items-center justify-between py-2 px-3 bg-gray-50 dark:bg-gray-700/50 rounded">
+                                                                                            <span class="text-sm font-medium text-gray-900 dark:text-white">{d.resource_name}</span>
+                                                                                            <div class="flex items-center space-x-4">
+                                                                                                <span class="text-sm text-gray-600 dark:text-gray-300">{format_idr(d.total_cost_idr)}</span>
+                                                                                                <span class="text-sm font-medium text-indigo-600 dark:text-indigo-400">{format!("{:.1}%", d.share_pct)}</span>
+                                                                                            </div>
+                                                                                        </div>
+                                                                                    }
+                                                                                }).collect_view()}
+                                                                            </div>
+                                                                        </div>
+                                                                    })
+                                                                } else {
+                                                                    None
+                                                                }}
+                                                            </div>
+                                                        }
+                                                    })
+                                                }}
                                             </div>
                                         }
                                     })
@@ -1582,12 +1795,9 @@ async fn fetch_projects() -> Result<Vec<Project>, String> {
 }
 
 async fn fetch_project_budget(project_id: Uuid) -> Result<ProjectBudgetData, String> {
-    let response = authenticated_get(&format!(
-        "/api/v1/projects/{}/budget",
-        project_id
-    ))
-    .await
-    .map_err(|e| format!("Failed to fetch budget: {}", e))?;
+    let response = authenticated_get(&format!("/api/v1/projects/{}/budget", project_id))
+        .await
+        .map_err(|e| format!("Failed to fetch budget: {}", e))?;
 
     if response.status().is_success() {
         response
@@ -1767,12 +1977,9 @@ async fn delete_project(id: Uuid) -> Result<(), String> {
 }
 
 async fn fetch_project_expenses(project_id: Uuid) -> Result<Vec<ProjectExpenseData>, String> {
-    let response = authenticated_get(&format!(
-        "/api/v1/projects/{}/expenses",
-        project_id
-    ))
-    .await
-    .map_err(|e| format!("Failed to fetch expenses: {}", e))?;
+    let response = authenticated_get(&format!("/api/v1/projects/{}/expenses", project_id))
+        .await
+        .map_err(|e| format!("Failed to fetch expenses: {}", e))?;
 
     if response.status().is_success() {
         response
@@ -1890,12 +2097,9 @@ async fn delete_project_expense(project_id: Uuid, expense_id: Uuid) -> Result<()
 }
 
 async fn fetch_resource_costs(project_id: Uuid) -> Result<ResourceCostData, String> {
-    let response = authenticated_get(&format!(
-        "/api/v1/projects/{}/resource-costs",
-        project_id
-    ))
-    .await
-    .map_err(|e| format!("Failed to fetch resource costs: {}", e))?;
+    let response = authenticated_get(&format!("/api/v1/projects/{}/resource-costs", project_id))
+        .await
+        .map_err(|e| format!("Failed to fetch resource costs: {}", e))?;
 
     if response.status().is_success() {
         response
@@ -1935,15 +2139,10 @@ async fn upsert_project_revenue(
     project_id: Uuid,
     req: UpsertProjectRevenueRequest,
 ) -> Result<(), String> {
-    let response = authenticated_post_json(
-        &format!(
-            "/api/v1/projects/{}/revenue",
-            project_id
-        ),
-        &req,
-    )
-    .await
-    .map_err(|e| format!("Failed to save revenue: {}", e))?;
+    let response =
+        authenticated_post_json(&format!("/api/v1/projects/{}/revenue", project_id), &req)
+            .await
+            .map_err(|e| format!("Failed to save revenue: {}", e))?;
 
     if response.status().is_success() {
         Ok(())
@@ -1960,12 +2159,9 @@ async fn fetch_pl_dashboard(
     project_id: Uuid,
     year: i32,
 ) -> Result<ProjectPlDashboardResponse, String> {
-    let response = authenticated_get(&format!(
-        "/api/v1/projects/{}/pl?year={}",
-        project_id, year
-    ))
-    .await
-    .map_err(|e| format!("Failed to fetch P&L: {}", e))?;
+    let response = authenticated_get(&format!("/api/v1/projects/{}/pl?year={}", project_id, year))
+        .await
+        .map_err(|e| format!("Failed to fetch P&L: {}", e))?;
 
     if response.status().is_success() {
         response
@@ -1999,5 +2195,26 @@ async fn update_pl_settings(
             .map_err(|e| format!("Failed to parse settings response: {}", e))
     } else {
         Err(format!("Failed to update settings: {}", response.status()))
+    }
+}
+
+async fn fetch_pl_forecast(
+    project_id: Uuid,
+    year: i32,
+) -> Result<ProjectPlForecastResponse, String> {
+    let response = authenticated_get(&format!(
+        "/api/v1/projects/{}/pl/forecast?year={}",
+        project_id, year
+    ))
+    .await
+    .map_err(|e| format!("Failed to fetch forecast: {}", e))?;
+
+    if response.status().is_success() {
+        response
+            .json::<ProjectPlForecastResponse>()
+            .await
+            .map_err(|e| format!("Failed to parse forecast: {}", e))
+    } else {
+        Err(format!("Failed to fetch forecast: {}", response.status()))
     }
 }

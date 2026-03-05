@@ -7,6 +7,7 @@ use axum::{
 };
 use chrono::{Datelike, NaiveDate};
 use serde::{Deserialize, Serialize};
+use sqlx::types::BigDecimal;
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
@@ -237,6 +238,13 @@ fn default_revenue_year() -> i32 {
 struct ProjectPlQuery {
     #[serde(default = "default_revenue_year")]
     year: i32,
+}
+
+#[derive(Debug, Deserialize)]
+struct ProjectPlForecastQuery {
+    #[serde(default = "default_revenue_year")]
+    year: i32,
+    as_of: Option<chrono::NaiveDate>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1665,9 +1673,42 @@ async fn get_project_pl_dashboard(
         .ok_or_else(|| AppError::NotFound(format!("Project {} not found", project_id)))?;
 
     let result = crate::services::project_pl_service::get_project_pl_dashboard(
+        &pool, project_id, query.year,
+    )
+    .await?;
+
+    Ok(Json(result))
+}
+
+// ── P&L Forecast Endpoint ───────────────────────────────────────────────────
+
+/// Get profitability forecast for a project.
+async fn get_project_pl_forecast(
+    State(pool): State<PgPool>,
+    headers: HeaderMap,
+    Path(project_id): Path<Uuid>,
+    Query(query): Query<ProjectPlForecastQuery>,
+) -> Result<Json<crate::services::project_pl_service::ProjectPlForecastResult>> {
+    let _user_id = enforce_project_mutation_access(
+        &pool,
+        &headers,
+        project_id,
+        "get_pl_forecast",
+        "project_pl_forecast",
+    )
+    .await?;
+
+    sqlx::query_scalar!("SELECT id FROM projects WHERE id = $1", project_id)
+        .fetch_optional(&pool)
+        .await
+        .map_err(|e| AppError::Database(e.to_string()))?
+        .ok_or_else(|| AppError::NotFound(format!("Project {} not found", project_id)))?;
+
+    let result = crate::services::project_pl_service::get_project_pl_forecast(
         &pool,
         project_id,
         query.year,
+        query.as_of,
     )
     .await?;
 
@@ -1715,8 +1756,8 @@ async fn set_project_pl_settings(
 
     // Fetch current values for audit trail
     let before_row = sqlx::query(
-        r#"SELECT target_margin_pct::FLOAT8 as target_margin_pct,
-                  margin_alert_threshold_pct::FLOAT8 as margin_alert_threshold_pct
+        r#"SELECT target_margin_pct,
+                  margin_alert_threshold_pct
            FROM projects WHERE id = $1"#,
     )
     .bind(project_id)
@@ -1725,12 +1766,22 @@ async fn set_project_pl_settings(
     .map_err(|e| AppError::Database(e.to_string()))?
     .ok_or_else(|| AppError::NotFound(format!("Project {} not found", project_id)))?;
 
-    let before_target: f64 = before_row
+    let before_target_bd: BigDecimal = before_row
         .try_get("target_margin_pct")
         .map_err(|e| AppError::Database(e.to_string()))?;
-    let before_threshold: f64 = before_row
+    let before_threshold_bd: BigDecimal = before_row
         .try_get("margin_alert_threshold_pct")
         .map_err(|e| AppError::Database(e.to_string()))?;
+    let before_target = before_target_bd
+        .to_string()
+        .parse::<f64>()
+        .map_err(|e| AppError::Database(format!("failed to parse target_margin_pct: {}", e)))?;
+    let before_threshold = before_threshold_bd
+        .to_string()
+        .parse::<f64>()
+        .map_err(|e| {
+            AppError::Database(format!("failed to parse margin_alert_threshold_pct: {}", e))
+        })?;
 
     // Update settings
     sqlx::query(
@@ -1786,6 +1837,7 @@ pub fn project_routes() -> Router<PgPool> {
         )
         .route("/projects/:id/pl", get(get_project_pl_dashboard))
         .route("/projects/:id/pl/settings", put(set_project_pl_settings))
+        .route("/projects/:id/pl/forecast", get(get_project_pl_forecast))
         .route(
             "/projects/:id/expenses",
             get(list_project_expenses).post(create_project_expense),

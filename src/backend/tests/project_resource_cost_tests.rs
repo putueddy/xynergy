@@ -242,10 +242,7 @@ async fn pm_can_view_resource_costs_empty_project(pool: PgPool) {
     let (status, body) = get_resource_costs(&app, &token, project_id).await;
 
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(
-        body["project_id"].as_str().unwrap(),
-        project_id.to_string()
-    );
+    assert_eq!(body["project_id"].as_str().unwrap(), project_id.to_string());
     assert_eq!(body["total_resource_cost_idr"].as_i64().unwrap(), 0);
     assert!(body["employees"].as_array().unwrap().is_empty());
     assert!(body["monthly_breakdown"].as_array().unwrap().is_empty());
@@ -270,7 +267,16 @@ async fn resource_cost_100pct_allocation(pool: PgPool) {
 
     // Allocate: 5 working days (Mon-Fri), 100%
     // 2026-03-02 (Mon) to 2026-03-06 (Fri) = 5 working days
-    create_allocation(&pool, resource_id, project_id, 100.0, "2026-03-02", "2026-03-06", false).await;
+    create_allocation(
+        &pool,
+        resource_id,
+        project_id,
+        100.0,
+        "2026-03-02",
+        "2026-03-06",
+        false,
+    )
+    .await;
 
     let (status, body) = get_resource_costs(&app, &token, project_id).await;
 
@@ -306,7 +312,16 @@ async fn resource_cost_partial_allocation(pool: PgPool) {
 
     // 50% allocation over 5 working days
     // Expected: 1,200,000 * 5 * 50% = 3,000,000
-    create_allocation(&pool, resource_id, project_id, 50.0, "2026-03-02", "2026-03-06", false).await;
+    create_allocation(
+        &pool,
+        resource_id,
+        project_id,
+        50.0,
+        "2026-03-02",
+        "2026-03-06",
+        false,
+    )
+    .await;
 
     let (status, body) = get_resource_costs(&app, &token, project_id).await;
 
@@ -337,7 +352,16 @@ async fn resource_cost_cross_month_prorating(pool: PgPool) {
     // Feb: 27th (Fri) = 1 working day
     // Mar: 2nd (Mon), 3rd (Tue) = 2 working days
     // Total: 3 working days => 1,000,000 * 3 * 50% = 1,500,000
-    create_allocation(&pool, resource_id, project_id, 50.0, "2026-02-27", "2026-03-03", false).await;
+    create_allocation(
+        &pool,
+        resource_id,
+        project_id,
+        50.0,
+        "2026-02-27",
+        "2026-03-03",
+        false,
+    )
+    .await;
 
     let (status, body) = get_resource_costs(&app, &token, project_id).await;
 
@@ -348,8 +372,14 @@ async fn resource_cost_cross_month_prorating(pool: PgPool) {
     assert_eq!(monthly.len(), 2, "should have 2 monthly buckets");
 
     // Find Feb and Mar entries
-    let feb = monthly.iter().find(|m| m["month"].as_str().unwrap() == "2026-02").expect("Feb bucket");
-    let mar = monthly.iter().find(|m| m["month"].as_str().unwrap() == "2026-03").expect("Mar bucket");
+    let feb = monthly
+        .iter()
+        .find(|m| m["month"].as_str().unwrap() == "2026-02")
+        .expect("Feb bucket");
+    let mar = monthly
+        .iter()
+        .find(|m| m["month"].as_str().unwrap() == "2026-03")
+        .expect("Mar bucket");
 
     assert_eq!(feb["working_days"].as_i64().unwrap(), 1);
     assert_eq!(feb["cost_idr"].as_i64().unwrap(), 500_000);
@@ -374,7 +404,16 @@ async fn resource_cost_include_weekend(pool: PgPool) {
     create_ctc_for_resource(&pool, resource_id, pm_id, 1_000_000).await;
 
     // Mon Mar 2 to Sun Mar 8 = 7 calendar days, all working with include_weekend=true
-    create_allocation(&pool, resource_id, project_id, 100.0, "2026-03-02", "2026-03-08", true).await;
+    create_allocation(
+        &pool,
+        resource_id,
+        project_id,
+        100.0,
+        "2026-03-02",
+        "2026-03-08",
+        true,
+    )
+    .await;
 
     let (status, body) = get_resource_costs(&app, &token, project_id).await;
 
@@ -400,7 +439,16 @@ async fn resource_without_ctc_returns_missing_rate(pool: PgPool) {
     let token = get_auth_token(&app, &pm_email).await;
 
     // No CTC record created — resource has no rate data
-    create_allocation(&pool, resource_id, project_id, 100.0, "2026-03-02", "2026-03-06", false).await;
+    create_allocation(
+        &pool,
+        resource_id,
+        project_id,
+        100.0,
+        "2026-03-02",
+        "2026-03-06",
+        false,
+    )
+    .await;
 
     let (status, body) = get_resource_costs(&app, &token, project_id).await;
 
@@ -434,10 +482,7 @@ async fn pm_denied_resource_costs_on_non_owned_project(pool: PgPool) {
     let (status, body) = get_resource_costs(&app, &pm_b_token, project_id).await;
 
     assert_eq!(status, StatusCode::FORBIDDEN);
-    assert_eq!(
-        body["error"]["code"].as_str().unwrap(),
-        "FORBIDDEN_ERROR"
-    );
+    assert_eq!(body["error"]["code"].as_str().unwrap(), "FORBIDDEN_ERROR");
 }
 
 // ── Test 8: Admin can view resource costs on any project ────────────────────
@@ -457,10 +502,7 @@ async fn admin_can_view_resource_costs_on_any_project(pool: PgPool) {
     let (status, body) = get_resource_costs(&app, &admin_token, project_id).await;
 
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(
-        body["project_id"].as_str().unwrap(),
-        project_id.to_string()
-    );
+    assert_eq!(body["project_id"].as_str().unwrap(), project_id.to_string());
 }
 
 #[sqlx::test(migrations = "../../migrations")]
@@ -496,10 +538,7 @@ async fn non_pm_non_admin_denied_resource_costs(pool: PgPool) {
     let (status, body) = get_resource_costs(&app, &hr_token, project_id).await;
 
     assert_eq!(status, StatusCode::FORBIDDEN);
-    assert_eq!(
-        body["error"]["code"].as_str().unwrap(),
-        "FORBIDDEN_ERROR"
-    );
+    assert_eq!(body["error"]["code"].as_str().unwrap(), "FORBIDDEN_ERROR");
 }
 
 // ── Test 10: spent_to_date_idr = expense sum + resource cost sum ────────────
@@ -553,13 +592,26 @@ async fn budget_spent_includes_resource_costs(pool: PgPool) {
             .to_string(),
         ))
         .expect("expense request should be built");
-    let expense_resp = app.clone().oneshot(expense_req).await.expect("expense created");
+    let expense_resp = app
+        .clone()
+        .oneshot(expense_req)
+        .await
+        .expect("expense created");
     assert_eq!(expense_resp.status(), StatusCode::OK);
 
     // Create allocation with CTC
     create_ctc_for_resource(&pool, resource_id, pm_id, 1_000_000).await;
     // 5 working days at 100% = 5,000,000 resource cost
-    create_allocation(&pool, resource_id, project_id, 100.0, "2026-03-02", "2026-03-06", false).await;
+    create_allocation(
+        &pool,
+        resource_id,
+        project_id,
+        100.0,
+        "2026-03-02",
+        "2026-03-06",
+        false,
+    )
+    .await;
 
     // Fetch budget — spent_to_date_idr should be expense (500,000) + resource cost (5,000,000) = 5,500,000
     let get_req = Request::builder()
@@ -624,9 +676,27 @@ async fn multiple_employees_aggregated(pool: PgPool) {
     create_ctc_for_resource(&pool, res_b, pm_id, 800_000).await;
 
     // Alpha: 5 days at 100% = 5,000,000
-    create_allocation(&pool, res_a, project_id, 100.0, "2026-03-02", "2026-03-06", false).await;
+    create_allocation(
+        &pool,
+        res_a,
+        project_id,
+        100.0,
+        "2026-03-02",
+        "2026-03-06",
+        false,
+    )
+    .await;
     // Beta: 5 days at 50% = 2,000,000
-    create_allocation(&pool, res_b, project_id, 50.0, "2026-03-02", "2026-03-06", false).await;
+    create_allocation(
+        &pool,
+        res_b,
+        project_id,
+        50.0,
+        "2026-03-02",
+        "2026-03-06",
+        false,
+    )
+    .await;
 
     let (status, body) = get_resource_costs(&app, &token, project_id).await;
 
@@ -668,10 +738,16 @@ async fn resource_cost_with_mid_period_rate_change(pool: PgPool) {
     let (status, body) = get_resource_costs(&app, &token, project_id).await;
 
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["total_resource_cost_idr"].as_i64().unwrap(), 15_000_000);
+    assert_eq!(
+        body["total_resource_cost_idr"].as_i64().unwrap(),
+        15_000_000
+    );
 
     let employees = body["employees"].as_array().unwrap();
     assert_eq!(employees.len(), 1);
     assert_eq!(employees[0]["has_rate_change"].as_bool().unwrap(), true);
-    assert!(employees[0]["rate_change_note"].as_str().unwrap().contains("Rate changed during allocation"));
+    assert!(employees[0]["rate_change_note"]
+        .as_str()
+        .unwrap()
+        .contains("Rate changed during allocation"));
 }

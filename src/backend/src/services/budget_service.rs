@@ -346,7 +346,9 @@ pub async fn compute_department_budget_utilization(
             continue;
         }
 
-        let Some(daily_rate_idr) = extract_daily_rate_from_allocation_row(&row, &crypto_svc).await? else {
+        let Some(daily_rate_idr) =
+            extract_daily_rate_from_allocation_row(&row, &crypto_svc).await?
+        else {
             continue;
         };
 
@@ -488,13 +490,17 @@ pub async fn compute_budget_breakdown(
         let alert_threshold_raw: i16 = row
             .try_get("alert_threshold_pct")
             .map_err(|e| AppError::Database(e.to_string()))?;
-        budgets_by_period.insert(budget_period, (total_budget_idr, i32::from(alert_threshold_raw)));
+        budgets_by_period.insert(
+            budget_period,
+            (total_budget_idr, i32::from(alert_threshold_raw)),
+        );
     }
 
     let crypto_svc = DefaultCtcCryptoService::new(EnvKeyProvider::new());
     let mut employee_map: HashMap<Uuid, EmployeeAccumulator> = HashMap::new();
     let mut project_map: HashMap<Uuid, ProjectAccumulator> = HashMap::new();
-    let mut period_committed: HashMap<String, i64> = periods.iter().map(|p| (p.clone(), 0)).collect();
+    let mut period_committed: HashMap<String, i64> =
+        periods.iter().map(|p| (p.clone(), 0)).collect();
 
     for row in allocation_rows {
         let resource_id: Uuid = row
@@ -528,16 +534,17 @@ pub async fn compute_budget_breakdown(
 
         let daily_rate_idr = extract_daily_rate_from_allocation_row(&row, &crypto_svc).await?;
 
-        let employee_entry = employee_map
-            .entry(resource_id)
-            .or_insert_with(|| EmployeeAccumulator {
-                resource_id,
-                resource_name: resource_name.clone(),
-                daily_rate_idr,
-                allocation_count: 0,
-                working_days: 0,
-                committed_cost_idr: 0,
-            });
+        let employee_entry =
+            employee_map
+                .entry(resource_id)
+                .or_insert_with(|| EmployeeAccumulator {
+                    resource_id,
+                    resource_name: resource_name.clone(),
+                    daily_rate_idr,
+                    allocation_count: 0,
+                    working_days: 0,
+                    committed_cost_idr: 0,
+                });
         employee_entry.allocation_count += 1;
         if employee_entry.daily_rate_idr.is_none() {
             employee_entry.daily_rate_idr = daily_rate_idr;

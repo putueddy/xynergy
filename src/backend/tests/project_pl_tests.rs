@@ -58,10 +58,7 @@ async fn get_auth_token(app: &Router, email: &str) -> String {
         .await
         .expect("readable body");
     let body: Value = serde_json::from_slice(&body).expect("valid JSON");
-    body["token"]
-        .as_str()
-        .expect("token present")
-        .to_string()
+    body["token"].as_str().expect("token present").to_string()
 }
 
 async fn create_test_project_with_pm(pool: &PgPool, name: &str, pm_id: Uuid) -> Uuid {
@@ -92,17 +89,26 @@ async fn pm_can_get_pl_dashboard_for_own_project(pool: PgPool) {
     let current_year = Utc::now().year();
     let req = Request::builder()
         .method("GET")
-        .uri(format!("/api/v1/projects/{}/pl?year={}", project_id, current_year))
+        .uri(format!(
+            "/api/v1/projects/{}/pl?year={}",
+            project_id, current_year
+        ))
         .header("Authorization", format!("Bearer {}", token))
         .body(Body::empty())
         .expect("request should be built");
-    
-    let resp = app.clone().oneshot(req).await.expect("should return response");
+
+    let resp = app
+        .clone()
+        .oneshot(req)
+        .await
+        .expect("should return response");
     assert_eq!(resp.status(), StatusCode::OK);
 
-    let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.expect("readable body");
+    let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .expect("readable body");
     let body: Value = serde_json::from_slice(&body).expect("valid JSON");
-    
+
     assert_eq!(body["project_id"].as_str().unwrap(), project_id.to_string());
     assert_eq!(body["year"].as_i64().unwrap(), current_year as i64);
     assert!(body["months"].as_array().unwrap().len() == 12);
@@ -125,12 +131,19 @@ async fn admin_can_get_pl_dashboard_for_any_project(pool: PgPool) {
     let current_year = Utc::now().year();
     let req = Request::builder()
         .method("GET")
-        .uri(format!("/api/v1/projects/{}/pl?year={}", project_id, current_year))
+        .uri(format!(
+            "/api/v1/projects/{}/pl?year={}",
+            project_id, current_year
+        ))
         .header("Authorization", format!("Bearer {}", admin_token))
         .body(Body::empty())
         .expect("request should be built");
-    
-    let resp = app.clone().oneshot(req).await.expect("should return response");
+
+    let resp = app
+        .clone()
+        .oneshot(req)
+        .await
+        .expect("should return response");
     assert_eq!(resp.status(), StatusCode::OK);
 }
 
@@ -150,12 +163,19 @@ async fn pm_denied_pl_dashboard_on_non_owned_project(pool: PgPool) {
     let current_year = Utc::now().year();
     let req = Request::builder()
         .method("GET")
-        .uri(format!("/api/v1/projects/{}/pl?year={}", project_id, current_year))
+        .uri(format!(
+            "/api/v1/projects/{}/pl?year={}",
+            project_id, current_year
+        ))
         .header("Authorization", format!("Bearer {}", pm_b_token))
         .body(Body::empty())
         .expect("request should be built");
-    
-    let resp = app.clone().oneshot(req).await.expect("should return response");
+
+    let resp = app
+        .clone()
+        .oneshot(req)
+        .await
+        .expect("should return response");
     assert_eq!(resp.status(), StatusCode::FORBIDDEN);
 
     // Verify audit log
@@ -170,7 +190,10 @@ async fn pm_denied_pl_dashboard_on_non_owned_project(pool: PgPool) {
     .await
     .expect("audit query should succeed");
 
-    assert!(audit_entry.is_some(), "access denied audit should be logged");
+    assert!(
+        audit_entry.is_some(),
+        "access denied audit should be logged"
+    );
 }
 
 #[sqlx::test(migrations = "../../migrations")]
@@ -189,12 +212,19 @@ async fn non_pm_non_admin_denied_pl_dashboard(pool: PgPool) {
     let current_year = Utc::now().year();
     let req = Request::builder()
         .method("GET")
-        .uri(format!("/api/v1/projects/{}/pl?year={}", project_id, current_year))
+        .uri(format!(
+            "/api/v1/projects/{}/pl?year={}",
+            project_id, current_year
+        ))
         .header("Authorization", format!("Bearer {}", hr_token))
         .body(Body::empty())
         .expect("request should be built");
-    
-    let resp = app.clone().oneshot(req).await.expect("should return response");
+
+    let resp = app
+        .clone()
+        .oneshot(req)
+        .await
+        .expect("should return response");
     assert_eq!(resp.status(), StatusCode::FORBIDDEN);
 }
 
@@ -211,23 +241,32 @@ async fn pl_dashboard_shows_zero_values_for_empty_project(pool: PgPool) {
     let current_year = Utc::now().year();
     let req = Request::builder()
         .method("GET")
-        .uri(format!("/api/v1/projects/{}/pl?year={}", project_id, current_year))
+        .uri(format!(
+            "/api/v1/projects/{}/pl?year={}",
+            project_id, current_year
+        ))
         .header("Authorization", format!("Bearer {}", token))
         .body(Body::empty())
         .expect("request should be built");
-    
-    let resp = app.clone().oneshot(req).await.expect("should return response");
+
+    let resp = app
+        .clone()
+        .oneshot(req)
+        .await
+        .expect("should return response");
     assert_eq!(resp.status(), StatusCode::OK);
 
-    let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.expect("readable body");
+    let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .expect("readable body");
     let body: Value = serde_json::from_slice(&body).expect("valid JSON");
-    
+
     // All months should have zero values
     assert_eq!(body["total_revenue_idr"].as_i64().unwrap(), 0);
     assert_eq!(body["total_cost_idr"].as_i64().unwrap(), 0);
     assert_eq!(body["gross_profit_idr"].as_i64().unwrap(), 0);
     assert_eq!(body["margin_pct"].as_f64().unwrap(), 0.0);
-    
+
     // No margin alert for zero revenue
     assert!(body["margin_alert"].is_null());
 }
@@ -259,24 +298,37 @@ async fn pl_dashboard_with_revenue_shows_positive_profit(pool: PgPool) {
             .to_string(),
         ))
         .expect("request should be built");
-    
-    let resp = app.clone().oneshot(create_req).await.expect("should create revenue");
+
+    let resp = app
+        .clone()
+        .oneshot(create_req)
+        .await
+        .expect("should create revenue");
     assert_eq!(resp.status(), StatusCode::OK);
 
     // Get P&L dashboard
     let pl_req = Request::builder()
         .method("GET")
-        .uri(format!("/api/v1/projects/{}/pl?year={}", project_id, current_year))
+        .uri(format!(
+            "/api/v1/projects/{}/pl?year={}",
+            project_id, current_year
+        ))
         .header("Authorization", format!("Bearer {}", token))
         .body(Body::empty())
         .expect("request should be built");
-    
-    let resp = app.clone().oneshot(pl_req).await.expect("should return response");
+
+    let resp = app
+        .clone()
+        .oneshot(pl_req)
+        .await
+        .expect("should return response");
     assert_eq!(resp.status(), StatusCode::OK);
 
-    let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.expect("readable body");
+    let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .expect("readable body");
     let body: Value = serde_json::from_slice(&body).expect("valid JSON");
-    
+
     assert_eq!(body["total_revenue_idr"].as_i64().unwrap(), 100_000_000);
     // First month should have revenue
     let jan = &body["months"][0];
@@ -313,7 +365,11 @@ async fn pl_dashboard_triggers_margin_alert_when_below_target(pool: PgPool) {
             .to_string(),
         ))
         .expect("request should be built");
-    let resp = app.clone().oneshot(req).await.expect("should create revenue");
+    let resp = app
+        .clone()
+        .oneshot(req)
+        .await
+        .expect("should create revenue");
     assert_eq!(resp.status(), StatusCode::OK);
 
     // Add expense: 70M IDR in January
@@ -336,8 +392,15 @@ async fn pl_dashboard_triggers_margin_alert_when_below_target(pool: PgPool) {
             .to_string(),
         ))
         .expect("request should be built");
-    let resp = app.clone().oneshot(req).await.expect("should create expense");
-    assert!(resp.status().is_success(), "expense creation should succeed");
+    let resp = app
+        .clone()
+        .oneshot(req)
+        .await
+        .expect("should create expense");
+    assert!(
+        resp.status().is_success(),
+        "expense creation should succeed"
+    );
 
     // Get P&L dashboard
     let req = Request::builder()
@@ -349,7 +412,11 @@ async fn pl_dashboard_triggers_margin_alert_when_below_target(pool: PgPool) {
         .header("Authorization", format!("Bearer {}", token))
         .body(Body::empty())
         .expect("request should be built");
-    let resp = app.clone().oneshot(req).await.expect("should return response");
+    let resp = app
+        .clone()
+        .oneshot(req)
+        .await
+        .expect("should return response");
     assert_eq!(resp.status(), StatusCode::OK);
 
     let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
@@ -413,8 +480,15 @@ async fn pl_dashboard_includes_expense_impact(pool: PgPool) {
             .to_string(),
         ))
         .expect("request should be built");
-    let resp = app.clone().oneshot(req).await.expect("should create expense");
-    assert!(resp.status().is_success(), "expense creation should succeed");
+    let resp = app
+        .clone()
+        .oneshot(req)
+        .await
+        .expect("should create expense");
+    assert!(
+        resp.status().is_success(),
+        "expense creation should succeed"
+    );
 
     // Get P&L dashboard
     let req = Request::builder()
@@ -426,7 +500,11 @@ async fn pl_dashboard_includes_expense_impact(pool: PgPool) {
         .header("Authorization", format!("Bearer {}", token))
         .body(Body::empty())
         .expect("request should be built");
-    let resp = app.clone().oneshot(req).await.expect("should return response");
+    let resp = app
+        .clone()
+        .oneshot(req)
+        .await
+        .expect("should return response");
     assert_eq!(resp.status(), StatusCode::OK);
 
     let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
@@ -456,49 +534,47 @@ async fn pl_settings_validation_rejects_invalid_percentages(pool: PgPool) {
 
     let pm_email = test_email();
     let pm_id = create_test_user_with_role(&pool, &pm_email, "project_manager").await;
-    let project_id =
-        create_test_project_with_pm(&pool, "Settings Validation Project", pm_id).await;
+    let project_id = create_test_project_with_pm(&pool, "Settings Validation Project", pm_id).await;
     let token = get_auth_token(&app, &pm_email).await;
 
     // Test: target_margin_pct > 100 → BAD_REQUEST
     let req = Request::builder()
         .method("PUT")
-        .uri(format!(
-            "/api/v1/projects/{}/pl/settings",
-            project_id
-        ))
+        .uri(format!("/api/v1/projects/{}/pl/settings", project_id))
         .header("Authorization", format!("Bearer {}", token))
         .header("content-type", "application/json")
         .body(Body::from(
             json!({ "target_margin_pct": 150.0 }).to_string(),
         ))
         .expect("request should be built");
-    let resp = app.clone().oneshot(req).await.expect("should return response");
+    let resp = app
+        .clone()
+        .oneshot(req)
+        .await
+        .expect("should return response");
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 
     // Test: target_margin_pct < 0 → BAD_REQUEST
     let req = Request::builder()
         .method("PUT")
-        .uri(format!(
-            "/api/v1/projects/{}/pl/settings",
-            project_id
-        ))
+        .uri(format!("/api/v1/projects/{}/pl/settings", project_id))
         .header("Authorization", format!("Bearer {}", token))
         .header("content-type", "application/json")
         .body(Body::from(
             json!({ "target_margin_pct": -10.0 }).to_string(),
         ))
         .expect("request should be built");
-    let resp = app.clone().oneshot(req).await.expect("should return response");
+    let resp = app
+        .clone()
+        .oneshot(req)
+        .await
+        .expect("should return response");
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 
     // Test: valid values → success
     let req = Request::builder()
         .method("PUT")
-        .uri(format!(
-            "/api/v1/projects/{}/pl/settings",
-            project_id
-        ))
+        .uri(format!("/api/v1/projects/{}/pl/settings", project_id))
         .header("Authorization", format!("Bearer {}", token))
         .header("content-type", "application/json")
         .body(Body::from(
@@ -509,7 +585,11 @@ async fn pl_settings_validation_rejects_invalid_percentages(pool: PgPool) {
             .to_string(),
         ))
         .expect("request should be built");
-    let resp = app.clone().oneshot(req).await.expect("should return response");
+    let resp = app
+        .clone()
+        .oneshot(req)
+        .await
+        .expect("should return response");
     assert_eq!(resp.status(), StatusCode::OK);
 
     let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
@@ -530,7 +610,11 @@ async fn pl_settings_validation_rejects_invalid_percentages(pool: PgPool) {
         .header("Authorization", format!("Bearer {}", token))
         .body(Body::empty())
         .expect("request should be built");
-    let resp = app.clone().oneshot(req).await.expect("should return response");
+    let resp = app
+        .clone()
+        .oneshot(req)
+        .await
+        .expect("should return response");
     assert_eq!(resp.status(), StatusCode::OK);
 
     let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
@@ -561,6 +645,10 @@ async fn pl_dashboard_404_for_nonexistent_project(pool: PgPool) {
         .header("Authorization", format!("Bearer {}", admin_token))
         .body(Body::empty())
         .expect("request should be built");
-    let resp = app.clone().oneshot(req).await.expect("should return response");
+    let resp = app
+        .clone()
+        .oneshot(req)
+        .await
+        .expect("should return response");
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }

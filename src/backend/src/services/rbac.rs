@@ -64,13 +64,10 @@ pub async fn can_access_department(
         "department_head" => is_department_head(conn, user_id, department_id).await,
         _ => {
             // Check if user belongs to that department
-            let row = sqlx::query!(
-                "SELECT department_id FROM users WHERE id = $1",
-                user_id
-            )
-            .fetch_optional(&mut *conn)
-            .await
-            .map_err(|e| AppError::Database(e.to_string()))?;
+            let row = sqlx::query!("SELECT department_id FROM users WHERE id = $1", user_id)
+                .fetch_optional(&mut *conn)
+                .await
+                .map_err(|e| AppError::Database(e.to_string()))?;
 
             Ok(row.map_or(false, |r| r.department_id == Some(department_id)))
         }

@@ -366,7 +366,10 @@ async fn query_capacity_report_with_tx(
             .ok_or_else(|| AppError::Internal("Invalid month end date".to_string()))?;
         let effective_start = std::cmp::max(*month, start_date);
         let effective_end = std::cmp::min(month_end, end_date);
-        working_days_per_month.insert(month_key(*month), count_weekdays(effective_start, effective_end));
+        working_days_per_month.insert(
+            month_key(*month),
+            count_weekdays(effective_start, effective_end),
+        );
     }
 
     // (weighted_fte_days, allocation_count) per resource per month
@@ -441,10 +444,7 @@ async fn query_capacity_report_with_tx(
                 .copied()
                 .unwrap_or((0.0, 0));
 
-            let month_working_days = working_days_per_month
-                .get(period)
-                .copied()
-                .unwrap_or(0);
+            let month_working_days = working_days_per_month.get(period).copied().unwrap_or(0);
 
             let total_allocation_percentage = if month_working_days > 0 {
                 (weighted_fte_days / month_working_days as f64) * 100.0

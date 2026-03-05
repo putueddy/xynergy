@@ -28,8 +28,8 @@ pub struct Claims {
     pub email: String,
     pub role: String,
     pub department_id: Option<Uuid>, // User's department for efficient scoping
-    pub exp: usize, // Expiration time
-    pub iat: usize, // Issued at
+    pub exp: usize,                  // Expiration time
+    pub iat: usize,                  // Issued at
 }
 
 /// Login request

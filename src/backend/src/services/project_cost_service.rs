@@ -67,7 +67,6 @@ struct RateWindow {
     effective_until: NaiveDate,
 }
 
-
 // ── CTC revision rate extraction ─────────────────────────────────────────────
 
 /// Extract daily_rate_idr from a ctc_revisions row.
@@ -198,10 +197,7 @@ fn build_rate_windows_from_points(
         };
 
         let window_end = if i + 1 < points.len() {
-            points[i + 1]
-                .0
-                .pred_opt()
-                .unwrap_or(points[i + 1].0)
+            points[i + 1].0.pred_opt().unwrap_or(points[i + 1].0)
         } else {
             alloc_end
         };
@@ -229,6 +225,32 @@ fn build_rate_windows_from_points(
 pub async fn compute_project_resource_costs(
     pool: &PgPool,
     project_id: Uuid,
+) -> Result<ProjectResourceCostResult> {
+    compute_project_resource_costs_impl(pool, project_id, None).await
+}
+
+pub async fn compute_project_resource_costs_in_window(
+    pool: &PgPool,
+    project_id: Uuid,
+    window_start: NaiveDate,
+    window_end: NaiveDate,
+) -> Result<ProjectResourceCostResult> {
+    if window_start > window_end {
+        return Ok(ProjectResourceCostResult {
+            project_id,
+            total_resource_cost_idr: 0,
+            employees: Vec::new(),
+            monthly_breakdown: Vec::new(),
+        });
+    }
+
+    compute_project_resource_costs_impl(pool, project_id, Some((window_start, window_end))).await
+}
+
+async fn compute_project_resource_costs_impl(
+    pool: &PgPool,
+    project_id: Uuid,
+    window: Option<(NaiveDate, NaiveDate)>,
 ) -> Result<ProjectResourceCostResult> {
     let holidays = load_holidays_pool(pool).await?;
     let crypto_svc = DefaultCtcCryptoService::new(EnvKeyProvider::new());
@@ -286,12 +308,24 @@ pub async fn compute_project_resource_costs(
             .unwrap_or(0.0);
 
         // Try to get rate from ctc_records (single-rate path)
-        let single_rate =
-            extract_daily_rate_from_allocation_row(row, &crypto_svc).await?;
+        let single_rate = extract_daily_rate_from_allocation_row(row, &crypto_svc).await?;
 
         if !revision_points_cache.contains_key(&resource_id) {
             let points = fetch_revision_points(pool, resource_id, &crypto_svc).await?;
             revision_points_cache.insert(resource_id, points);
+        }
+
+        let (effective_start, effective_end) = if let Some((window_start, window_end)) = window {
+            (
+                std::cmp::max(alloc_start, window_start),
+                std::cmp::min(alloc_end, window_end),
+            )
+        } else {
+            (alloc_start, alloc_end)
+        };
+
+        if effective_start > effective_end {
+            continue;
         }
 
         let rate_windows = build_rate_windows_from_points(
@@ -299,8 +333,8 @@ pub async fn compute_project_resource_costs(
                 .get(&resource_id)
                 .map(|v| v.as_slice())
                 .unwrap_or(&[]),
-            alloc_start,
-            alloc_end,
+            effective_start,
+            effective_end,
         );
 
         let has_multiple_rates = rate_windows.len() > 1;
@@ -333,7 +367,10 @@ pub async fn compute_project_resource_costs(
                         )
                     })
                     .collect();
-                entry.rate_change_note = Some(format!("Rate changed during allocation: {}", rates.join(", ")));
+                entry.rate_change_note = Some(format!(
+                    "Rate changed during allocation: {}",
+                    rates.join(", ")
+                ));
             }
 
             // Set daily_rate_idr to the latest rate window
@@ -367,8 +404,8 @@ pub async fn compute_project_resource_costs(
 
             let preview = calculate_cost_preview(
                 rate,
-                alloc_start,
-                alloc_end,
+                effective_start,
+                effective_end,
                 allocation_percentage,
                 include_weekend,
                 &holidays,
@@ -388,10 +425,9 @@ pub async fn compute_project_resource_costs(
         } else {
             entry.missing_rate = true;
             let working_days =
-                count_working_days(alloc_start, alloc_end, include_weekend, &holidays);
+                count_working_days(effective_start, effective_end, include_weekend, &holidays);
             entry.days_allocated += working_days;
-            entry.allocation_pct_weighted_sum +=
-                allocation_percentage * f64::from(working_days);
+            entry.allocation_pct_weighted_sum += allocation_percentage * f64::from(working_days);
             entry.allocation_pct_weight_days += working_days;
         }
     }

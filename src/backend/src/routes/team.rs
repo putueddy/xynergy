@@ -12,11 +12,11 @@ use uuid::Uuid;
 
 use crate::error::{AppError, Result};
 use crate::services::audit_log::user_claims_from_headers;
+use crate::services::begin_rls_transaction;
 use crate::services::budget_service::{
     compute_budget_breakdown, compute_department_budget_utilization, BudgetBreakdownResponse,
     DepartmentBudgetSummaryResponse,
 };
-use crate::services::begin_rls_transaction;
 use crate::services::team_service::{
     get_capacity_report_in_transaction, get_team_members_in_transaction, CapacityReportResponse,
     TeamMemberResponse,
@@ -68,10 +68,11 @@ fn assert_budget_access_role(role: &str) -> Result<()> {
 }
 
 async fn session_department_id(tx: &mut Transaction<'_, Postgres>) -> Result<Uuid> {
-    let dept_id_str: String = sqlx::query_scalar("SELECT current_setting('app.current_department_id', true)")
-        .fetch_one(&mut **tx)
-        .await
-        .map_err(|e| AppError::Database(e.to_string()))?;
+    let dept_id_str: String =
+        sqlx::query_scalar("SELECT current_setting('app.current_department_id', true)")
+            .fetch_one(&mut **tx)
+            .await
+            .map_err(|e| AppError::Database(e.to_string()))?;
 
     if dept_id_str.is_empty() {
         return Err(AppError::Forbidden("Insufficient permissions".to_string()));
@@ -252,8 +253,7 @@ async fn set_department_budget(
     }
 
     let mut tx = begin_rls_transaction(&pool, &headers).await?;
-    let department_id =
-        resolve_department_id(&mut tx, &claims.role, req.department_id).await?;
+    let department_id = resolve_department_id(&mut tx, &claims.role, req.department_id).await?;
 
     let existing_row = sqlx::query(
         "SELECT id, department_id, budget_period, total_budget_idr, alert_threshold_pct
@@ -375,8 +375,7 @@ async fn get_department_budget_summary(
     parse_yyyy_mm(&query.period, "period")?;
 
     let mut tx = begin_rls_transaction(&pool, &headers).await?;
-    let department_id =
-        resolve_department_id(&mut tx, &claims.role, query.department_id).await?;
+    let department_id = resolve_department_id(&mut tx, &claims.role, query.department_id).await?;
 
     let summary =
         compute_department_budget_utilization(&mut tx, department_id, &query.period).await?;
@@ -417,8 +416,7 @@ async fn get_budget_breakdown(
     };
 
     let mut tx = begin_rls_transaction(&pool, &headers).await?;
-    let department_id =
-        resolve_department_id(&mut tx, &claims.role, query.department_id).await?;
+    let department_id = resolve_department_id(&mut tx, &claims.role, query.department_id).await?;
     let breakdown = compute_budget_breakdown(&mut tx, department_id, periods).await?;
 
     tx.commit()
@@ -432,6 +430,9 @@ pub fn team_routes() -> Router<PgPool> {
     Router::new()
         .route("/team", get(get_team))
         .route("/team/capacity-report", get(get_capacity_report))
-        .route("/team/budget", post(set_department_budget).get(get_department_budget_summary))
+        .route(
+            "/team/budget",
+            post(set_department_budget).get(get_department_budget_summary),
+        )
         .route("/team/budget/breakdown", get(get_budget_breakdown))
 }

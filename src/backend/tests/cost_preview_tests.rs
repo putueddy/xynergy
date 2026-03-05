@@ -131,7 +131,6 @@ async fn get_auth_token(app: &axum::Router, email: &str) -> String {
         .to_string()
 }
 
-
 fn preview_uri(
     resource_id: Uuid,
     project_id: Uuid,

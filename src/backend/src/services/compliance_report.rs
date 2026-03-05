@@ -154,31 +154,52 @@ pub async fn validate_bpjs_compliance(
             .map_err(|e| AppError::Database(e.to_string()))?;
 
         // Skip records missing required BPJS fields
-        let base_salary = match decrypted.get("base_salary").and_then(|v| value_as_i64(v, "base_salary").ok()) {
+        let base_salary = match decrypted
+            .get("base_salary")
+            .and_then(|v| value_as_i64(v, "base_salary").ok())
+        {
             Some(v) => v,
             None => continue,
         };
-        let hra_allowance = match decrypted.get("hra_allowance").and_then(|v| value_as_i64(v, "hra_allowance").ok()) {
+        let hra_allowance = match decrypted
+            .get("hra_allowance")
+            .and_then(|v| value_as_i64(v, "hra_allowance").ok())
+        {
             Some(v) => v,
             None => continue,
         };
-        let medical_allowance = match decrypted.get("medical_allowance").and_then(|v| value_as_i64(v, "medical_allowance").ok()) {
+        let medical_allowance = match decrypted
+            .get("medical_allowance")
+            .and_then(|v| value_as_i64(v, "medical_allowance").ok())
+        {
             Some(v) => v,
             None => continue,
         };
-        let transport_allowance = match decrypted.get("transport_allowance").and_then(|v| value_as_i64(v, "transport_allowance").ok()) {
+        let transport_allowance = match decrypted
+            .get("transport_allowance")
+            .and_then(|v| value_as_i64(v, "transport_allowance").ok())
+        {
             Some(v) => v,
             None => continue,
         };
-        let meal_allowance = match decrypted.get("meal_allowance").and_then(|v| value_as_i64(v, "meal_allowance").ok()) {
+        let meal_allowance = match decrypted
+            .get("meal_allowance")
+            .and_then(|v| value_as_i64(v, "meal_allowance").ok())
+        {
             Some(v) => v,
             None => continue,
         };
-        let stored_bpjs_kes = match decrypted.get("bpjs_kesehatan_employer").and_then(|v| value_as_i64(v, "bpjs_kesehatan_employer").ok()) {
+        let stored_bpjs_kes = match decrypted
+            .get("bpjs_kesehatan_employer")
+            .and_then(|v| value_as_i64(v, "bpjs_kesehatan_employer").ok())
+        {
             Some(v) => v,
             None => continue,
         };
-        let stored_bpjs_kt = match decrypted.get("bpjs_ketenagakerjaan_employer").and_then(|v| value_as_i64(v, "bpjs_ketenagakerjaan_employer").ok()) {
+        let stored_bpjs_kt = match decrypted
+            .get("bpjs_ketenagakerjaan_employer")
+            .and_then(|v| value_as_i64(v, "bpjs_ketenagakerjaan_employer").ok())
+        {
             Some(v) => v,
             None => continue,
         };
