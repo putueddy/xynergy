@@ -233,6 +233,18 @@ fn default_revenue_year() -> i32 {
     chrono::Utc::now().date_naive().year()
 }
 
+#[derive(Debug, Deserialize)]
+struct ProjectPlQuery {
+    #[serde(default = "default_revenue_year")]
+    year: i32,
+}
+
+#[derive(Debug, Deserialize)]
+struct SetProjectPlSettingsRequest {
+    target_margin_pct: f64,
+    margin_alert_threshold_pct: Option<f64>,
+}
+
 fn build_project_budget_response(
     project_id: Uuid,
     project_name: String,
@@ -1628,6 +1640,137 @@ async fn get_project_resource_costs(
     }))
 }
 
+// ── P&L Dashboard Endpoint ──────────────────────────────────────────────────
+
+/// Get P&L dashboard for a project.
+async fn get_project_pl_dashboard(
+    State(pool): State<PgPool>,
+    headers: HeaderMap,
+    Path(project_id): Path<Uuid>,
+    Query(query): Query<ProjectPlQuery>,
+) -> Result<Json<crate::services::project_pl_service::ProjectPlDashboardResult>> {
+    let _user_id = enforce_project_mutation_access(
+        &pool,
+        &headers,
+        project_id,
+        "get_pl_dashboard",
+        "project_pl_dashboard",
+    )
+    .await?;
+
+    sqlx::query_scalar!("SELECT id FROM projects WHERE id = $1", project_id)
+        .fetch_optional(&pool)
+        .await
+        .map_err(|e| AppError::Database(e.to_string()))?
+        .ok_or_else(|| AppError::NotFound(format!("Project {} not found", project_id)))?;
+
+    let result = crate::services::project_pl_service::get_project_pl_dashboard(
+        &pool,
+        project_id,
+        query.year,
+    )
+    .await?;
+
+    Ok(Json(result))
+}
+
+/// Update P&L settings (target margin, alert threshold) for a project.
+async fn set_project_pl_settings(
+    State(pool): State<PgPool>,
+    headers: HeaderMap,
+    Path(project_id): Path<Uuid>,
+    payload: std::result::Result<Json<SetProjectPlSettingsRequest>, JsonRejection>,
+) -> Result<Json<serde_json::Value>> {
+    let req = match payload {
+        Ok(Json(req)) => req,
+        Err(rejection) => {
+            return Err(AppError::Validation(format!(
+                "Invalid P&L settings payload: {}",
+                rejection.body_text()
+            )));
+        }
+    };
+
+    // Validate ranges
+    if req.target_margin_pct < 0.0 || req.target_margin_pct > 100.0 {
+        return Err(AppError::Validation(
+            "target_margin_pct must be between 0 and 100".to_string(),
+        ));
+    }
+    let threshold = req.margin_alert_threshold_pct.unwrap_or(5.0);
+    if threshold < 0.0 || threshold > 100.0 {
+        return Err(AppError::Validation(
+            "margin_alert_threshold_pct must be between 0 and 100".to_string(),
+        ));
+    }
+
+    let user_id = enforce_project_mutation_access(
+        &pool,
+        &headers,
+        project_id,
+        "set_pl_settings",
+        "project_pl_settings",
+    )
+    .await?;
+
+    // Fetch current values for audit trail
+    let before_row = sqlx::query(
+        r#"SELECT target_margin_pct::FLOAT8 as target_margin_pct,
+                  margin_alert_threshold_pct::FLOAT8 as margin_alert_threshold_pct
+           FROM projects WHERE id = $1"#,
+    )
+    .bind(project_id)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| AppError::Database(e.to_string()))?
+    .ok_or_else(|| AppError::NotFound(format!("Project {} not found", project_id)))?;
+
+    let before_target: f64 = before_row
+        .try_get("target_margin_pct")
+        .map_err(|e| AppError::Database(e.to_string()))?;
+    let before_threshold: f64 = before_row
+        .try_get("margin_alert_threshold_pct")
+        .map_err(|e| AppError::Database(e.to_string()))?;
+
+    // Update settings
+    sqlx::query(
+        "UPDATE projects SET target_margin_pct = $1, margin_alert_threshold_pct = $2, updated_at = NOW() WHERE id = $3",
+    )
+    .bind(req.target_margin_pct)
+    .bind(threshold)
+    .bind(project_id)
+    .execute(&pool)
+    .await
+    .map_err(|e| AppError::Database(e.to_string()))?;
+
+    // Audit trail
+    let audit_changes = audit_payload(
+        Some(serde_json::json!({
+            "target_margin_pct": before_target,
+            "margin_alert_threshold_pct": before_threshold,
+        })),
+        Some(serde_json::json!({
+            "target_margin_pct": req.target_margin_pct,
+            "margin_alert_threshold_pct": threshold,
+        })),
+    );
+    log_audit(
+        &pool,
+        Some(user_id),
+        "update",
+        "project_pl_settings",
+        project_id,
+        audit_changes,
+    )
+    .await?;
+
+    Ok(Json(serde_json::json!({
+        "message": "P&L settings updated",
+        "target_margin_pct": req.target_margin_pct,
+        "margin_alert_threshold_pct": threshold,
+    })))
+}
+
 /// Create project routes
 pub fn project_routes() -> Router<PgPool> {
     Router::new()
@@ -1641,6 +1784,8 @@ pub fn project_routes() -> Router<PgPool> {
             "/projects/:id/resource-costs",
             get(get_project_resource_costs),
         )
+        .route("/projects/:id/pl", get(get_project_pl_dashboard))
+        .route("/projects/:id/pl/settings", put(set_project_pl_settings))
         .route(
             "/projects/:id/expenses",
             get(list_project_expenses).post(create_project_expense),

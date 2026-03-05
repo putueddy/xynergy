@@ -117,6 +117,32 @@ struct MonthRevenueEntry {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+struct ProjectPlDashboardResponse {
+    pub project_id: Uuid,
+    pub year: i32,
+    pub total_revenue_idr: i64,
+    pub total_cost_idr: i64,
+    pub gross_profit_idr: i64,
+    pub margin_pct: f64,
+    pub target_margin_pct: f64,
+    pub margin_alert_threshold_pct: f64,
+    pub margin_alert: Option<String>,
+    pub months: Vec<PlMonthEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct PlMonthEntry {
+    pub month: u32,
+    pub month_label: String,
+    pub revenue_idr: i64,
+    pub resource_cost_idr: i64,
+    pub non_resource_cost_idr: i64,
+    pub total_cost_idr: i64,
+    pub gross_profit_idr: i64,
+    pub margin_pct: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct UpsertProjectRevenueRequest {
     pub revenue_month: String,
     pub amount_idr: i64,
@@ -304,6 +330,36 @@ pub fn Projects() -> impl IntoView {
     let (revenue_edit_month, set_revenue_edit_month) = create_signal(Option::<u32>::None);
     let (revenue_edit_amount, set_revenue_edit_amount) = create_signal(String::new());
 
+    let (pnl_project_id, set_pnl_project_id) = create_signal(Option::<Uuid>::None);
+    let (pnl_year, set_pnl_year) = create_signal(chrono::Utc::now().year());
+    let (pnl_reload_nonce, set_pnl_reload_nonce) = create_signal(0u64);
+    let pnl_target_ref: NodeRef<html::Input> = create_node_ref();
+    let pnl_alert_ref: NodeRef<html::Input> = create_node_ref();
+    let (pnl_hover_month, set_pnl_hover_month) = create_signal(Option::<u32>::None);
+
+    let pnl_resource = create_resource(
+        move || (pnl_project_id.get(), pnl_year.get(), pnl_reload_nonce.get()),
+        move |(project_id, year, _nonce)| async move {
+            match project_id {
+                Some(pid) => Some(fetch_pl_dashboard(pid, year).await),
+                None => None,
+            }
+        },
+    );
+
+    let pnl_data = Signal::derive(move || {
+        pnl_resource
+            .get()
+            .and_then(|result| result)
+            .and_then(|result| result.ok())
+    });
+
+    create_effect(move |_| {
+        if let Some(Some(Err(e))) = pnl_resource.get() {
+            set_error.set(Some(e));
+        }
+    });
+
     let revenue_grid_resource = create_resource(
         move || {
             (
@@ -348,6 +404,34 @@ pub fn Projects() -> impl IntoView {
                     set_revenue_edit_amount.set(String::new());
                     set_revenue_reload_nonce.update(|value| *value += 1);
                 }
+                Err(e) => set_error.set(Some(e)),
+            }
+        }
+    });
+
+    #[derive(Debug, Clone)]
+    struct PlSettingsPayload {
+        project_id: Uuid,
+        target_margin_pct: f64,
+        margin_alert_threshold_pct: f64,
+    }
+
+    let pnl_settings_action = create_action(move |payload: &PlSettingsPayload| {
+        let payload = payload.clone();
+        async move {
+            update_pl_settings(
+                payload.project_id,
+                payload.target_margin_pct,
+                payload.margin_alert_threshold_pct,
+            )
+            .await
+        }
+    });
+
+    create_effect(move |_| {
+        if let Some(result) = pnl_settings_action.value().get() {
+            match result {
+                Ok(_) => set_pnl_reload_nonce.update(|v| *v += 1),
                 Err(e) => set_error.set(Some(e)),
             }
         }
@@ -466,6 +550,11 @@ pub fn Projects() -> impl IntoView {
         set_revenue_project_id.set(Some(id));
         set_revenue_edit_month.set(None);
         set_revenue_edit_amount.set(String::new());
+    };
+
+    let handle_view_pnl = move |id: Uuid| {
+        set_pnl_project_id.set(Some(id));
+        set_pnl_year.set(chrono::Utc::now().year());
     };
 
     let handle_revenue_save = move |month: u32| {
@@ -760,6 +849,7 @@ pub fn Projects() -> impl IntoView {
                                                 on_view_expenses=Callback::new(handle_view_expenses)
                                                 on_view_resource_costs=Callback::new(handle_view_resource_costs)
                                                 on_view_revenue=Callback::new(handle_view_revenue)
+                                                on_view_pnl=Callback::new(handle_view_pnl)
                                             />
                                             {move || {
                                                 selected_budget.get().map(|budget| {
@@ -1084,6 +1174,268 @@ pub fn Projects() -> impl IntoView {
                                                 <div class="flex justify-between items-center p-3 bg-teal-50 dark:bg-teal-900/20 rounded">
                                                     <span class="text-sm font-medium text-teal-700 dark:text-teal-300">"Year-to-Date Total"</span>
                                                     <span class="text-lg font-bold text-teal-800 dark:text-teal-200">{format_idr(ytd)}</span>
+                                                </div>
+                                            </div>
+                                        }
+                                    })
+                                }}
+                                {move || {
+                                    pnl_data.get().map(|pnl| {
+                                        let year = pnl.year;
+                                        let margin_color = if pnl.margin_alert.is_some() {
+                                            "text-red-600 dark:text-red-400"
+                                        } else {
+                                            "text-green-600 dark:text-green-400"
+                                        };
+
+                                        let months_for_chart = pnl.months.clone();
+                                        let months_for_tooltip = pnl.months.clone();
+                                        let months_for_table = pnl.months.clone();
+                                        
+                                        let mut max_val: i64 = 1;
+                                        for m in &pnl.months {
+                                            if m.revenue_idr > max_val { max_val = m.revenue_idr; }
+                                            if m.total_cost_idr > max_val { max_val = m.total_cost_idr; }
+                                        }
+                                        
+                                        let chart_height = 150.0;
+                                        
+                                        view! {
+                                            <div class="bg-white dark:bg-gray-800 shadow rounded-lg p-6 mt-6">
+                                                {pnl.margin_alert.clone().map(|alert| view! {
+                                                    <div class="mb-4 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 p-3 rounded-lg border border-red-200 dark:border-red-800 flex items-center">
+                                                        <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                                                        <span class="font-medium">"Alert: "</span> <span class="ml-1">{alert}</span>
+                                                    </div>
+                                                })}
+                                                
+                                                <div class="flex items-center justify-between mb-4">
+                                                    <h2 class="text-xl font-semibold text-gray-900 dark:text-white">
+                                                        "P&L Dashboard"
+                                                    </h2>
+                                                    <div class="flex items-center space-x-4">
+                                                        <button
+                                                            class="text-gray-600 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200 px-2"
+                                                            on:click=move |_| set_pnl_year.update(|y| *y -= 1)
+                                                        >
+                                                            "◀"
+                                                        </button>
+                                                        <span class="text-lg font-bold text-gray-900 dark:text-white">{year}</span>
+                                                        <button
+                                                            class="text-gray-600 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200 px-2"
+                                                            on:click=move |_| set_pnl_year.update(|y| *y += 1)
+                                                        >
+                                                            "▶"
+                                                        </button>
+                                                        <button
+                                                            class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                                                            on:click=move |_| set_pnl_project_id.set(None)
+                                                        >
+                                                            "Close"
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                                
+                                                <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                                                    <div class="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 border border-gray-100 dark:border-gray-600">
+                                                        <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">"Revenue"</p>
+                                                        <p class="text-xl font-bold text-gray-900 dark:text-white">{format_idr(pnl.total_revenue_idr)}</p>
+                                                    </div>
+                                                    <div class="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 border border-gray-100 dark:border-gray-600">
+                                                        <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">"Total Costs"</p>
+                                                        <p class="text-xl font-bold text-gray-900 dark:text-white">{format_idr(pnl.total_cost_idr)}</p>
+                                                    </div>
+                                                    <div class="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 border border-gray-100 dark:border-gray-600">
+                                                        <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">"Gross Profit"</p>
+                                                        <p class="text-xl font-bold text-gray-900 dark:text-white">{format_idr(pnl.gross_profit_idr)}</p>
+                                                    </div>
+                                                    <div class="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 border border-gray-100 dark:border-gray-600">
+                                                        <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">"Margin %"</p>
+                                                        <p class=format!("text-xl font-bold {}", margin_color)>{format!("{:.1}%", pnl.margin_pct)}</p>
+                                                    </div>
+                                                </div>
+                                                
+                                                <div class="mb-6 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4">
+                                                    <h3 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-4">"Revenue vs Cost (Monthly)"</h3>
+                                                    <div class="w-full overflow-x-auto">
+                                                        <svg
+                                                            width="100%"
+                                                            height="160"
+                                                            viewBox="0 0 1200 160"
+                                                            preserveAspectRatio="none"
+                                                            role="img"
+                                                            aria-label="Monthly revenue versus total cost chart"
+                                                        >
+                                                            {months_for_chart.iter().enumerate().map(|(i, m)| {
+                                                                let x_offset = i as f64 * 100.0 + 20.0;
+                                                                let rev_h = (m.revenue_idr as f64 / max_val as f64 * chart_height).max(1.0);
+                                                                let cost_h = (m.total_cost_idr as f64 / max_val as f64 * chart_height).max(1.0);
+
+                                                                let rev_y = 150.0 - rev_h;
+                                                                let cost_y = 150.0 - cost_h;
+                                                                let month_num = m.month;
+                                                                let month_label = m.month_label.clone();
+                                                                let month_label_for_rev = month_label.clone();
+                                                                let month_label_for_cost = month_label.clone();
+
+                                                                view! {
+                                                                    <g transform=format!("translate({}, 0)", x_offset)>
+                                                                        <rect
+                                                                            x="0"
+                                                                            y=rev_y
+                                                                            width="20"
+                                                                            height=rev_h
+                                                                            fill="#10b981"
+                                                                            rx="2"
+                                                                            ry="2"
+                                                                            opacity="0.8"
+                                                                            tabindex="0"
+                                                                            focusable="true"
+                                                                            aria-label=format!(
+                                                                                "{} revenue {}",
+                                                                                month_label_for_rev,
+                                                                                format_idr(m.revenue_idr)
+                                                                            )
+                                                                            on:mouseenter=move |_| set_pnl_hover_month.set(Some(month_num))
+                                                                            on:mouseleave=move |_| set_pnl_hover_month.set(None)
+                                                                            on:focus=move |_| set_pnl_hover_month.set(Some(month_num))
+                                                                            on:blur=move |_| set_pnl_hover_month.set(None)
+                                                                        />
+                                                                        <rect
+                                                                            x="22"
+                                                                            y=cost_y
+                                                                            width="20"
+                                                                            height=cost_h
+                                                                            fill="#ef4444"
+                                                                            rx="2"
+                                                                            ry="2"
+                                                                            opacity="0.8"
+                                                                            tabindex="0"
+                                                                            focusable="true"
+                                                                            aria-label=format!(
+                                                                                "{} total cost {}",
+                                                                                month_label_for_cost,
+                                                                                format_idr(m.total_cost_idr)
+                                                                            )
+                                                                            on:mouseenter=move |_| set_pnl_hover_month.set(Some(month_num))
+                                                                            on:mouseleave=move |_| set_pnl_hover_month.set(None)
+                                                                            on:focus=move |_| set_pnl_hover_month.set(Some(month_num))
+                                                                            on:blur=move |_| set_pnl_hover_month.set(None)
+                                                                        />
+                                                                        <text x="21" y="160" text-anchor="middle" class="text-xs fill-gray-500 dark:fill-gray-400 text-[10px]">{month_label}</text>
+                                                                    </g>
+                                                                }
+                                                            }).collect_view()}
+                                                        </svg>
+                                                        {move || {
+                                                            pnl_hover_month
+                                                                .get()
+                                                                .and_then(|hovered| {
+                                                                    months_for_tooltip
+                                                                        .iter()
+                                                                        .find(|entry| entry.month == hovered)
+                                                                        .cloned()
+                                                                })
+                                                                .map(|entry| {
+                                                                    view! {
+                                                                        <div class="mt-3 bg-gray-900 text-white rounded-md px-3 py-2 text-xs space-y-1" role="status" aria-live="polite">
+                                                                            <p><span class="font-semibold">"Revenue: "</span>{format_idr(entry.revenue_idr)}</p>
+                                                                            <p><span class="font-semibold">"Resource Costs: "</span>{format_idr(entry.resource_cost_idr)}</p>
+                                                                            <p><span class="font-semibold">"Non-Resource Costs: "</span>{format_idr(entry.non_resource_cost_idr)}</p>
+                                                                            <p><span class="font-semibold">"Margin: "</span>{format!("{:.1}%", entry.margin_pct)}</p>
+                                                                        </div>
+                                                                    }
+                                                                })
+                                                        }}
+                                                    </div>
+                                                </div>
+                                                
+                                                <div class="overflow-x-auto mb-6">
+                                                    <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                                                        <thead class="bg-gray-50 dark:bg-gray-700">
+                                                            <tr>
+                                                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">"Month"</th>
+                                                                <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">"Revenue"</th>
+                                                                <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">"Res. Cost"</th>
+                                                                <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">"Non-Res. Cost"</th>
+                                                                <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">"Total Cost"</th>
+                                                                <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">"Gross Profit"</th>
+                                                                <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">"Margin %"</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                                                            {months_for_table.into_iter().map(|m| {
+                                                                let m_color = if m.revenue_idr > 0 && (pnl.target_margin_pct - m.margin_pct) > pnl.margin_alert_threshold_pct {
+                                                                    "text-red-600 dark:text-red-400 font-medium"
+                                                                } else {
+                                                                    "text-gray-900 dark:text-white"
+                                                                };
+                                                                view! {
+                                                                    <tr class="hover:bg-gray-50 dark:hover:bg-gray-700">
+                                                                        <td class="px-3 py-2 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">{m.month_label}</td>
+                                                                        <td class="px-3 py-2 whitespace-nowrap text-sm text-right text-gray-600 dark:text-gray-300">{format_idr(m.revenue_idr)}</td>
+                                                                        <td class="px-3 py-2 whitespace-nowrap text-sm text-right text-gray-600 dark:text-gray-300">{format_idr(m.resource_cost_idr)}</td>
+                                                                        <td class="px-3 py-2 whitespace-nowrap text-sm text-right text-gray-600 dark:text-gray-300">{format_idr(m.non_resource_cost_idr)}</td>
+                                                                        <td class="px-3 py-2 whitespace-nowrap text-sm text-right text-gray-600 dark:text-gray-300">{format_idr(m.total_cost_idr)}</td>
+                                                                        <td class="px-3 py-2 whitespace-nowrap text-sm text-right font-medium text-gray-900 dark:text-white">{format_idr(m.gross_profit_idr)}</td>
+                                                                        <td class=format!("px-3 py-2 whitespace-nowrap text-sm text-right {}", m_color)>{format!("{:.1}%", m.margin_pct)}</td>
+                                                                    </tr>
+                                                                }
+                                                            }).collect_view()}
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                                
+                                                <div class="bg-gray-50 dark:bg-gray-700/50 p-4 rounded-lg border border-gray-200 dark:border-gray-700">
+                                                    <h3 class="text-sm font-medium text-gray-900 dark:text-white mb-3">"Target Margin Settings"</h3>
+                                                    <div class="flex items-end space-x-4">
+                                                        <div>
+                                                            <label class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">"Target Margin (%)"</label>
+                                                            <input type="number" step="0.1" _ref=pnl_target_ref class="input w-32" prop:value=pnl.target_margin_pct.to_string() />
+                                                        </div>
+                                                        <div>
+                                                            <label class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">"Alert Threshold (%)"</label>
+                                                            <input type="number" step="0.1" _ref=pnl_alert_ref class="input w-32" prop:value=pnl.margin_alert_threshold_pct.to_string() />
+                                                        </div>
+                                                        <button 
+                                                            class="btn-primary"
+                                                            on:click=move |_| {
+                                                                let t_val = pnl_target_ref.get().map(|i| i.value()).unwrap_or_default();
+                                                                let a_val = pnl_alert_ref.get().map(|i| i.value()).unwrap_or_default();
+                                                                let target_pct: f64 = match t_val.trim().parse() {
+                                                                    Ok(v) => v,
+                                                                    Err(_) => {
+                                                                        set_error.set(Some("Target margin must be a valid number".to_string()));
+                                                                        return;
+                                                                    }
+                                                                };
+                                                                let alert_pct: f64 = match a_val.trim().parse() {
+                                                                    Ok(v) => v,
+                                                                    Err(_) => {
+                                                                        set_error.set(Some("Alert threshold must be a valid number".to_string()));
+                                                                        return;
+                                                                    }
+                                                                };
+
+                                                                if !(0.0..=100.0).contains(&target_pct) {
+                                                                    set_error.set(Some("Target margin must be between 0 and 100".to_string()));
+                                                                    return;
+                                                                }
+                                                                if !(0.0..=100.0).contains(&alert_pct) {
+                                                                    set_error.set(Some("Alert threshold must be between 0 and 100".to_string()));
+                                                                    return;
+                                                                }
+
+                                                                pnl_settings_action.dispatch(PlSettingsPayload {
+                                                                    project_id: pnl.project_id,
+                                                                    target_margin_pct: target_pct,
+                                                                    margin_alert_threshold_pct: alert_pct,
+                                                                });
+                                                            }
+                                                        >
+                                                            "Save Settings"
+                                                        </button>
+                                                    </div>
                                                 </div>
                                             </div>
                                         }
@@ -1601,5 +1953,51 @@ async fn upsert_project_revenue(
             .await
             .unwrap_or_else(|_| "Unknown error".to_string());
         Err(format!("Failed to save revenue: {}", error_text))
+    }
+}
+
+async fn fetch_pl_dashboard(
+    project_id: Uuid,
+    year: i32,
+) -> Result<ProjectPlDashboardResponse, String> {
+    let response = authenticated_get(&format!(
+        "/api/v1/projects/{}/pl?year={}",
+        project_id, year
+    ))
+    .await
+    .map_err(|e| format!("Failed to fetch P&L: {}", e))?;
+
+    if response.status().is_success() {
+        response
+            .json::<ProjectPlDashboardResponse>()
+            .await
+            .map_err(|e| format!("Failed to parse P&L: {}", e))
+    } else {
+        Err(format!("Failed to fetch P&L: {}", response.status()))
+    }
+}
+
+async fn update_pl_settings(
+    project_id: Uuid,
+    target_margin_pct: f64,
+    margin_alert_threshold_pct: f64,
+) -> Result<serde_json::Value, String> {
+    let response = authenticated_put_json(
+        &format!("/api/v1/projects/{}/pl/settings", project_id),
+        &serde_json::json!({
+            "target_margin_pct": target_margin_pct,
+            "margin_alert_threshold_pct": margin_alert_threshold_pct,
+        }),
+    )
+    .await
+    .map_err(|e| format!("Failed to update P&L settings: {}", e))?;
+
+    if response.status().is_success() {
+        response
+            .json::<serde_json::Value>()
+            .await
+            .map_err(|e| format!("Failed to parse settings response: {}", e))
+    } else {
+        Err(format!("Failed to update settings: {}", response.status()))
     }
 }

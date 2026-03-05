@@ -31,6 +31,7 @@ pub fn ProjectList(
     on_view_expenses: Callback<Uuid>,
     on_view_resource_costs: Callback<Uuid>,
     on_view_revenue: Callback<Uuid>,
+    on_view_pnl: Callback<Uuid>,
 ) -> impl IntoView {
     view! {
         <div class="bg-white dark:bg-gray-800 shadow rounded-lg overflow-hidden">
@@ -114,6 +115,12 @@ pub fn ProjectList(
                                             on:click=move |_| on_view_revenue.call(project_id)
                                         >
                                             "Revenue"
+                                        </button>
+                                        <button
+                                            class="text-rose-600 hover:text-rose-900 dark:text-rose-400 dark:hover:text-rose-300 mr-4"
+                                            on:click=move |_| on_view_pnl.call(project_id)
+                                        >
+                                            "P&L"
                                         </button>
                                         <button
                                             class="text-purple-600 hover:text-purple-900 dark:text-purple-400 dark:hover:text-purple-300 mr-4"

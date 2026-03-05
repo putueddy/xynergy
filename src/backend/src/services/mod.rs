@@ -9,6 +9,7 @@ pub mod ctc_crypto;
 pub mod ctc_validator;
 pub mod key_provider;
 pub mod project_cost_service;
+pub mod project_pl_service;
 pub mod project_revenue_service;
 pub mod project_service;
 pub mod rbac;
