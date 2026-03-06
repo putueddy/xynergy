@@ -80,12 +80,14 @@ pub fn AppSidebar() -> impl IntoView {
     let is_hr = Signal::derive(move || user_role.get() == "hr");
     let is_dept_head = Signal::derive(move || user_role.get() == "department_head");
     let is_admin = Signal::derive(move || user_role.get() == "admin");
+    let is_finance = Signal::derive(move || user_role.get() == "finance");
 
     let show_team = Signal::derive(move || is_hr.get() || is_dept_head.get() || is_admin.get());
 
     let show_ctc_status = Signal::derive(move || is_hr.get() || is_dept_head.get());
 
     let show_hr_tools = Signal::derive(move || is_hr.get());
+    let show_finance = Signal::derive(move || is_finance.get() || is_admin.get());
 
     let handle_logout = move |_| {
         logout_user(&auth);
@@ -158,6 +160,17 @@ pub fn AppSidebar() -> impl IntoView {
                                 icon_path="M2.25 18.75a60.07 60.07 0 0115.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 013 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 00-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 01-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 003 15h-.75M15 10.5a3 3 0 11-6 0 3 3 0 016 0zm3 0h.008v.008H18V10.5zm-12 0h.008v.008H6V10.5z"
                             />
                         </Show>
+                    </div>
+                </Show>
+
+                <Show when=move || show_finance.get()>
+                    <SidebarSection label="Finance" />
+                    <div class="space-y-0.5">
+                        <SidebarNavItem
+                            href="/finance/cash-flow"
+                            label="Cash Flow"
+                            icon_path="M2.25 18L9 11.25l4.306 4.307a11.95 11.95 0 015.814-5.519l2.74-1.22m0 0l-5.94-2.28m5.94 2.28l-2.28 5.941"
+                        />
                     </div>
                 </Show>
 

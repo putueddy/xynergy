@@ -68,8 +68,8 @@ development_status:
   4-6-profitability-forecasting: done
   epic-4-retrospective: optional
 
-  epic-5: backlog
-  5-1-cash-flow-entry: backlog
+  epic-5: in-progress
+  5-1-cash-flow-entry: done
   5-2-cash-flow-dashboard: backlog
   5-3-ctc-validation-reports: backlog
   5-4-compliance-audit-reports: backlog
