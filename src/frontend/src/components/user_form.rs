@@ -1,4 +1,5 @@
-use leptos::*;
+use leptos::either::Either;
+use leptos::prelude::*;
 use uuid::Uuid;
 
 /// User form data structure
@@ -42,15 +43,15 @@ pub fn UserForm(
     let is_edit = editing_user.is_some();
 
     // Form fields - initialize with empty values
-    let (email, set_email) = create_signal(String::new());
-    let (password, set_password) = create_signal(String::new());
-    let (first_name, set_first_name) = create_signal(String::new());
-    let (last_name, set_last_name) = create_signal(String::new());
-    let (role, set_role) = create_signal("team_member".to_string());
-    let (department_id, set_department_id) = create_signal(String::new());
+    let (email, set_email) = signal(String::new());
+    let (password, set_password) = signal(String::new());
+    let (first_name, set_first_name) = signal(String::new());
+    let (last_name, set_last_name) = signal(String::new());
+    let (role, set_role) = signal("team_member".to_string());
+    let (department_id, set_department_id) = signal(String::new());
 
     // Update form fields when editing_user changes
-    create_effect(move |_| {
+    Effect::new(move |_| {
         if let Some(user) = &editing_user {
             set_email.set(user.email.clone());
             set_first_name.set(user.first_name.clone());
@@ -81,7 +82,7 @@ pub fn UserForm(
             department_id: department_id.get(),
         };
 
-        on_submit.call(form_data);
+        on_submit.run(form_data);
     };
 
     view! {
@@ -106,7 +107,7 @@ pub fn UserForm(
 
                 // Password (only for new users)
                 {if !is_edit {
-                    view! {
+                    Either::Left(view! {
                         <div>
                             <label for="password" class="label">
                                 "Password *"
@@ -121,9 +122,9 @@ pub fn UserForm(
                                 required=!is_edit
                             />
                         </div>
-                    }.into_view()
+                    })
                 } else {
-                    view! { <div></div> }.into_view()
+                    Either::Right(view! { <div></div> })
                 }}
 
                 // First Name
@@ -205,7 +206,7 @@ pub fn UserForm(
                 <button
                     type="button"
                     class="btn-secondary btn-press"
-                    on:click=move |_| on_cancel.call(())
+                    on:click=move |_| on_cancel.run(())
                     disabled=is_submitting
                 >
                     "Cancel"

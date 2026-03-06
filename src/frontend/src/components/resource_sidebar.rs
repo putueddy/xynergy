@@ -1,4 +1,4 @@
-use leptos::*;
+use leptos::prelude::*;
 
 /// Resource allocation info for sidebar
 #[derive(Debug, Clone)]
@@ -50,7 +50,7 @@ pub fn ResourceSidebar(
                                         "p-3 cursor-pointer table-row-hover transition-colors {}",
                                         if is_selected { "bg-primary-600/10 border-l-4 border-primary-600" } else { "border-l-4 border-transparent" }
                                     )}
-                                    on:click=move |_| on_select.call(resource_id.clone())
+                                    on:click=move |_| on_select.run(resource_id.clone())
                                 >
                                     <div class="flex items-center justify-between">
                                         <div class="flex-1 min-w-0">

@@ -6,8 +6,10 @@ use crate::components::project_list::Project;
 use crate::components::{project_form::ProjectFormData, ProjectForm, ProjectList};
 use chrono::{Datelike, NaiveDate};
 use gloo_timers::callback::Interval;
-use leptos::*;
-use leptos_router::*;
+use leptos::either::{Either, EitherOf3};
+use leptos::html;
+use leptos::prelude::*;
+use leptos_router::hooks::*;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -214,7 +216,7 @@ fn ExpenseFormPanel(
     view! {
         <form
             class="space-y-4 mb-8 bg-huly-surface-2 p-4 rounded-lg"
-            on:submit=move |ev| on_submit.call(ev)
+            on:submit=move |ev| on_submit.run(ev)
         >
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
@@ -275,7 +277,7 @@ fn ExpenseFormPanel(
                     />
                 </div>
                 {move || if is_editing.get() {
-                    view! {
+                    Either::Left(view! {
                         <div class="md:col-span-2">
                             <label class="label">"Edit Reason"</label>
                             <input
@@ -286,17 +288,17 @@ fn ExpenseFormPanel(
                                 required
                             />
                         </div>
-                    }
-                        .into_view()
+                    })
+                        
                 } else {
-                    view! { <div></div> }.into_view()
+                    Either::Right(view! { <div></div> })
                 }}
             </div>
             <div class="flex justify-end space-x-3 pt-4">
                 <button
                     type="button"
                     class="btn-secondary btn-press"
-                    on:click=move |_| on_cancel.call(())
+                    on:click=move |_| on_cancel.run(())
                 >
                     "Cancel"
                 </button>
@@ -340,7 +342,7 @@ pub fn Projects() -> impl IntoView {
     // Redirect if not logged in
     {
         let navigate = navigate.clone();
-        create_effect(move |_| {
+        Effect::new(move |_| {
             if !auth.is_authenticated.get() {
                 navigate("/login", Default::default());
             }
@@ -348,58 +350,56 @@ pub fn Projects() -> impl IntoView {
     }
 
     // Project data
-    let (projects, set_projects) = create_signal(Vec::new());
-    let (loading, set_loading) = create_signal(false);
-    let (error, set_error) = create_signal(Option::<String>::None);
-    let (show_form, set_show_form) = create_signal(false);
-    let (editing_project, set_editing_project) = create_signal(Option::<Project>::None);
-    let (selected_budget, set_selected_budget) = create_signal(Option::<ProjectBudgetData>::None);
+    let (projects, set_projects) = signal(Vec::new());
+    let (loading, set_loading) = signal(false);
+    let (error, set_error) = signal(Option::<String>::None);
+    let (show_form, set_show_form) = signal(false);
+    let (editing_project, set_editing_project) = signal(Option::<Project>::None);
+    let (selected_budget, set_selected_budget) = signal(Option::<ProjectBudgetData>::None);
     let (selected_project_for_expenses, set_selected_project_for_expenses) =
-        create_signal(Option::<Project>::None);
-    let (expenses, set_expenses) = create_signal(Vec::<ProjectExpenseData>::new());
-    let (show_expense_form, set_show_expense_form) = create_signal(false);
-    let (editing_expense, set_editing_expense) = create_signal(Option::<ProjectExpenseData>::None);
-    let (resource_costs, set_resource_costs) = create_signal(Option::<ResourceCostData>::None);
-    let (revenue_year, set_revenue_year) = create_signal(chrono::Utc::now().year());
-    let (revenue_project_id, set_revenue_project_id) = create_signal(Option::<Uuid>::None);
-    let (revenue_reload_nonce, set_revenue_reload_nonce) = create_signal(0u64);
-    let (revenue_edit_month, set_revenue_edit_month) = create_signal(Option::<u32>::None);
-    let (revenue_edit_amount, set_revenue_edit_amount) = create_signal(String::new());
+        signal(Option::<Project>::None);
+    let (expenses, set_expenses) = signal(Vec::<ProjectExpenseData>::new());
+    let (show_expense_form, set_show_expense_form) = signal(false);
+    let (editing_expense, set_editing_expense) = signal(Option::<ProjectExpenseData>::None);
+    let (resource_costs, set_resource_costs) = signal(Option::<ResourceCostData>::None);
+    let (revenue_year, set_revenue_year) = signal(chrono::Utc::now().year());
+    let (revenue_project_id, set_revenue_project_id) = signal(Option::<Uuid>::None);
+    let (revenue_reload_nonce, set_revenue_reload_nonce) = signal(0u64);
+    let (revenue_edit_month, set_revenue_edit_month) = signal(Option::<u32>::None);
+    let (revenue_edit_amount, set_revenue_edit_amount) = signal(String::new());
 
-    let (pnl_project_id, set_pnl_project_id) = create_signal(Option::<Uuid>::None);
-    let (pnl_year, set_pnl_year) = create_signal(chrono::Utc::now().year());
-    let (pnl_reload_nonce, set_pnl_reload_nonce) = create_signal(0u64);
-    let pnl_target_ref: NodeRef<html::Input> = create_node_ref();
-    let pnl_alert_ref: NodeRef<html::Input> = create_node_ref();
-    let (pnl_hover_month, set_pnl_hover_month) = create_signal(Option::<u32>::None);
-    let (show_forecast, set_show_forecast) = create_signal(false);
+    let (pnl_project_id, set_pnl_project_id) = signal(Option::<Uuid>::None);
+    let (pnl_year, set_pnl_year) = signal(chrono::Utc::now().year());
+    let (pnl_reload_nonce, set_pnl_reload_nonce) = signal(0u64);
+    let pnl_target_ref: NodeRef<html::Input> = NodeRef::new();
+    let pnl_alert_ref: NodeRef<html::Input> = NodeRef::new();
+    let (pnl_hover_month, set_pnl_hover_month) = signal(Option::<u32>::None);
+    let (show_forecast, set_show_forecast) = signal(false);
 
-    let forecast_resource = create_resource(
-        move || {
-            (
-                pnl_project_id.get(),
-                pnl_year.get(),
-                pnl_reload_nonce.get(),
-                show_forecast.get(),
-            )
-        },
-        move |(project_id, year, _nonce, show)| async move {
-            if !show {
-                return None;
-            }
-            match project_id {
-                Some(pid) => Some(fetch_pl_forecast(pid, year).await),
-                None => None,
-            }
-        },
-    );
+    let forecast_resource = LocalResource::new(move || async move {
+        let project_id = pnl_project_id.get();
+        let year = pnl_year.get();
+        let _nonce = pnl_reload_nonce.get();
+        let show = show_forecast.get();
 
-    create_effect(move |_| {
+        if !show {
+            return None;
+        }
+
+        match project_id {
+            Some(pid) => Some(fetch_pl_forecast(pid, year).await),
+            None => None,
+        }
+    });
+
+    Effect::new(move |_| {
         if show_forecast.get() && pnl_project_id.get().is_some() {
             let interval = Interval::new(30_000, move || {
                 set_pnl_reload_nonce.update(|value| *value += 1);
             });
-            on_cleanup(move || drop(interval));
+            // Store interval to prevent it from being dropped immediately.
+            // Using StoredValue::new_local since Interval is !Send+!Sync on WASM.
+            let _keep = StoredValue::new_local(Some(interval));
         }
     });
 
@@ -410,15 +410,16 @@ pub fn Projects() -> impl IntoView {
             .and_then(|result| result.ok())
     });
 
-    let pnl_resource = create_resource(
-        move || (pnl_project_id.get(), pnl_year.get(), pnl_reload_nonce.get()),
-        move |(project_id, year, _nonce)| async move {
-            match project_id {
-                Some(pid) => Some(fetch_pl_dashboard(pid, year).await),
-                None => None,
-            }
-        },
-    );
+    let pnl_resource = LocalResource::new(move || async move {
+        let project_id = pnl_project_id.get();
+        let year = pnl_year.get();
+        let _nonce = pnl_reload_nonce.get();
+
+        match project_id {
+            Some(pid) => Some(fetch_pl_dashboard(pid, year).await),
+            None => None,
+        }
+    });
 
     let pnl_data = Signal::derive(move || {
         pnl_resource
@@ -427,33 +428,28 @@ pub fn Projects() -> impl IntoView {
             .and_then(|result| result.ok())
     });
 
-    create_effect(move |_| {
+    Effect::new(move |_| {
         if let Some(Some(Err(e))) = pnl_resource.get() {
             set_error.set(Some(e));
         }
     });
 
-    create_effect(move |_| {
+    Effect::new(move |_| {
         if let Some(Some(Err(e))) = forecast_resource.get() {
             set_error.set(Some(e));
         }
     });
 
-    let revenue_grid_resource = create_resource(
-        move || {
-            (
-                revenue_project_id.get(),
-                revenue_year.get(),
-                revenue_reload_nonce.get(),
-            )
-        },
-        move |(project_id, year, _reload_nonce)| async move {
-            match project_id {
-                Some(pid) => Some(fetch_project_revenue(pid, year).await),
-                None => None,
-            }
-        },
-    );
+    let revenue_grid_resource = LocalResource::new(move || async move {
+        let project_id = revenue_project_id.get();
+        let year = revenue_year.get();
+        let _reload_nonce = revenue_reload_nonce.get();
+
+        match project_id {
+            Some(pid) => Some(fetch_project_revenue(pid, year).await),
+            None => None,
+        }
+    });
 
     let revenue_grid = Signal::derive(move || {
         revenue_grid_resource
@@ -462,20 +458,20 @@ pub fn Projects() -> impl IntoView {
             .and_then(|result| result.ok())
     });
 
-    let revenue_save_action = create_action(move |payload: &RevenueSavePayload| {
+    let revenue_save_action = Action::new_local(move |payload: &RevenueSavePayload| {
         let payload = payload.clone();
         async move { upsert_project_revenue(payload.project_id, payload.request).await }
     });
 
     let revenue_saving = Signal::derive(move || revenue_save_action.pending().get());
 
-    create_effect(move |_| {
+    Effect::new(move |_| {
         if let Some(Some(Err(e))) = revenue_grid_resource.get() {
             set_error.set(Some(e));
         }
     });
 
-    create_effect(move |_| {
+    Effect::new(move |_| {
         if let Some(result) = revenue_save_action.value().get() {
             match result {
                 Ok(_) => {
@@ -496,7 +492,7 @@ pub fn Projects() -> impl IntoView {
         margin_alert_threshold_pct: f64,
     }
 
-    let pnl_settings_action = create_action(move |payload: &PlSettingsPayload| {
+    let pnl_settings_action = Action::new_local(move |payload: &PlSettingsPayload| {
         let payload = payload.clone();
         async move {
             update_pl_settings(
@@ -508,7 +504,7 @@ pub fn Projects() -> impl IntoView {
         }
     });
 
-    create_effect(move |_| {
+    Effect::new(move |_| {
         if let Some(result) = pnl_settings_action.value().get() {
             match result {
                 Ok(_) => set_pnl_reload_nonce.update(|v| *v += 1),
@@ -517,17 +513,17 @@ pub fn Projects() -> impl IntoView {
         }
     });
 
-    let (expense_category, set_expense_category) = create_signal(String::from("hr"));
-    let (expense_description, set_expense_description) = create_signal(String::new());
-    let (expense_amount, set_expense_amount) = create_signal(String::new());
-    let (expense_date, set_expense_date) = create_signal(String::new());
-    let (expense_vendor, set_expense_vendor) = create_signal(String::new());
-    let (expense_edit_reason, set_expense_edit_reason) = create_signal(String::new());
+    let (expense_category, set_expense_category) = signal(String::from("hr"));
+    let (expense_description, set_expense_description) = signal(String::new());
+    let (expense_amount, set_expense_amount) = signal(String::new());
+    let (expense_date, set_expense_date) = signal(String::new());
+    let (expense_vendor, set_expense_vendor) = signal(String::new());
+    let (expense_edit_reason, set_expense_edit_reason) = signal(String::new());
 
     // Load projects on mount
-    create_effect(move |_| {
+    Effect::new(move |_| {
         set_loading.set(true);
-        spawn_local(async move {
+        leptos::task::spawn_local(async move {
             match fetch_projects().await {
                 Ok(data) => {
                     set_projects.set(data);
@@ -545,7 +541,7 @@ pub fn Projects() -> impl IntoView {
     let handle_submit = move |form_data: ProjectFormData| {
         let editing = editing_project.get();
         let current_user_id = auth.user.get().map(|u| u.id);
-        spawn_local(async move {
+        leptos::task::spawn_local(async move {
             set_loading.set(true);
             set_error.set(None);
 
@@ -576,7 +572,7 @@ pub fn Projects() -> impl IntoView {
 
     // Handle delete project
     let handle_delete = move |id: Uuid| {
-        spawn_local(async move {
+        leptos::task::spawn_local(async move {
             set_loading.set(true);
             set_error.set(None);
 
@@ -603,7 +599,7 @@ pub fn Projects() -> impl IntoView {
     };
 
     let handle_view_budget = move |id: Uuid| {
-        spawn_local(async move {
+        leptos::task::spawn_local(async move {
             match fetch_project_budget(id).await {
                 Ok(data) => set_selected_budget.set(Some(data)),
                 Err(e) => set_error.set(Some(e)),
@@ -618,7 +614,7 @@ pub fn Projects() -> impl IntoView {
     };
 
     let handle_view_resource_costs = move |id: Uuid| {
-        spawn_local(async move {
+        leptos::task::spawn_local(async move {
             match fetch_resource_costs(id).await {
                 Ok(data) => set_resource_costs.set(Some(data)),
                 Err(e) => set_error.set(Some(e)),
@@ -674,7 +670,7 @@ pub fn Projects() -> impl IntoView {
         if let Some(project) = projects.get().iter().find(|p| p.id == id).cloned() {
             set_selected_project_for_expenses.set(Some(project));
             set_show_expense_form.set(false);
-            spawn_local(async move {
+            leptos::task::spawn_local(async move {
                 set_loading.set(true);
                 match fetch_project_expenses(id).await {
                     Ok(data) => {
@@ -723,7 +719,7 @@ pub fn Projects() -> impl IntoView {
             edit_reason: expense_edit_reason.get(),
         };
 
-        spawn_local(async move {
+        leptos::task::spawn_local(async move {
             set_loading.set(true);
             set_error.set(None);
 
@@ -793,7 +789,7 @@ pub fn Projects() -> impl IntoView {
             None => return,
         };
 
-        spawn_local(async move {
+        leptos::task::spawn_local(async move {
             set_loading.set(true);
             set_error.set(None);
 
@@ -895,7 +891,7 @@ pub fn Projects() -> impl IntoView {
                                 budget_overhead_idr: p.budget_overhead_idr.to_string(),
                             });
 
-                            view! {
+                            Either::Left(view! {
                                 <div class="card">
                                     <h2 class="text-xl font-semibold text-huly-caption mb-4">
                                         {if editing_project.get().is_some() { "Edit Project" } else { "Add Project" }}
@@ -906,12 +902,12 @@ pub fn Projects() -> impl IntoView {
                                         on_cancel=Callback::new(handle_cancel)
                                     />
                                 </div>
-                            }.into_view()
+                            })
                         } else {
-                            view! { <div>
+                            Either::Right(view! { <div>
                                 {move || {
                                     if loading.get() {
-                                        view! {
+                                        EitherOf3::A(view! {
                                             <div class="space-y-3">
                                                 <div class="toolbar"><div class="skeleton-text w-32 h-3"></div></div>
                                                 <div class="panel overflow-hidden">
@@ -920,9 +916,9 @@ pub fn Projects() -> impl IntoView {
                                                     <div class="skeleton-row"><div class="skeleton-text w-32"></div><div class="skeleton-text w-12"></div><div class="skeleton-text w-24"></div><div class="skeleton-text w-16"></div></div>
                                                 </div>
                                             </div>
-                                        }.into_view()
+                                        })
                                     } else if projects.get().is_empty() {
-                                        view! {
+                                        EitherOf3::B(view! {
                                             <div class="empty-state py-12">
                                                 <svg class="w-12 h-12 text-huly-ghost mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1">
                                                     <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25z" />
@@ -930,9 +926,9 @@ pub fn Projects() -> impl IntoView {
                                                 <p class="text-huly-secondary text-sm">"No projects found."</p>
                                                 <p class="text-huly-muted text-xs mt-1">"Click 'Add Project' to create one."</p>
                                             </div>
-                                        }.into_view()
+                                        })
                                     } else {
-                                        view! {
+                                        EitherOf3::C(view! {
                                             <ProjectList
                                                 projects=projects.into()
                                                 on_edit=Callback::new(handle_edit)
@@ -1072,9 +1068,9 @@ pub fn Projects() -> impl IntoView {
                                                                                     <td class="td-cell-compact text-huly-caption">
                                                                                         {emp.resource_name}
                                                                                         {if emp.has_rate_change {
-                                                                                            view! { <span class="ml-2 badge-warning">"Rate Changed"</span> }.into_view()
+                                                                                            Either::Left(view! { <span class="ml-2 badge-warning">"Rate Changed"</span> })
                                                                                         } else {
-                                                                                            view! { <span></span> }.into_view()
+                                                                                            Either::Right(view! { <span></span> })
                                                                                         }}
                                                                                     </td>
                                                                                     <td class=rate_class>{rate_display}</td>
@@ -1094,7 +1090,7 @@ pub fn Projects() -> impl IntoView {
 
                                                             // Monthly breakdown
                                                             {if !costs.monthly_breakdown.is_empty() {
-                                                                view! {
+                                                                Either::Left(view! {
                                                                     <div>
                                                                         <h3 class="text-lg font-medium text-huly-caption mb-3">"Monthly Breakdown"</h3>
                                                                         <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
@@ -1109,15 +1105,15 @@ pub fn Projects() -> impl IntoView {
                                                                             }).collect_view()}
                                                                         </div>
                                                                     </div>
-                                                                }.into_view()
+                                                                })
                                                             } else {
-                                                                view! { <div></div> }.into_view()
+                                                                Either::Right(view! { <div></div> })
                                                             }}
                                                         </div>
                                                     }
                                                 })
                                             }}
-                                        }.into_view()
+                                        })
                                     }
                                 }}
                                 {move || {
@@ -1181,10 +1177,10 @@ pub fn Projects() -> impl IntoView {
                                                                 let is_erp = entry.source_type.as_deref() == Some("erp_synced");
                                                                 let has_data = entry.revenue_id.is_some();
                                                                 let source_badge = match entry.source_type.as_deref() {
-                                                                    Some("manual") => view! { <span class="badge-positive">"Manual"</span> }.into_view(),
-                                                                    Some("erp_synced") => view! { <span class="badge-primary">"ERP Synced"</span> }.into_view(),
-                                                                    Some("manual_override") => view! { <span class="badge-warning">"Override"</span> }.into_view(),
-                                                                    _ => view! { <span class="text-xs text-huly-ghost">"—"</span> }.into_view(),
+                                                                    Some("manual") => view! { <span class="badge-positive">"Manual"</span> },
+                                                                    Some("erp_synced") => view! { <span class="badge-primary">"ERP Synced"</span> },
+                                                                    Some("manual_override") => view! { <span class="badge-warning">"Override"</span> },
+                                                                    _ => view! { <span class="text-xs text-huly-ghost">"—"</span> },
                                                                 };
                                                                 let entry_date_str = entry.entry_date.unwrap_or_else(|| "—".to_string());
                                                                 let entered_by_str = entry
@@ -1197,16 +1193,16 @@ pub fn Projects() -> impl IntoView {
                                                                         <td class="td-cell-compact text-right text-huly-caption">
                                                                             {move || {
                                                                                 if revenue_edit_month.get() == Some(month_num) {
-                                                                                    view! {
+                                                                                    Either::Left(view! {
                                                                                         <input
                                                                                             type="number"
                                                                                             class="input w-32 text-right"
                                                                                             prop:value=revenue_edit_amount
                                                                                             on:input=move |ev| set_revenue_edit_amount.set(event_target_value(&ev))
                                                                                         />
-                                                                                    }.into_view()
+                                                                                    })
                                                                                 } else {
-                                                                                    view! { <span>{format_idr(entry.amount_idr)}</span> }.into_view()
+                                                                                    Either::Right(view! { <span>{format_idr(entry.amount_idr)}</span> })
                                                                                 }
                                                                             }}
                                                                         </td>
@@ -1216,7 +1212,7 @@ pub fn Projects() -> impl IntoView {
                                                                         <td class="td-cell-compact text-right font-medium">
                                                                             {move || {
                                                                                 if revenue_edit_month.get() == Some(month_num) {
-                                                                                    view! {
+                                                                                    EitherOf3::A(view! {
                                                                                         <button
                                                                                             class="link mr-2"
                                                                                             prop:disabled=revenue_saving
@@ -1230,9 +1226,9 @@ pub fn Projects() -> impl IntoView {
                                                                                         >
                                                                                             "Cancel"
                                                                                         </button>
-                                                                                    }.into_view()
+                                                                                    })
                                                                                 } else if is_erp {
-                                                                                    view! {
+                                                                                    EitherOf3::B(view! {
                                                                                         <button
                                                                                             class="link-warning"
                                                                                             on:click=move |_| {
@@ -1242,9 +1238,9 @@ pub fn Projects() -> impl IntoView {
                                                                                         >
                                                                                             "Override"
                                                                                         </button>
-                                                                                    }.into_view()
+                                                                                    })
                                                                                 } else {
-                                                                                    view! {
+                                                                                    EitherOf3::C(view! {
                                                                                         <button
                                                                                             class="link"
                                                                                             on:click=move |_| {
@@ -1254,7 +1250,7 @@ pub fn Projects() -> impl IntoView {
                                                                                         >
                                                                                             {if has_data { "Edit" } else { "Enter" }}
                                                                                         </button>
-                                                                                    }.into_view()
+                                                                                    })
                                                                                 }
                                                                             }}
                                                                         </td>
@@ -1496,11 +1492,11 @@ pub fn Projects() -> impl IntoView {
                                                     <div class="flex items-end space-x-4">
                                                         <div>
                                                             <label class="label text-xs">"Target Margin (%)"</label>
-                                                            <input type="number" step="0.1" _ref=pnl_target_ref class="input w-32" prop:value=pnl.target_margin_pct.to_string() />
+                                                            <input type="number" step="0.1" node_ref=pnl_target_ref class="input w-32" prop:value=pnl.target_margin_pct.to_string() />
                                                         </div>
                                                         <div>
                                                             <label class="label text-xs">"Alert Threshold (%)"</label>
-                                                            <input type="number" step="0.1" _ref=pnl_alert_ref class="input w-32" prop:value=pnl.margin_alert_threshold_pct.to_string() />
+                                                            <input type="number" step="0.1" node_ref=pnl_alert_ref class="input w-32" prop:value=pnl.margin_alert_threshold_pct.to_string() />
                                                         </div>
                                                         <button
                                                             class="btn-primary btn-press"
@@ -1693,7 +1689,7 @@ pub fn Projects() -> impl IntoView {
                                                 </div>
 
                                                 {move || if show_expense_form.get() {
-                                                    view! {
+                                                    Either::Left(view! {
                                                         <ExpenseFormPanel
                                                             category=expense_category
                                                             set_category=set_expense_category
@@ -1712,10 +1708,10 @@ pub fn Projects() -> impl IntoView {
                                                             on_submit=expense_submit_callback
                                                             on_cancel=expense_cancel_callback
                                                         />
-                                                    }
-                                                        .into_view()
+                                                    })
+                                                        
                                                 } else {
-                                                    view! { <div></div> }.into_view()
+                                                    Either::Right(view! { <div></div> })
                                                 }}
 
                                                 <div class="overflow-x-auto">
@@ -1733,15 +1729,15 @@ pub fn Projects() -> impl IntoView {
                                                         <tbody class="bg-huly-surface divide-y divide-huly-divider">
                                                             {move || {
                                                                 if expenses.get().is_empty() {
-                                                                    view! {
+                                                                    Either::Left(view! {
                                                                         <tr>
                                                                             <td colspan="6" class="td-cell-compact text-huly-muted text-center">
                                                                                 "No expenses found for this project."
                                                                             </td>
                                                                         </tr>
-                                                                    }.into_view()
+                                                                    })
                                                                 } else {
-                                                                    expenses.get().into_iter().map(|expense| {
+                                                                    Either::Right(expenses.get().into_iter().map(|expense| {
                                                                         let exp_id = expense.id;
                                                                         let exp_clone = expense.clone();
                                                                         view! {
@@ -1767,17 +1763,16 @@ pub fn Projects() -> impl IntoView {
                                                                                 </td>
                                                                             </tr>
                                                                         }
-                                                                    }).collect_view()
+                                                                    }).collect_view())
                                                                 }
                                                             }}
                                                         </tbody>
                                                     </table>
                                                 </div>
                                             </div>
-                                        }
-                                    })
+                                        }})
                                 }}
-                            </div> }.into_view()
+                            </div> })
                         }
                     }}
                 </div>

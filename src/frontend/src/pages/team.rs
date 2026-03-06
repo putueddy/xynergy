@@ -6,8 +6,9 @@ use crate::components::timeline_chart::{AllocationItem, ResourceGroup, TimelineC
 use crate::timeline::{TimelineGroup, TimelineItem};
 use gloo_timers::callback::Timeout;
 use js_sys::Date;
-use leptos::*;
-use leptos_router::*;
+use leptos::prelude::*;
+use leptos::either::{Either, EitherOf3, EitherOf4};
+use leptos_router::hooks::*;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::cell::RefCell;
@@ -659,59 +660,59 @@ fn trap_focus_within_budget_modal(event: KeyboardEvent) {
 pub fn TeamPage() -> impl IntoView {
     let auth = use_auth();
     let navigate = use_navigate();
-    let (auth_checked, set_auth_checked) = create_signal(false);
-    let (auth_check_in_progress, set_auth_check_in_progress) = create_signal(false);
+    let (auth_checked, set_auth_checked) = signal(false);
+    let (auth_check_in_progress, set_auth_check_in_progress) = signal(false);
 
-    let (team_members, set_team_members) = create_signal(Vec::<TeamMember>::new());
-    let (loading, set_loading) = create_signal(false);
-    let (error, set_error) = create_signal(None::<String>);
-    let (sort_by, set_sort_by) = create_signal("name".to_string());
-    let (filter_status, set_filter_status) = create_signal("all".to_string());
+    let (team_members, set_team_members) = signal(Vec::<TeamMember>::new());
+    let (loading, set_loading) = signal(false);
+    let (error, set_error) = signal(None::<String>);
+    let (sort_by, set_sort_by) = signal("name".to_string());
+    let (filter_status, set_filter_status) = signal("all".to_string());
 
     // Assignment modal state
-    let (show_assign_modal, set_show_assign_modal) = create_signal(false);
-    let (assign_resource_id, set_assign_resource_id) = create_signal(String::new());
-    let (assign_resource_name, set_assign_resource_name) = create_signal(String::new());
-    let (assign_project_id, set_assign_project_id) = create_signal(String::new());
-    let (assign_start_date, set_assign_start_date) = create_signal(String::new());
-    let (assign_end_date, set_assign_end_date) = create_signal(String::new());
-    let (assign_pct, set_assign_pct) = create_signal(String::new());
-    let (assign_error, set_assign_error) = create_signal(None::<String>);
-    let (assign_success, set_assign_success) = create_signal(None::<String>);
-    let (assign_submitting, set_assign_submitting) = create_signal(false);
+    let (show_assign_modal, set_show_assign_modal) = signal(false);
+    let (assign_resource_id, set_assign_resource_id) = signal(String::new());
+    let (assign_resource_name, set_assign_resource_name) = signal(String::new());
+    let (assign_project_id, set_assign_project_id) = signal(String::new());
+    let (assign_start_date, set_assign_start_date) = signal(String::new());
+    let (assign_end_date, set_assign_end_date) = signal(String::new());
+    let (assign_pct, set_assign_pct) = signal(String::new());
+    let (assign_error, set_assign_error) = signal(None::<String>);
+    let (assign_success, set_assign_success) = signal(None::<String>);
+    let (assign_submitting, set_assign_submitting) = signal(false);
     let (assignable_projects, set_assignable_projects) =
-        create_signal(Vec::<AssignableProject>::new());
+        signal(Vec::<AssignableProject>::new());
 
-    let (preview_data, set_preview_data) = create_signal(None::<CostPreviewResponse>);
-    let (preview_loading, set_preview_loading) = create_signal(false);
-    let (preview_error, set_preview_error) = create_signal(None::<String>);
+    let (preview_data, set_preview_data) = signal(None::<CostPreviewResponse>);
+    let (preview_loading, set_preview_loading) = signal(false);
+    let (preview_error, set_preview_error) = signal(None::<String>);
 
     let (overallocation_warning, set_overallocation_warning) =
-        create_signal(None::<OverallocationWarning>);
-    let (show_confirm_overallocation, set_show_confirm_overallocation) = create_signal(false);
-    let (confirm_submitting, set_confirm_submitting) = create_signal(false);
+        signal(None::<OverallocationWarning>);
+    let (show_confirm_overallocation, set_show_confirm_overallocation) = signal(false);
+    let (confirm_submitting, set_confirm_submitting) = signal(false);
 
-    let (capacity_start_date, set_capacity_start_date) = create_signal(String::new());
-    let (capacity_end_date, set_capacity_end_date) = create_signal(String::new());
-    let (capacity_loading, set_capacity_loading) = create_signal(false);
-    let (capacity_error, set_capacity_error) = create_signal(None::<String>);
-    let (capacity_report, set_capacity_report) = create_signal(None::<CapacityReportResponse>);
+    let (capacity_start_date, set_capacity_start_date) = signal(String::new());
+    let (capacity_end_date, set_capacity_end_date) = signal(String::new());
+    let (capacity_loading, set_capacity_loading) = signal(false);
+    let (capacity_error, set_capacity_error) = signal(None::<String>);
+    let (capacity_report, set_capacity_report) = signal(None::<CapacityReportResponse>);
 
     // Budget section signals
-    let (budget_summary, set_budget_summary) = create_signal(None::<DepartmentBudgetSummary>);
-    let (budget_breakdown, set_budget_breakdown) = create_signal(None::<BudgetBreakdownResponse>);
-    let (budget_period, set_budget_period) = create_signal(current_month_string());
-    let (show_budget_edit, set_show_budget_edit) = create_signal(false);
-    let (budget_loading, set_budget_loading) = create_signal(false);
-    let (budget_error, set_budget_error) = create_signal(None::<String>);
-    let (breakdown_tab, set_breakdown_tab) = create_signal("employee".to_string());
-    let (budget_edit_amount, set_budget_edit_amount) = create_signal(String::new());
-    let (budget_edit_threshold, set_budget_edit_threshold) = create_signal("80".to_string());
-    let (budget_edit_error, set_budget_edit_error) = create_signal(None::<String>);
-    let (budget_edit_submitting, set_budget_edit_submitting) = create_signal(false);
-    let (budget_refresh_nonce, set_budget_refresh_nonce) = create_signal(0u64);
+    let (budget_summary, set_budget_summary) = signal(None::<DepartmentBudgetSummary>);
+    let (budget_breakdown, set_budget_breakdown) = signal(None::<BudgetBreakdownResponse>);
+    let (budget_period, set_budget_period) = signal(current_month_string());
+    let (show_budget_edit, set_show_budget_edit) = signal(false);
+    let (budget_loading, set_budget_loading) = signal(false);
+    let (budget_error, set_budget_error) = signal(None::<String>);
+    let (breakdown_tab, set_breakdown_tab) = signal("employee".to_string());
+    let (budget_edit_amount, set_budget_edit_amount) = signal(String::new());
+    let (budget_edit_threshold, set_budget_edit_threshold) = signal("80".to_string());
+    let (budget_edit_error, set_budget_edit_error) = signal(None::<String>);
+    let (budget_edit_submitting, set_budget_edit_submitting) = signal(false);
+    let (budget_refresh_nonce, set_budget_refresh_nonce) = signal(0u64);
     {
-        create_effect(move |_| {
+        Effect::new(move |_| {
             if show_budget_edit.get() {
                 Timeout::new(0, move || {
                     focus_budget_modal_primary_input();
@@ -723,15 +724,15 @@ pub fn TeamPage() -> impl IntoView {
     let preview_timer: Rc<RefCell<Option<Timeout>>> = Rc::new(RefCell::new(None));
     {
         let preview_timer = preview_timer.clone();
-        create_effect(move |_| {
+        Effect::new(move |_| {
             let resource_id = assign_resource_id.get();
             let project_id = assign_project_id.get();
             let start_date = assign_start_date.get();
             let end_date = assign_end_date.get();
             let pct_str = assign_pct.get();
-
+        
             preview_timer.borrow_mut().take();
-
+        
             if resource_id.is_empty()
                 || project_id.is_empty()
                 || start_date.is_empty()
@@ -743,7 +744,7 @@ pub fn TeamPage() -> impl IntoView {
                 set_preview_loading.set(false);
                 return;
             }
-
+        
             let pct: f64 = match pct_str.parse() {
                 Ok(v) if v > 0.0 && v <= 100.0 => v,
                 _ => {
@@ -753,12 +754,12 @@ pub fn TeamPage() -> impl IntoView {
                     return;
                 }
             };
-
+        
             set_preview_loading.set(true);
             let preview_timer_inner = preview_timer.clone();
             let timeout = Timeout::new(300, move || {
                 preview_timer_inner.borrow_mut().take();
-                spawn_local(async move {
+                leptos::task::spawn_local(async move {
                     match fetch_cost_preview(&resource_id, &project_id, &start_date, &end_date, pct)
                         .await
                     {
@@ -781,13 +782,13 @@ pub fn TeamPage() -> impl IntoView {
     let capacity_timer: Rc<RefCell<Option<Timeout>>> = Rc::new(RefCell::new(None));
     {
         let capacity_timer = capacity_timer.clone();
-        create_effect(move |_| {
+        Effect::new(move |_| {
             let token_present = auth.token.get().is_some();
             let start_date = capacity_start_date.get();
             let end_date = capacity_end_date.get();
-
+        
             capacity_timer.borrow_mut().take();
-
+        
             if !token_present || start_date.is_empty() || end_date.is_empty() {
                 if start_date.is_empty() || end_date.is_empty() {
                     set_capacity_report.set(None);
@@ -796,12 +797,12 @@ pub fn TeamPage() -> impl IntoView {
                 set_capacity_loading.set(false);
                 return;
             }
-
+        
             set_capacity_loading.set(true);
             let capacity_timer_inner = capacity_timer.clone();
             let timeout = Timeout::new(300, move || {
                 capacity_timer_inner.borrow_mut().take();
-                spawn_local(async move {
+                leptos::task::spawn_local(async move {
                     match fetch_capacity_report(&start_date, &end_date).await {
                         Ok(report) => {
                             set_capacity_report.set(Some(report));
@@ -815,7 +816,7 @@ pub fn TeamPage() -> impl IntoView {
                     set_capacity_loading.set(false);
                 });
             });
-
+        
             *capacity_timer.borrow_mut() = Some(timeout);
         });
     }
@@ -825,18 +826,18 @@ pub fn TeamPage() -> impl IntoView {
     {
         let budget_timer = budget_timer.clone();
         let budget_request_seq = budget_request_seq.clone();
-        create_effect(move |_| {
+        Effect::new(move |_| {
             let token_present = auth.token.get().is_some();
             let period = budget_period.get();
             let _refresh_nonce = budget_refresh_nonce.get();
-
+        
             budget_timer.borrow_mut().take();
             {
                 let mut seq = budget_request_seq.borrow_mut();
                 *seq += 1;
             }
             let request_id = *budget_request_seq.borrow();
-
+        
             if !token_present || period.is_empty() {
                 set_budget_summary.set(None);
                 set_budget_breakdown.set(None);
@@ -844,7 +845,7 @@ pub fn TeamPage() -> impl IntoView {
                 set_budget_loading.set(false);
                 return;
             }
-
+        
             set_budget_loading.set(true);
             set_budget_error.set(None);
             set_budget_summary.set(None);
@@ -856,14 +857,14 @@ pub fn TeamPage() -> impl IntoView {
                 budget_timer_inner.borrow_mut().take();
                 let budget_request_seq_task = budget_request_seq_inner.clone();
                 let period_for_fetch = period_clone.clone();
-                spawn_local(async move {
+                leptos::task::spawn_local(async move {
                     let summary_result = fetch_budget_summary(&period_for_fetch).await;
                     let breakdown_result = fetch_budget_breakdown(&period_for_fetch).await;
-
+                        
                     if *budget_request_seq_task.borrow() != request_id {
                         return;
                     }
-
+                        
                     match summary_result {
                         Ok(data) => {
                             set_budget_summary.set(Some(data));
@@ -873,7 +874,7 @@ pub fn TeamPage() -> impl IntoView {
                             set_budget_error.set(Some(e));
                         }
                     }
-
+                        
                     match breakdown_result {
                         Ok(data) => {
                             set_budget_breakdown.set(Some(data));
@@ -893,19 +894,19 @@ pub fn TeamPage() -> impl IntoView {
     }
 
     // Timeline modal state
-    let (show_timeline_modal, set_show_timeline_modal) = create_signal(false);
-    let (timeline_resource_name, set_timeline_resource_name) = create_signal(String::new());
-    let (timeline_groups, set_timeline_groups) = create_signal(Vec::<TimelineGroup>::new());
-    let (timeline_items, set_timeline_items) = create_signal(Vec::<TimelineItem>::new());
+    let (show_timeline_modal, set_show_timeline_modal) = signal(false);
+    let (timeline_resource_name, set_timeline_resource_name) = signal(String::new());
+    let (timeline_groups, set_timeline_groups) = signal(Vec::<TimelineGroup>::new());
+    let (timeline_items, set_timeline_items) = signal(Vec::<TimelineItem>::new());
 
     {
         let navigate = navigate.clone();
-        create_effect(move |_| {
+        Effect::new(move |_| {
             if !auth.is_authenticated.get() {
                 navigate("/login", Default::default());
                 return;
             }
-
+        
             if let Some(user) = auth.user.get() {
                 set_auth_checked.set(true);
                 if user.role != "hr" && user.role != "department_head" && user.role != "admin" {
@@ -913,11 +914,11 @@ pub fn TeamPage() -> impl IntoView {
                 }
                 return;
             }
-
+        
             if auth_check_in_progress.get() {
                 return;
             }
-
+        
             let token = match current_access_token(&auth) {
                 Some(t) => t,
                 None => {
@@ -925,10 +926,10 @@ pub fn TeamPage() -> impl IntoView {
                     return;
                 }
             };
-
+        
             set_auth_check_in_progress.set(true);
             let navigate = navigate.clone();
-            spawn_local(async move {
+            leptos::task::spawn_local(async move {
                 match validate_token(token).await {
                     Ok(user) => {
                         auth.user.set(Some(user));
@@ -964,20 +965,20 @@ pub fn TeamPage() -> impl IntoView {
             .unwrap_or(false)
     });
 
-    create_effect(move |_| {
+    Effect::new(move |_| {
         if auth.token.get().is_some() {
             if !is_authorized.get() {
                 return;
             }
-
+    
             if capacity_start_date.get().is_empty() || capacity_end_date.get().is_empty() {
                 let (start, end) = current_month_range();
                 set_capacity_start_date.set(start);
                 set_capacity_end_date.set(end);
             }
-
+    
             set_loading.set(true);
-            spawn_local(async move {
+            leptos::task::spawn_local(async move {
                 match fetch_team_members().await {
                     Ok(members) => {
                         set_team_members.set(members);
@@ -1079,7 +1080,7 @@ pub fn TeamPage() -> impl IntoView {
         set_show_assign_modal.set(true);
 
         // Fetch assignable projects
-        spawn_local(async move {
+        leptos::task::spawn_local(async move {
             match fetch_assignable_projects().await {
                 Ok(projects) => set_assignable_projects.set(projects),
                 Err(e) => set_assign_error.set(Some(e)),
@@ -1134,9 +1135,9 @@ pub fn TeamPage() -> impl IntoView {
             confirm_overallocation: false,
         };
 
-        spawn_local(async move {
+        leptos::task::spawn_local(async move {
             let result = authenticated_post_json("/api/v1/allocations", &payload).await;
-
+        
             match result {
                 Ok(resp) => {
                     if resp.status().is_success() {
@@ -1194,7 +1195,7 @@ pub fn TeamPage() -> impl IntoView {
                                 set_preview_error.set(None);
                                 set_overallocation_warning.set(None);
                                 set_show_confirm_overallocation.set(false);
-
+        
                                 if let Ok(members) = fetch_team_members().await {
                                     set_team_members.set(members);
                                 }
@@ -1244,7 +1245,7 @@ pub fn TeamPage() -> impl IntoView {
         set_confirm_submitting.set(true);
         set_assign_error.set(None);
 
-        spawn_local(async move {
+        leptos::task::spawn_local(async move {
             match authenticated_post_json("/api/v1/allocations", &payload).await {
                 Ok(resp) => {
                     if resp.status().is_success() {
@@ -1253,7 +1254,7 @@ pub fn TeamPage() -> impl IntoView {
                             .get("status")
                             .and_then(|v| v.as_str())
                             .unwrap_or("created");
-
+        
                         if status == "created" {
                             set_assign_success.set(Some(
                                 "Assignment created successfully with over-allocation confirmation."
@@ -1264,7 +1265,7 @@ pub fn TeamPage() -> impl IntoView {
                             set_preview_data.set(None);
                             set_preview_loading.set(false);
                             set_preview_error.set(None);
-
+        
                             if let Ok(members) = fetch_team_members().await {
                                 set_team_members.set(members);
                             }
@@ -1285,7 +1286,7 @@ pub fn TeamPage() -> impl IntoView {
                 }
                 Err(e) => set_assign_error.set(Some(e)),
             }
-
+        
             set_confirm_submitting.set(false);
         });
     };
@@ -1304,7 +1305,7 @@ pub fn TeamPage() -> impl IntoView {
         };
         set_timeline_groups.set(vec![rg.to_timeline_group()]);
 
-        spawn_local(async move {
+        leptos::task::spawn_local(async move {
             match fetch_resource_allocations(&resource_id).await {
                 Ok(allocs) => {
                     let items: Vec<TimelineItem> = allocs
@@ -1346,22 +1347,22 @@ pub fn TeamPage() -> impl IntoView {
             <div class="page-container fade-in">
                 {move || {
                     if !auth_checked.get() {
-                        return view! {
+                        return EitherOf3::A(view! {
                             <div class="alert-info">
                                 "Checking access..."
                             </div>
-                        }.into_view();
+                        });
                     }
 
                     if !is_authorized.get() {
-                        return view! {
+                        return EitherOf3::B(view! {
                             <div class="alert-error">
                                 "Access denied."
                             </div>
-                        }.into_view();
+                        });
                     }
 
-                    view! {
+                    EitherOf3::C(view! {
                         <div class="space-y-4">
                             <div class="flex items-center justify-between">
                                 <h1 class="text-xl font-semibold text-huly-caption">
@@ -1529,7 +1530,7 @@ pub fn TeamPage() -> impl IntoView {
                                                             <td class="td-cell-compact text-center">
                                                                 <div class="flex items-center justify-center gap-2">
                                                                     {if is_missing {
-                                                                        view! {
+                                                                        EitherOf3::A(view! {
                                                                             <button
                                                                                 disabled=true
                                                                                 title="CTC data required to assign. Contact HR to complete employee setup."
@@ -1537,30 +1538,30 @@ pub fn TeamPage() -> impl IntoView {
                                                                             >
                                                                                 "Assign"
                                                                             </button>
-                                                                        }.into_view()
+                                                                        })
                                                                     } else if can_assign.get() {
-                                                                        view! {
+                                                                        EitherOf3::B(view! {
                                                                             <button
                                                                                 class="btn-primary text-xs"
                                                                                 on:click=move |_| open_assign_modal(rid_assign.clone(), rname_assign.clone())
                                                                             >
                                                                                 "Assign"
                                                                             </button>
-                                                                        }.into_view()
+                                                                        })
                                                                     } else {
-                                                                        view! { <span></span> }.into_view()
+                                                                        EitherOf3::C(view! { <span></span> })
                                                                     }}
                                                                     {if has_assignments {
-                                                                        view! {
+                                                                        Either::Left(view! {
                                                                             <button
                                                                                 class="btn-secondary text-xs"
                                                                                 on:click=move |_| open_timeline_modal(rid_timeline.clone(), rname_timeline.clone(), total_pct)
                                                                             >
                                                                                 "View Timeline"
                                                                             </button>
-                                                                        }.into_view()
+                                                                        })
                                                                     } else {
-                                                                        view! { <span></span> }.into_view()
+                                                                        Either::Right(view! { <span></span> })
                                                                     }}
                                                                 </div>
                                                             </td>
@@ -1632,7 +1633,7 @@ pub fn TeamPage() -> impl IntoView {
 
                                 {move || {
                                     match capacity_report.get() {
-                                        None => view! { <span></span> }.into_view(),
+                                        None => Either::Left(view! { <span></span> }),
                                         Some(report) => {
                                             let periods: Vec<String> = report
                                                 .employees
@@ -1640,7 +1641,7 @@ pub fn TeamPage() -> impl IntoView {
                                                 .map(|e| e.periods.iter().map(|p| p.period.clone()).collect())
                                                 .unwrap_or_else(Vec::new);
 
-                                            view! {
+                                            Either::Right(view! {
                                                 <div class="space-y-2">
                                                     <div class="text-xs text-huly-muted">
                                                         {format!("Range: {} to {}", report.start_date, report.end_date)}
@@ -1684,14 +1685,13 @@ pub fn TeamPage() -> impl IntoView {
                                                         </table>
                                                     </div>
                                                 </div>
-                                            }
-                                                .into_view()
+                                            })
                                         }
                                     }
                                 }}
                             </div>
                         </div>
-                    }.into_view()
+                    })
                 }}
 
                 // Department Budget Section
@@ -2124,27 +2124,25 @@ pub fn TeamPage() -> impl IntoView {
 
                         {move || {
                             if preview_loading.get() && preview_data.get().is_none() {
-                                return view! {
+                                return EitherOf4::A(view! {
                                     <div class="mt-4 p-4 bg-huly-surface-2 rounded-lg animate-pulse space-y-3">
                                         <div class="h-4 bg-huly-surface-hover rounded w-1/3"></div>
                                         <div class="h-8 bg-huly-surface-hover rounded w-1/2"></div>
                                         <div class="h-4 bg-huly-surface-hover rounded w-2/3"></div>
                                     </div>
-                                }
-                                .into_view();
+                                });
                             }
 
                             if let Some(err) = preview_error.get() {
-                                return view! {
+                                return EitherOf4::B(view! {
                                     <div class="mt-4 alert-error text-sm">
                                         {format!("Preview error: {}", err)}
                                     </div>
-                                }
-                                .into_view();
+                                });
                             }
 
                             match preview_data.get() {
-                                None => view! { <span></span> }.into_view(),
+                                None => EitherOf4::C(view! { <span></span> }),
                                 Some(data) => {
                                     let total_cost_formatted = format_idr(data.total_cost_idr);
                                     let formula_tooltip = format!(
@@ -2160,7 +2158,7 @@ pub fn TeamPage() -> impl IntoView {
                                     let warning = data.warning.clone();
                                     let requires_approval = data.requires_approval;
 
-                                    view! {
+                                    EitherOf4::D(view! {
                                         <div class=format!("mt-4 p-4 bg-primary-600/10 rounded-lg space-y-4 border border-primary-600/20 {}", if loading_now { "opacity-60" } else { "" })>
                                             <h3 class="text-sm font-semibold text-primary-300">"Cost Impact Preview"</h3>
 
@@ -2176,7 +2174,7 @@ pub fn TeamPage() -> impl IntoView {
                                             </div>
 
                                             {if !monthly.is_empty() {
-                                                view! {
+                                                Either::Left(view! {
                                                     <div>
                                                         <div class="text-xs font-medium text-huly-muted mb-2">"Monthly Breakdown"</div>
                                                         <table class="w-full text-sm">
@@ -2206,10 +2204,9 @@ pub fn TeamPage() -> impl IntoView {
                                                             </tbody>
                                                         </table>
                                                     </div>
-                                                }
-                                                    .into_view()
+                                                })
                                             } else {
-                                                view! { <span></span> }.into_view()
+                                                Either::Right(view! { <span></span> })
                                             }}
 
                                             {match budget {
@@ -2231,7 +2228,7 @@ pub fn TeamPage() -> impl IntoView {
                                                         format_idr(bi.current_committed_idr);
                                                     let projected_committed =
                                                         format_idr(bi.projected_committed_idr);
-                                                    view! {
+                                                    Either::Left(view! {
                                                         <div>
                                                             <div class="text-xs font-medium text-huly-muted mb-2">"Department Budget Impact"</div>
                                                             <div class="progress-track h-3 mb-2">
@@ -2249,40 +2246,35 @@ pub fn TeamPage() -> impl IntoView {
                                                                 <div>{format!("Projected committed: {} / Budget: {}", projected_committed, budget_total)}</div>
                                                             </div>
                                                         </div>
-                                                    }
-                                                        .into_view()
+                                                    })
                                                 }
                                                 None => {
-                                                    view! {
+                                                    Either::Right(view! {
                                                         <div class="text-xs text-huly-ghost italic">
                                                             "Department budget not configured."
                                                         </div>
-                                                    }
-                                                        .into_view()
+                                                    })
                                                 }
                                             }}
 
                                             {match warning {
                                                 Some(w) => {
-                                                    view! {
+                                                    Either::Left(view! {
                                                         <div class="alert-error text-sm">
                                                             <span class="font-semibold">"⚠ Budget Warning: "</span>
                                                             {w}
                                                             {if requires_approval {
-                                                                view! { <div class="mt-1 text-xs font-medium">"Approval required for this assignment."</div> }
-                                                                    .into_view()
+                                                                Either::Left(view! { <div class="mt-1 text-xs font-medium">"Approval required for this assignment."</div> })
                                                             } else {
-                                                                view! { <span></span> }.into_view()
+                                                                Either::Right(view! { <span></span> })
                                                             }}
                                                         </div>
-                                                    }
-                                                        .into_view()
+                                                    })
                                                 }
-                                                None => view! { <span></span> }.into_view(),
+                                                None => Either::Right(view! { <span></span> }),
                                             }}
                                         </div>
-                                    }
-                                    .into_view()
+                                    })
                                 }
                             }
                         }}
@@ -2489,7 +2481,7 @@ pub fn TeamPage() -> impl IntoView {
                                         let period = budget_period.get_untracked();
                                         set_budget_edit_submitting.set(true);
                                         set_budget_edit_error.set(None);
-                                        spawn_local(async move {
+                                        leptos::task::spawn_local(async move {
                                             match set_budget(&period, amount, threshold).await {
                                                 Ok(_) => {
                                                     set_show_budget_edit.set(false);

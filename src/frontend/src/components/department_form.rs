@@ -1,4 +1,4 @@
-use leptos::*;
+use leptos::prelude::*;
 use serde::Deserialize;
 use uuid::Uuid;
 
@@ -37,21 +37,17 @@ pub fn DepartmentForm(
     let is_edit = editing_department.is_some();
 
     // Form fields
-    let (name, set_name) = create_signal(
-        editing_department
-            .as_ref()
-            .map(|d| d.name.clone())
-            .unwrap_or_default(),
-    );
-    let (head_id, set_head_id) = create_signal(
-        editing_department
-            .as_ref()
-            .map(|d| d.head_id.clone())
-            .unwrap_or_default(),
-    );
+    let (name, set_name) = signal(editing_department
+        .as_ref()
+        .map(|d| d.name.clone())
+        .unwrap_or_default());
+    let (head_id, set_head_id) = signal(editing_department
+        .as_ref()
+        .map(|d| d.head_id.clone())
+        .unwrap_or_default());
 
     // Update form fields when editing_department changes
-    create_effect(move |_| {
+    Effect::new(move |_| {
         if let Some(dept) = &editing_department {
             set_name.set(dept.name.clone());
             set_head_id.set(dept.head_id.clone());
@@ -69,7 +65,7 @@ pub fn DepartmentForm(
             head_id: head_id.get(),
         };
 
-        on_submit.call(form_data);
+        on_submit.run(form_data);
     };
 
     view! {
@@ -122,7 +118,7 @@ pub fn DepartmentForm(
                 <button
                     type="button"
                     class="btn-secondary btn-press"
-                    on:click=move |_| on_cancel.call(())
+                    on:click=move |_| on_cancel.run(())
                     disabled=is_submitting
                 >
                     "Cancel"

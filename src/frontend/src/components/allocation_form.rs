@@ -1,5 +1,5 @@
 use chrono::Datelike;
-use leptos::*;
+use leptos::prelude::*;
 use uuid::Uuid;
 
 /// Allocation form data
@@ -50,17 +50,17 @@ pub fn AllocationForm(
     on_cancel: Callback<()>,
 ) -> impl IntoView {
     // Start with empty values; sync from editing_allocation reactively
-    let (resource_id, set_resource_id) = create_signal(String::new());
-    let (project_id, set_project_id) = create_signal(String::new());
-    let (start_date, set_start_date) = create_signal(String::new());
-    let (end_date, set_end_date) = create_signal(String::new());
-    let (allocation_percentage, set_allocation_percentage) = create_signal("100".to_string());
-    let (include_weekend, set_include_weekend) = create_signal(false);
-    let (total_days, set_total_days) = create_signal(0);
-    let (hours_per_day, set_hours_per_day) = create_signal(0.0);
+    let (resource_id, set_resource_id) = signal(String::new());
+    let (project_id, set_project_id) = signal(String::new());
+    let (start_date, set_start_date) = signal(String::new());
+    let (end_date, set_end_date) = signal(String::new());
+    let (allocation_percentage, set_allocation_percentage) = signal("100".to_string());
+    let (include_weekend, set_include_weekend) = signal(false);
+    let (total_days, set_total_days) = signal(0);
+    let (hours_per_day, set_hours_per_day) = signal(0.0);
 
     // Keep form state in sync when edit selection changes
-    create_effect(move |_| {
+    Effect::new(move |_| {
         if let Some(edit_data) = editing_allocation.get() {
             set_resource_id.set(edit_data.resource_id);
             set_project_id.set(edit_data.project_id);
@@ -79,11 +79,11 @@ pub fn AllocationForm(
     });
 
     // Calculate total days and hours per day when dates or include_weekend changes
-    create_effect(move |_| {
+    Effect::new(move |_| {
         let start = start_date.get();
         let end = end_date.get();
         let include_wknd = include_weekend.get();
-
+    
         if !start.is_empty() && !end.is_empty() {
             if let (Ok(start_date), Ok(end_date)) = (
                 chrono::NaiveDate::parse_from_str(&start, "%Y-%m-%d"),
@@ -106,7 +106,7 @@ pub fn AllocationForm(
                     count
                 };
                 set_total_days.set(days.max(0) as i32);
-
+    
                 // Calculate hours per day (8 hours * allocation_percentage / 100)
                 if let Ok(percentage) = allocation_percentage.get().parse::<f64>() {
                     let hours = 8.0 * (percentage / 100.0);
@@ -118,7 +118,7 @@ pub fn AllocationForm(
 
     let handle_submit = move |ev: leptos::ev::SubmitEvent| {
         ev.prevent_default();
-        on_submit.call(AllocationFormData {
+        on_submit.run(AllocationFormData {
             resource_id: resource_id.get(),
             project_id: project_id.get(),
             start_date: start_date.get(),
@@ -253,7 +253,7 @@ pub fn AllocationForm(
                     type="button"
                     class="btn-secondary btn-press"
                     disabled=is_submitting
-                    on:click=move |_| on_cancel.call(())
+                    on:click=move |_| on_cancel.run(())
                 >
                     "Cancel"
                 </button>

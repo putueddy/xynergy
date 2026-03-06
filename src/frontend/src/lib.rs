@@ -1,6 +1,7 @@
-use leptos::*;
+use leptos::prelude::*;
 use leptos_meta::*;
-use leptos_router::*;
+use leptos_router::components::*;
+use leptos_router::hooks::*;
 use wasm_bindgen::JsCast;
 
 pub mod auth;
@@ -33,7 +34,7 @@ fn AppShell(children: Children) -> impl IntoView {
     let location = use_location();
 
     // Mobile sidebar toggle
-    let (mobile_open, set_mobile_open) = create_signal(false);
+    let (mobile_open, set_mobile_open) = signal(false);
 
     // Hide sidebar on public routes (home + login)
     let show_sidebar = Signal::derive(move || {
@@ -91,9 +92,6 @@ fn AppShell(children: Children) -> impl IntoView {
 pub fn App() -> impl IntoView {
     web_sys::console::log_1(&"App component starting...".into());
 
-    // Provides context that manages stylesheets, titles, meta tags, etc.
-    provide_meta_context();
-
     // Provide authentication context
     provide_auth_context();
 
@@ -109,24 +107,24 @@ pub fn App() -> impl IntoView {
 
         <Router>
             <AppShell>
-                <Routes>
-                    <Route path="/" view=Home/>
-                    <Route path="/login" view=Login/>
-                    <Route path="/dashboard" view=Dashboard/>
-                    <Route path="/resources" view=Resources/>
-                    <Route path="/projects" view=Projects/>
-                    <Route path="/allocations" view=Allocations/>
-                    <Route path="/team" view=TeamPage/>
-                    <Route path="/ctc" view=CtcManagement/>
-                    <Route path="/ctc/completeness" view=CtcCompleteness/>
-                    <Route path="/thr" view=ThrManagement/>
-                    <Route path="/settings" view=SettingsPage>
-                        <Route path="/holidays" view=SettingsHolidaysPage/>
-                        <Route path="/users" view=SettingsUsersPage/>
-                        <Route path="/departments" view=SettingsDepartmentsPage/>
-                        <Route path="" view=SettingsHolidaysPage/>
-                    </Route>
-                    <Route path="/*any" view=NotFound/>
+                <Routes fallback=|| "Not found.">
+                    <Route path=leptos_router::path!("/") view=Home/>
+                    <Route path=leptos_router::path!("/login") view=Login/>
+                    <Route path=leptos_router::path!("/dashboard") view=Dashboard/>
+                    <Route path=leptos_router::path!("/resources") view=Resources/>
+                    <Route path=leptos_router::path!("/projects") view=Projects/>
+                    <Route path=leptos_router::path!("/allocations") view=Allocations/>
+                    <Route path=leptos_router::path!("/team") view=TeamPage/>
+                    <Route path=leptos_router::path!("/ctc") view=CtcManagement/>
+                    <Route path=leptos_router::path!("/ctc/completeness") view=CtcCompleteness/>
+                    <Route path=leptos_router::path!("/thr") view=ThrManagement/>
+                    <ParentRoute path=leptos_router::path!("/settings") view=SettingsPage>
+                        <Route path=leptos_router::path!("/holidays") view=SettingsHolidaysPage/>
+                        <Route path=leptos_router::path!("/users") view=SettingsUsersPage/>
+                        <Route path=leptos_router::path!("/departments") view=SettingsDepartmentsPage/>
+                        <Route path=leptos_router::path!("") view=SettingsHolidaysPage/>
+                    </ParentRoute>
+                    <Route path=leptos_router::path!("/*any") view=NotFound/>
                 </Routes>
             </AppShell>
         </Router>
@@ -145,7 +143,7 @@ pub fn start() {
         .and_then(|d| d.get_element_by_id("root"))
     {
         web_sys::console::log_1(&"Found root element, mounting...".into());
-        leptos::mount_to(root.unchecked_into(), App);
+        leptos::mount::mount_to(root.unchecked_into(), App).forget();
         web_sys::console::log_1(&"Xynergy app mounted to root".into());
     } else {
         web_sys::console::error_1(&"Could not find root element!".into());

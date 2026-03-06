@@ -3,7 +3,8 @@ use crate::auth::{
     use_auth,
 };
 use crate::components::{DepartmentOption, UserEditData, UserForm, UserFormData};
-use leptos::*;
+use leptos::prelude::*;
+use leptos::either::{Either, EitherOf3};
 use serde::Deserialize;
 use uuid::Uuid;
 
@@ -32,34 +33,34 @@ pub fn UsersContent() -> impl IntoView {
     let is_admin = move || auth.user.get().map(|u| u.role == "admin").unwrap_or(false);
 
     // Data signals
-    let (users, set_users) = create_signal(Vec::new());
-    let (departments, set_departments) = create_signal(Vec::new());
-    let (loading, set_loading) = create_signal(false);
-    let (error, set_error) = create_signal(Option::<String>::None);
+    let (users, set_users) = signal(Vec::new());
+    let (departments, set_departments) = signal(Vec::new());
+    let (loading, set_loading) = signal(false);
+    let (error, set_error) = signal(Option::<String>::None);
 
-    let (show_form, set_show_form) = create_signal(false);
-    let (editing_user, set_editing_user) = create_signal(Option::<User>::None);
-    let (form_submitting, set_form_submitting) = create_signal(false);
-    let (deleting_id, set_deleting_id) = create_signal(Option::<String>::None);
-    let (resetting_id, set_resetting_id) = create_signal(Option::<String>::None);
-    let (new_password, set_new_password) = create_signal(String::new());
+    let (show_form, set_show_form) = signal(false);
+    let (editing_user, set_editing_user) = signal(Option::<User>::None);
+    let (form_submitting, set_form_submitting) = signal(false);
+    let (deleting_id, set_deleting_id) = signal(Option::<String>::None);
+    let (resetting_id, set_resetting_id) = signal(Option::<String>::None);
+    let (new_password, set_new_password) = signal(String::new());
 
     // Load data on mount
-    create_effect(move |_| {
+    Effect::new(move |_| {
         set_loading.set(true);
-        spawn_local(async move {
+        leptos::task::spawn_local(async move {
             // Load users
             match fetch_users().await {
                 Ok(data) => set_users.set(data),
                 Err(e) => set_error.set(Some(e)),
             }
-
+            
             // Load departments
             match fetch_departments().await {
                 Ok(data) => set_departments.set(data),
                 Err(e) => set_error.set(Some(e)),
             }
-
+            
             set_loading.set(false);
         });
     });
@@ -67,16 +68,16 @@ pub fn UsersContent() -> impl IntoView {
     // Handle form submission
     let handle_submit = move |form_data: UserFormData| {
         let editing_id = editing_user.get().map(|u| u.id);
-        spawn_local(async move {
+        leptos::task::spawn_local(async move {
             set_form_submitting.set(true);
             set_error.set(None);
-
+        
             let result = if let Some(user_id) = editing_id {
                 update_user_form(user_id.to_string(), form_data).await
             } else {
                 create_user(form_data).await
             };
-
+        
             match result {
                 Ok(_) => {
                     // Reload users
@@ -101,7 +102,7 @@ pub fn UsersContent() -> impl IntoView {
     };
 
     // Convert departments to options for form
-    let department_options = create_memo(move |_| {
+    let department_options = Memo::new(move |_| {
         departments
             .get()
             .into_iter()
@@ -161,16 +162,16 @@ pub fn UsersContent() -> impl IntoView {
                 <div class="flex items-center gap-2">
                     {move || {
                         if is_admin() {
-                            view! {
+                            Either::Left(view! {
                                 <button
                                     class="btn-primary btn-press"
                                     on:click=move |_| set_show_form.set(true)
                                 >
                                     "Add User"
                                 </button>
-                            }.into_view()
+                            })
                         } else {
-                            view! { <div></div> }.into_view()
+                            Either::Right(view! { <div></div> })
                         }
                     }}
                 </div>
@@ -194,7 +195,7 @@ pub fn UsersContent() -> impl IntoView {
                 if show_form.get() {
                     let is_edit = editing_user.get().is_some();
                     let title = if is_edit { "Edit User" } else { "Create User" };
-                    view! {
+                    Either::Left(view! {
                         <div class="card relative">
                             <h2 class="text-xl font-semibold text-huly-caption mb-4">
                                 {title}
@@ -213,22 +214,22 @@ pub fn UsersContent() -> impl IntoView {
                             }}
                             {move || {
                                 if form_submitting.get() {
-                                    view! {
+                                    Either::Left(view! {
                                         <div class="absolute inset-0 flex items-center justify-center bg-huly-back/70 rounded-lg">
                                             <div class="text-center">
                                                 <div class="spinner mx-auto mb-2"></div>
                                                 <p class="text-sm text-huly-secondary">"Saving..."</p>
                                             </div>
                                         </div>
-                                    }.into_view()
+                                    })
                                 } else {
-                                    view! { <div></div> }.into_view()
+                                    Either::Right(view! { <div></div> })
                                 }
                             }}
                         </div>
-                    }.into_view()
+                    })
                 } else {
-                    view! { <div></div> }.into_view()
+                    Either::Right(view! { <div></div> })
                 }
             }}
 
@@ -250,7 +251,7 @@ pub fn UsersContent() -> impl IntoView {
                         <tbody class="bg-huly-surface divide-y divide-huly-divider">
                             {move || {
                                 if loading.get() {
-                                    view! {
+                                    EitherOf3::A(view! {
                                         <tr>
                                             <td colspan="5" class="td-cell-compact">
                                                 <div class="space-y-2 py-2">
@@ -260,9 +261,9 @@ pub fn UsersContent() -> impl IntoView {
                                                 </div>
                                             </td>
                                         </tr>
-                                    }.into_view()
+                                    })
                                 } else if users.get().is_empty() {
-                                    view! {
+                                    EitherOf3::B(view! {
                                         <tr>
                                             <td colspan="5" class="td-cell-compact">
                                                 <div class="empty-state py-8">
@@ -274,9 +275,9 @@ pub fn UsersContent() -> impl IntoView {
                                                 </div>
                                             </td>
                                         </tr>
-                                    }.into_view()
+                                    })
                                 } else {
-                                    users.get().into_iter().map(|user| {
+                                    EitherOf3::C(users.get().into_iter().map(|user| {
                                         let user_id = user.id.to_string();
                                         let user_id_for_reset = user.id.to_string();
                                         let user_for_edit = user.clone();
@@ -315,7 +316,7 @@ pub fn UsersContent() -> impl IntoView {
                                                 <td class="td-cell-compact whitespace-nowrap text-huly-muted">
                                                     <div class="flex flex-col space-y-2">
                                                         {if is_admin() {
-                                                            view! {
+                                                            Either::Left(view! {
                                                                 <>
                                                                     <div class="flex items-center space-x-2">
                                                                         <button
@@ -353,7 +354,7 @@ pub fn UsersContent() -> impl IntoView {
                                                                                         move |_| {
                                                                                             let id_clone = id.clone();
                                                                                             set_deleting_id.set(Some(id_clone.clone()));
-                                                                                            spawn_local(async move {
+                                                                                            leptos::task::spawn_local(async move {
                                                                                                 set_error.set(None);
                                                                                                 match delete_user(id_clone).await {
                                                                                                     Ok(_) => {
@@ -378,7 +379,7 @@ pub fn UsersContent() -> impl IntoView {
                                                                     {move || {
                                                                         let uid = user_id_for_reset.clone();
                                                                         if resetting_id.get() == Some(uid.clone()) {
-                                                                            view! {
+                                                                            Either::Left(view! {
                                                                                 <div class="flex items-center space-x-2 mt-1">
                                                                                     <input
                                                                                         type="password"
@@ -395,7 +396,7 @@ pub fn UsersContent() -> impl IntoView {
                                                                                             move |_| {
                                                                                                 let uid = uid.clone();
                                                                                                 let pw = new_password.get();
-                                                                                                spawn_local(async move {
+                                                                                                leptos::task::spawn_local(async move {
                                                                                                     set_error.set(None);
                                                                                                     match reset_user_password(uid, pw).await {
                                                                                                         Ok(_) => set_resetting_id.set(None),
@@ -414,23 +415,23 @@ pub fn UsersContent() -> impl IntoView {
                                                                                         "Cancel"
                                                                                     </button>
                                                                                 </div>
-                                                                            }.into_view()
+                                                                            })
                                                                         } else {
-                                                                            view! { <span></span> }.into_view()
+                                                                            Either::Right(view! { <span></span> })
                                                                         }
                                                                     }}
                                                                 </>
-                                                            }.into_view()
+                                                            })
                                                         } else {
-                                                            view! {
+                                                            Either::Right(view! {
                                                                 <span class="text-huly-ghost italic">"No access"</span>
-                                                            }.into_view()
+                                                            })
                                                         }}
                                                     </div>
                                                 </td>
                                             </tr>
                                         }
-                                    }).collect_view()
+                                    }).collect_view())
                                 }
                             }}
                         </tbody>

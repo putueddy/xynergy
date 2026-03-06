@@ -3,8 +3,9 @@ use crate::auth::{
     validate_token, AuthContext,
 };
 use chrono::NaiveDate;
-use leptos::*;
-use leptos_router::*;
+use leptos::prelude::*;
+use leptos_router::hooks::*;
+use leptos::either::{Either, EitherOf3};
 use serde_json::{json, Value};
 
 #[derive(Clone, Debug)]
@@ -58,35 +59,35 @@ fn current_access_token(auth: &AuthContext) -> Option<String> {
 pub fn ThrManagement() -> impl IntoView {
     let auth = use_auth();
     let navigate = use_navigate();
-    let (auth_checked, set_auth_checked) = create_signal(false);
-    let (auth_check_in_progress, set_auth_check_in_progress) = create_signal(false);
+    let (auth_checked, set_auth_checked) = signal(false);
+    let (auth_check_in_progress, set_auth_check_in_progress) = signal(false);
 
-    let (resources, set_resources) = create_signal(Vec::<ResourceOption>::new());
-    let (loading, set_loading) = create_signal(false);
-    let (error, set_error) = create_signal(None::<String>);
-    let (success, set_success) = create_signal(None::<String>);
+    let (resources, set_resources) = signal(Vec::<ResourceOption>::new());
+    let (loading, set_loading) = signal(false);
+    let (error, set_error) = signal(None::<String>);
+    let (success, set_success) = signal(None::<String>);
 
-    let (selected_resource, set_selected_resource) = create_signal(String::new());
+    let (selected_resource, set_selected_resource) = signal(String::new());
 
-    let (thr_eligible, set_thr_eligible) = create_signal(false);
-    let (thr_calculation_basis, set_thr_calculation_basis) = create_signal(String::from("full"));
-    let (employment_start_date, set_employment_start_date) = create_signal(String::new());
+    let (thr_eligible, set_thr_eligible) = signal(false);
+    let (thr_calculation_basis, set_thr_calculation_basis) = signal(String::from("full"));
+    let (employment_start_date, set_employment_start_date) = signal(String::new());
 
-    let (accrual_period, set_accrual_period) = create_signal(String::new());
-    let (accrual_result, set_accrual_result) = create_signal(None::<(i64, i64)>);
-    let (accrual_history, set_accrual_history) = create_signal(Vec::<ThrAccrualHistoryRow>::new());
+    let (accrual_period, set_accrual_period) = signal(String::new());
+    let (accrual_result, set_accrual_result) = signal(None::<(i64, i64)>);
+    let (accrual_history, set_accrual_history) = signal(Vec::<ThrAccrualHistoryRow>::new());
 
-    let (report_month, set_report_month) = create_signal(String::new());
-    let (report_rows, set_report_rows) = create_signal(Vec::<ThrReportRow>::new());
+    let (report_month, set_report_month) = signal(String::new());
+    let (report_rows, set_report_rows) = signal(Vec::<ThrReportRow>::new());
 
     {
         let navigate = navigate.clone();
-        create_effect(move |_| {
+        Effect::new(move |_| {
             if !auth.is_authenticated.get() {
                 navigate("/login", Default::default());
                 return;
             }
-
+        
             if let Some(user) = auth.user.get() {
                 set_auth_checked.set(true);
                 if user.role != "hr" {
@@ -94,11 +95,11 @@ pub fn ThrManagement() -> impl IntoView {
                 }
                 return;
             }
-
+        
             if auth_check_in_progress.get() {
                 return;
             }
-
+        
             let token = match current_access_token(&auth) {
                 Some(t) => t,
                 None => {
@@ -106,10 +107,10 @@ pub fn ThrManagement() -> impl IntoView {
                     return;
                 }
             };
-
+        
             set_auth_check_in_progress.set(true);
             let navigate = navigate.clone();
-            spawn_local(async move {
+            leptos::task::spawn_local(async move {
                 match validate_token(token).await {
                     Ok(user) => {
                         auth.user.set(Some(user));
@@ -130,13 +131,13 @@ pub fn ThrManagement() -> impl IntoView {
 
     let is_hr = Signal::derive(move || auth.user.get().map(|u| u.role == "hr").unwrap_or(false));
 
-    create_effect(move |_| {
+    Effect::new(move |_| {
         if auth.token.get().is_some() {
             if !is_hr.get() {
                 return;
             }
             set_loading.set(true);
-            spawn_local(async move {
+            leptos::task::spawn_local(async move {
                 match fetch_resources().await {
                     Ok(res) => {
                         set_resources.set(res);
@@ -144,7 +145,7 @@ pub fn ThrManagement() -> impl IntoView {
                     }
                     Err(e) => set_error.set(Some(e)),
                 }
-
+                
                 set_loading.set(false);
             });
         }
@@ -193,7 +194,7 @@ pub fn ThrManagement() -> impl IntoView {
         });
 
         set_loading.set(true);
-        spawn_local(async move {
+        leptos::task::spawn_local(async move {
             match configure_thr(resource_id, payload).await {
                 Ok(_) => set_success.set(Some("THR configuration saved successfully".to_string())),
                 Err(e) => set_error.set(Some(e)),
@@ -219,7 +220,7 @@ pub fn ThrManagement() -> impl IntoView {
         }
 
         set_loading.set(true);
-        spawn_local(async move {
+        leptos::task::spawn_local(async move {
             match run_thr_monthly_accrual(&period).await {
                 Ok((processed, skipped)) => {
                     set_accrual_result.set(Some((processed, skipped)));
@@ -227,7 +228,7 @@ pub fn ThrManagement() -> impl IntoView {
                         "Monthly accrual completed. Processed: {}, Skipped: {}",
                         processed, skipped
                     )));
-
+        
                     let selected = selected_resource.get();
                     if !selected.is_empty() {
                         match fetch_thr_accrual_history(&selected).await {
@@ -258,7 +259,7 @@ pub fn ThrManagement() -> impl IntoView {
         }
 
         set_loading.set(true);
-        spawn_local(async move {
+        leptos::task::spawn_local(async move {
             match fetch_thr_report(&month).await {
                 Ok(rows) => {
                     let total_rows = rows.len();
@@ -280,24 +281,22 @@ pub fn ThrManagement() -> impl IntoView {
             <div class="page-container fade-in">
                 {move || {
                     if !auth_checked.get() {
-                        return view! {
+                        return EitherOf3::A(view! {
                             <div class="alert-info">
                                 "Checking access..."
                             </div>
-                        }
-                            .into_view();
+                        });
                     }
 
                     if !is_hr.get() {
-                        return view! {
+                        return EitherOf3::B(view! {
                             <div class="alert-error">
                                 "Access denied. THR management is available to HR users only."
                             </div>
-                        }
-                            .into_view();
+                        });
                     }
 
-                    view! {
+                    EitherOf3::C(view! {
                         <div class="space-y-4">
                             <div class="page-header">
                                 <h1 class="text-xl font-semibold text-huly-caption">
@@ -307,13 +306,13 @@ pub fn ThrManagement() -> impl IntoView {
 
                             {move || auth.user.get().map(|u| {
                                 if u.role != "hr" {
-                                    view! {
+                                    Either::Left(view! {
                                         <div class="alert-warning">
                                             "Only HR users can manage THR data."
                                         </div>
-                                    }
+                                    })
                                 } else {
-                                    view! { <div></div> }
+                                    Either::Right(view! { <div></div> })
                                 }
                             })}
 
@@ -354,7 +353,7 @@ pub fn ThrManagement() -> impl IntoView {
                                             }
 
                                             set_loading.set(true);
-                                            spawn_local(async move {
+                                            leptos::task::spawn_local(async move {
                                                 match fetch_thr_config(&selected).await {
                                                     Ok(config) => {
                                                         set_thr_eligible.set(config.thr_eligible);
@@ -485,21 +484,21 @@ pub fn ThrManagement() -> impl IntoView {
                                     <h3 class="section-header mb-3">"Accrual History"</h3>
                                     {move || {
                                         if selected_resource.get().is_empty() {
-                                            view! {
+                                            EitherOf3::A(view! {
                                                 <p class="empty-state">
                                                     "Select an employee to view accrual history."
                                                 </p>
-                                            }
-                                                .into_view()
+                                            })
+                                                
                                         } else if accrual_history.get().is_empty() {
-                                            view! {
+                                            EitherOf3::B(view! {
                                                 <p class="empty-state">
                                                     "No accrual history found for this employee."
                                                 </p>
-                                            }
-                                                .into_view()
+                                            })
+                                                
                                         } else {
-                                            view! {
+                                            EitherOf3::C(view! {
                                                 <div class="overflow-x-auto">
                                                     <table class="min-w-full divide-y divide-huly-divider">
                                                         <thead class="bg-huly-surface-2">
@@ -517,10 +516,10 @@ pub fn ThrManagement() -> impl IntoView {
                                                                 key=|row| format!("{}-{}", row.period, row.service_months)
                                                                 children=move |row| {
                                                                     view! {
-                                                                        <tr>
+                                                                        <tr class="table-row-hover">
                                                                             <td class="td-cell-compact">{row.period}</td>
                                                                             <td class="td-cell-compact">{row.service_months}</td>
-                                                                            <td class="td-cell-compact">{row.basis}</td>
+                                                                            <td class="td-cell-compact">{row.basis.clone()}</td>
                                                                             <td class="td-cell-compact">{format!("Rp {}", row.accrual_amount)}</td>
                                                                             <td class="td-cell-compact">{format!("Rp {}", row.annual_entitlement)}</td>
                                                                         </tr>
@@ -530,8 +529,8 @@ pub fn ThrManagement() -> impl IntoView {
                                                         </tbody>
                                                     </table>
                                                 </div>
-                                            }
-                                                .into_view()
+                                            })
+                                                
                                         }
                                     }}
                                 </div>
@@ -561,14 +560,14 @@ pub fn ThrManagement() -> impl IntoView {
 
                                 {move || {
                                     if report_rows.get().is_empty() {
-                                        view! {
+                                        Either::Left(view! {
                                             <p class="empty-state">
                                                 "No report data loaded. Generate a report for a month."
                                             </p>
-                                        }
-                                            .into_view()
+                                        })
+                                            
                                     } else {
-                                        view! {
+                                        Either::Right(view! {
                                             <div class="overflow-x-auto">
                                                 <table class="min-w-full divide-y divide-huly-divider">
                                                     <thead class="bg-huly-surface-2">
@@ -607,14 +606,14 @@ pub fn ThrManagement() -> impl IntoView {
                                                     </tbody>
                                                 </table>
                                             </div>
-                                        }
-                                            .into_view()
+                                        })
+                                            
                                     }
                                 }}
                             </div>
                         </div>
-                    }
-                        .into_view()
+                    })
+                        
                 }}
             </div>
 

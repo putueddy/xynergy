@@ -1,4 +1,4 @@
-use leptos::*;
+use leptos::prelude::*;
 
 /// Resource form data
 #[derive(Debug, Clone, Default)]
@@ -18,13 +18,13 @@ pub fn ResourceForm(
     on_submit: Callback<ResourceFormData>,
     on_cancel: Callback<()>,
 ) -> impl IntoView {
-    let (name, set_name) = create_signal(String::new());
-    let (resource_type, set_resource_type) = create_signal(String::new());
-    let (capacity, set_capacity) = create_signal(String::new());
-    let (department_id, set_department_id) = create_signal(String::new());
-    let (employment_start_date, set_employment_start_date) = create_signal(String::new());
+    let (name, set_name) = signal(String::new());
+    let (resource_type, set_resource_type) = signal(String::new());
+    let (capacity, set_capacity) = signal(String::new());
+    let (department_id, set_department_id) = signal(String::new());
+    let (employment_start_date, set_employment_start_date) = signal(String::new());
 
-    create_effect(move |_| {
+    Effect::new(move |_| {
         if let Some(data) = initial_data.get() {
             set_name.set(data.name);
             set_resource_type.set(data.resource_type);
@@ -49,7 +49,7 @@ pub fn ResourceForm(
         let capacity_val = capacity.get().parse::<f64>().ok();
         let selected_department = department_id.get();
         let selected_start_date = employment_start_date.get();
-        on_submit.call(ResourceFormData {
+        on_submit.run(ResourceFormData {
             name: name.get(),
             resource_type: resource_type.get(),
             capacity: capacity_val,
@@ -148,7 +148,7 @@ pub fn ResourceForm(
                 <button
                     type="button"
                     class="btn-secondary btn-press"
-                    on:click=move |_| on_cancel.call(())
+                    on:click=move |_| on_cancel.run(())
                 >
                     "Cancel"
                 </button>

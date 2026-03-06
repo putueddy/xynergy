@@ -1,4 +1,4 @@
-use leptos::*;
+use leptos::prelude::*;
 
 pub mod allocation_form;
 pub mod app_sidebar;

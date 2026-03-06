@@ -1,9 +1,7 @@
-use leptos::*;
+use leptos::prelude::*;
 use reqwest::{Method, Response};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use wasm_bindgen::prelude::*;
-use wasm_bindgen_futures::spawn_local;
 
 /// Resolve a relative URL to an absolute URL using the browser's origin.
 /// If the URL is already absolute (starts with http:// or https://), it is returned as-is.
@@ -40,9 +38,9 @@ pub struct AuthContext {
 
 /// Provide authentication context to the application
 pub fn provide_auth_context() {
-    let user = create_rw_signal(None);
-    let token = create_rw_signal(None);
-    let refresh_token = create_rw_signal(None);
+    let user = RwSignal::new(None);
+    let token = RwSignal::new(None);
+    let refresh_token = RwSignal::new(None);
 
     // Check localStorage on mount
     let mut has_saved_token = false;
@@ -60,7 +58,7 @@ pub fn provide_auth_context() {
 
     // If we have a saved token, hydrate the user from the API
     if has_saved_token {
-        spawn_local(async move {
+        leptos::task::spawn_local(async move {
             if let Some(tok) = token.get() {
                 match validate_token(tok).await {
                     Ok(u) => user.set(Some(u)),
@@ -75,7 +73,7 @@ pub fn provide_auth_context() {
         });
     }
 
-    let is_authenticated = create_memo(move |_| {
+    let is_authenticated = Memo::new(move |_| {
         // Check both user and token - authenticated if either exists
         user.get().is_some() || token.get().is_some()
     });
@@ -96,17 +94,17 @@ fn setup_token_refresh(
     token_signal: RwSignal<Option<String>>,
     refresh_token_signal: RwSignal<Option<String>>,
 ) {
-    spawn_local(async move {
+    leptos::task::spawn_local(async move {
         // Refresh token every 14 minutes (token expires at 15 minutes)
         let refresh_interval = 14 * 60 * 1000; // 14 minutes in milliseconds
-
+    
         loop {
             // Wait for the refresh interval
             gloo_timers::future::TimeoutFuture::new(refresh_interval).await;
-
+    
             // Check if we have both tokens
             let current_refresh = refresh_token_signal.get();
-
+    
             if let Some(refresh) = current_refresh {
                 // Attempt to refresh the token
                 match refresh_access_token(&refresh).await {
@@ -114,7 +112,7 @@ fn setup_token_refresh(
                         // Update signals
                         token_signal.set(Some(new_token.clone()));
                         refresh_token_signal.set(Some(new_refresh.clone()));
-
+    
                         // Update localStorage
                         if let Ok(storage) = web_sys::window().unwrap().local_storage() {
                             if let Some(storage) = storage {
@@ -128,7 +126,7 @@ fn setup_token_refresh(
                         web_sys::console::error_1(&format!("Token refresh failed: {}", e).into());
                         token_signal.set(None);
                         refresh_token_signal.set(None);
-
+    
                         if let Ok(storage) = web_sys::window().unwrap().local_storage() {
                             if let Some(storage) = storage {
                                 let _ = storage.remove_item("auth_token");

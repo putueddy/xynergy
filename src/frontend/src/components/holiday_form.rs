@@ -1,4 +1,4 @@
-use leptos::*;
+use leptos::prelude::*;
 use serde::{Deserialize, Serialize};
 
 /// Holiday form data
@@ -17,28 +17,22 @@ pub fn HolidayForm(
     on_submit: Callback<HolidayFormData>,
     on_cancel: Callback<()>,
 ) -> impl IntoView {
-    let (name, set_name) = create_signal(
-        editing_holiday
-            .as_ref()
-            .map(|h| h.name.clone())
-            .unwrap_or_default(),
-    );
-    let (date, set_date) = create_signal(
-        editing_holiday
-            .as_ref()
-            .map(|h| h.date.clone())
-            .unwrap_or_default(),
-    );
-    let (description, set_description) = create_signal(
-        editing_holiday
-            .as_ref()
-            .map(|h| h.description.clone())
-            .unwrap_or_default(),
-    );
+    let (name, set_name) = signal(editing_holiday
+        .as_ref()
+        .map(|h| h.name.clone())
+        .unwrap_or_default());
+    let (date, set_date) = signal(editing_holiday
+        .as_ref()
+        .map(|h| h.date.clone())
+        .unwrap_or_default());
+    let (description, set_description) = signal(editing_holiday
+        .as_ref()
+        .map(|h| h.description.clone())
+        .unwrap_or_default());
 
     let handle_submit = move |ev: leptos::ev::SubmitEvent| {
         ev.prevent_default();
-        on_submit.call(HolidayFormData {
+        on_submit.run(HolidayFormData {
             name: name.get(),
             date: date.get(),
             description: description.get(),
@@ -94,7 +88,7 @@ pub fn HolidayForm(
                     type="button"
                     class="btn-secondary btn-press"
                     disabled=is_submitting
-                    on:click=move |_| on_cancel.call(())
+                    on:click=move |_| on_cancel.run(())
                 >
                     "Cancel"
                 </button>

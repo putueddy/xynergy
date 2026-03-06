@@ -2,7 +2,8 @@ use crate::auth::{
     authenticated_delete, authenticated_get, authenticated_post_json, authenticated_put_json,
 };
 use crate::components::{DepartmentEditData, DepartmentForm, DepartmentFormData, HeadCandidate};
-use leptos::*;
+use leptos::either::{Either, EitherOf3};
+use leptos::prelude::*;
 use serde::Deserialize;
 use uuid::Uuid;
 
@@ -18,31 +19,31 @@ pub struct Department {
 /// Departments content component (without header/footer)
 #[component]
 pub fn DepartmentsContent() -> impl IntoView {
-    let (departments, set_departments) = create_signal(Vec::<Department>::new());
-    let (head_candidates, set_head_candidates) = create_signal(Vec::<HeadCandidate>::new());
-    let (loading, set_loading) = create_signal(false);
-    let (error, set_error) = create_signal(Option::<String>::None);
-    let (show_form, set_show_form) = create_signal(false);
-    let (editing_department, set_editing_department) = create_signal(Option::<Department>::None);
-    let (form_submitting, set_form_submitting) = create_signal(false);
-    let (deleting_id, set_deleting_id) = create_signal(Option::<String>::None);
+    let (departments, set_departments) = signal(Vec::<Department>::new());
+    let (head_candidates, set_head_candidates) = signal(Vec::<HeadCandidate>::new());
+    let (loading, set_loading) = signal(false);
+    let (error, set_error) = signal(Option::<String>::None);
+    let (show_form, set_show_form) = signal(false);
+    let (editing_department, set_editing_department) = signal(Option::<Department>::None);
+    let (form_submitting, set_form_submitting) = signal(false);
+    let (deleting_id, set_deleting_id) = signal(Option::<String>::None);
 
     // Load departments and head candidates on mount
-    create_effect(move |_| {
+    Effect::new(move |_| {
         set_loading.set(true);
-        spawn_local(async move {
+        leptos::task::spawn_local(async move {
             // Load departments
             match fetch_departments().await {
                 Ok(data) => set_departments.set(data),
                 Err(e) => set_error.set(Some(e)),
             }
-
+            
             // Load head candidates
             match fetch_head_candidates().await {
                 Ok(data) => set_head_candidates.set(data),
                 Err(e) => set_error.set(Some(e)),
             }
-
+            
             set_loading.set(false);
         });
     });
@@ -50,16 +51,16 @@ pub fn DepartmentsContent() -> impl IntoView {
     // Handle form submission
     let handle_submit = move |form_data: DepartmentFormData| {
         let editing_id = editing_department.get().map(|d| d.id);
-        spawn_local(async move {
+        leptos::task::spawn_local(async move {
             set_form_submitting.set(true);
             set_error.set(None);
-
+        
             let result = if let Some(dept_id) = editing_id {
                 update_department(dept_id.to_string(), form_data).await
             } else {
                 create_department(form_data).await
             };
-
+        
             match result {
                 Ok(_) => match fetch_departments().await {
                     Ok(data) => {
@@ -81,7 +82,7 @@ pub fn DepartmentsContent() -> impl IntoView {
     };
 
     // Convert head candidates for form
-    let head_candidate_options = create_memo(move |_| head_candidates.get());
+    let head_candidate_options = Memo::new(move |_| head_candidates.get());
 
     let editing_form_data = Signal::derive(move || {
         editing_department.get().map(|d| DepartmentEditData {
@@ -134,7 +135,7 @@ pub fn DepartmentsContent() -> impl IntoView {
                 if show_form.get() {
                     let is_edit = editing_department.get().is_some();
                     let title = if is_edit { "Edit Department" } else { "Create Department" };
-                    view! {
+                    Either::Left(view! {
                         <div class="card relative">
                             <h2 class="text-xl font-semibold text-huly-caption mb-4">
                                 {title}
@@ -153,22 +154,22 @@ pub fn DepartmentsContent() -> impl IntoView {
                             }}
                             {move || {
                                 if form_submitting.get() {
-                                    view! {
+                                    Either::Left(view! {
                                         <div class="absolute inset-0 flex items-center justify-center bg-huly-back/70 rounded-lg">
                                             <div class="text-center">
                                                 <div class="spinner mx-auto mb-2"></div>
                                                 <p class="text-sm text-huly-secondary">"Saving..."</p>
                                             </div>
                                         </div>
-                                    }.into_view()
+                                    })
                                 } else {
-                                    view! { <div></div> }.into_view()
+                                    Either::Right(view! { <div></div> })
                                 }
                             }}
                         </div>
-                    }.into_view()
+                    })
                 } else {
-                    view! { <div></div> }.into_view()
+                    Either::Right(view! { <div></div> })
                 }
             }}
 
@@ -188,7 +189,7 @@ pub fn DepartmentsContent() -> impl IntoView {
                         <tbody class="bg-huly-surface divide-y divide-huly-divider">
                             {move || {
                                 if loading.get() {
-                                    view! {
+                                    EitherOf3::A(view! {
                                         <tr>
                                             <td colspan="3" class="td-cell-compact">
                                                 <div class="space-y-2 py-2">
@@ -198,9 +199,9 @@ pub fn DepartmentsContent() -> impl IntoView {
                                                 </div>
                                             </td>
                                         </tr>
-                                    }.into_view()
+                                    })
                                 } else if departments.get().is_empty() {
-                                    view! {
+                                    EitherOf3::B(view! {
                                         <tr>
                                             <td colspan="3" class="td-cell-compact">
                                                 <div class="empty-state py-8">
@@ -212,9 +213,9 @@ pub fn DepartmentsContent() -> impl IntoView {
                                                 </div>
                                             </td>
                                         </tr>
-                                    }.into_view()
+                                    })
                                 } else {
-                                    departments.get().into_iter().map(|dept| {
+                                    EitherOf3::C(departments.get().into_iter().map(|dept| {
                                         let dept_id = dept.id.to_string();
                                         let dept_for_edit = dept.clone();
                                         let head_display = dept.head_name.clone().unwrap_or_else(|| "Unassigned".to_string());
@@ -232,9 +233,9 @@ pub fn DepartmentsContent() -> impl IntoView {
                                                         <button
                                                             class="link"
                                                             on:click={
-                                                                let dept = dept_for_edit.clone();
+                                                                let d = dept_for_edit.clone();
                                                                 move |_| {
-                                                                    set_editing_department.set(Some(dept.clone()));
+                                                                    set_editing_department.set(Some(d.clone()));
                                                                     set_show_form.set(true);
                                                                 }
                                                             }
@@ -252,7 +253,7 @@ pub fn DepartmentsContent() -> impl IntoView {
                                                                         move |_| {
                                                                             let id_clone = id.clone();
                                                                             set_deleting_id.set(Some(id_clone.clone()));
-                                                                            spawn_local(async move {
+                                                                            leptos::task::spawn_local(async move {
                                                                                 set_error.set(None);
 
                                                                                 match delete_department(id_clone).await {
@@ -277,7 +278,7 @@ pub fn DepartmentsContent() -> impl IntoView {
                                                 </td>
                                             </tr>
                                         }
-                                    }).collect_view()
+                                    }).collect_view())
                                 }
                             }}
                         </tbody>

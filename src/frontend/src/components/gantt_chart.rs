@@ -1,5 +1,6 @@
 use crate::gantt::{create_gantt_options, tasks_to_js_array, FrappeGantt, GanttTask};
-use leptos::*;
+use leptos::either::Either;
+use leptos::prelude::*;
 use wasm_bindgen::JsCast;
 use wasm_bindgen::JsValue;
 
@@ -9,10 +10,10 @@ pub fn GanttChart(
     tasks: Signal<Vec<GanttTask>>,
     #[prop(default = "Week")] view_mode: &'static str,
 ) -> impl IntoView {
-    let gantt_ref = create_node_ref::<leptos::html::Div>();
+    let gantt_ref = NodeRef::<leptos::html::Div>::new();
 
     // Initialize Gantt chart when component mounts
-    create_effect(move |_| {
+    Effect::new(move |_| {
         if let Some(gantt_div) = gantt_ref.get() {
             let task_list = tasks.get();
 
@@ -36,16 +37,16 @@ pub fn GanttChart(
 
     view! {
         <div class="card overflow-x-auto">
-            <div _ref=gantt_ref class="gantt-container min-w-full" style="height: 400px;">
+            <div node_ref=gantt_ref class="gantt-container min-w-full" style="height: 400px;">
                 {move || {
                     if tasks.get().is_empty() {
-                        view! {
+                        Either::Left(view! {
                             <div class="flex items-center justify-center h-full text-huly-muted">
                                 "No tasks to display"
                             </div>
-                        }.into_view()
+                        })
                     } else {
-                        view! { <div></div> }.into_view()
+                        Either::Right(view! { <div></div> })
                     }
                 }}
             </div>

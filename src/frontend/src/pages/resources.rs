@@ -6,8 +6,9 @@ use crate::components::resource_list::Resource;
 use crate::components::{
     resource_form::ResourceFormData, ResourceForm, ResourceList,
 };
-use leptos::*;
-use leptos_router::*;
+use leptos::either::{Either, EitherOf3};
+use leptos::prelude::*;
+use leptos_router::hooks::*;
 use serde::Deserialize;
 use uuid::Uuid;
 
@@ -26,7 +27,7 @@ pub fn Resources() -> impl IntoView {
     // Redirect if not logged in
     {
         let navigate = navigate.clone();
-        create_effect(move |_| {
+        Effect::new(move |_| {
             if !auth.is_authenticated.get() {
                 navigate("/login", Default::default());
             }
@@ -34,27 +35,27 @@ pub fn Resources() -> impl IntoView {
     }
 
     // Resource data
-    let (resources, set_resources) = create_signal(Vec::new());
-    let (departments, set_departments) = create_signal(Vec::new());
-    let (loading, set_loading) = create_signal(false);
-    let (error, set_error) = create_signal(Option::<String>::None);
-    let (show_form, set_show_form) = create_signal(false);
-    let (editing_resource, set_editing_resource) = create_signal(Option::<Resource>::None);
+    let (resources, set_resources) = signal(Vec::new());
+    let (departments, set_departments) = signal(Vec::new());
+    let (loading, set_loading) = signal(false);
+    let (error, set_error) = signal(Option::<String>::None);
+    let (show_form, set_show_form) = signal(false);
+    let (editing_resource, set_editing_resource) = signal(Option::<Resource>::None);
 
     // Load resources on mount
-    create_effect(move |_| {
+    Effect::new(move |_| {
         set_loading.set(true);
-        spawn_local(async move {
+        leptos::task::spawn_local(async move {
             match fetch_resources().await {
                 Ok(data) => set_resources.set(data),
                 Err(e) => set_error.set(Some(e)),
             }
-
+            
             match fetch_departments().await {
                 Ok(data) => set_departments.set(data),
                 Err(e) => set_error.set(Some(e)),
             }
-
+            
             set_loading.set(false);
         });
     });
@@ -62,16 +63,16 @@ pub fn Resources() -> impl IntoView {
     // Handle create/edit resource
     let handle_submit = move |form_data: ResourceFormData| {
         let editing = editing_resource.get();
-        spawn_local(async move {
+        leptos::task::spawn_local(async move {
             set_loading.set(true);
             set_error.set(None);
-
+        
             let result = if let Some(resource) = editing {
                 update_resource(resource.id, form_data).await
             } else {
                 create_resource(form_data).await
             };
-
+        
             match result {
                 Ok(_) => {
                     // Reload resources
@@ -92,10 +93,10 @@ pub fn Resources() -> impl IntoView {
 
     // Handle delete resource
     let handle_delete = move |id: Uuid| {
-        spawn_local(async move {
+        leptos::task::spawn_local(async move {
             set_loading.set(true);
             set_error.set(None);
-
+        
             match delete_resource(id).await {
                 Ok(_) => {
                     // Reload resources
@@ -170,7 +171,7 @@ pub fn Resources() -> impl IntoView {
                                 })
                             });
 
-                            view! {
+                            Either::Left(view! {
                                 <div class="card">
                                     <h2 class="text-xl font-semibold text-huly-caption mb-4">
                                         {if editing_resource.get().is_some() { "Edit Resource" } else { "Add Resource" }}
@@ -188,12 +189,12 @@ pub fn Resources() -> impl IntoView {
                                         on_cancel=Callback::new(handle_cancel)
                                     />
                                 </div>
-                            }.into_view()
+                            })
                         } else {
-                            view! { <div>
+                            Either::Right(view! { <div>
                                 {move || {
                                     if loading.get() {
-                                        view! {
+                                        EitherOf3::A(view! {
                                             <div class="space-y-3">
                                                 <div class="toolbar"><div class="skeleton-text w-32 h-3"></div></div>
                                                 <div class="panel overflow-hidden">
@@ -203,9 +204,9 @@ pub fn Resources() -> impl IntoView {
                                                     <div class="skeleton-row"><div class="skeleton-text w-20"></div><div class="skeleton-text w-24"></div><div class="skeleton-text w-16"></div><div class="skeleton-text w-28"></div></div>
                                                 </div>
                                             </div>
-                                        }.into_view()
+                                        })
                                     } else if resources.get().is_empty() {
-                                        view! {
+                                        EitherOf3::B(view! {
                                             <div class="empty-state py-12">
                                                 <svg class="w-12 h-12 text-huly-ghost mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1">
                                                     <path stroke-linecap="round" stroke-linejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
@@ -213,9 +214,9 @@ pub fn Resources() -> impl IntoView {
                                                 <p class="text-huly-secondary text-sm">"No resources found."</p>
                                                 <p class="text-huly-muted text-xs mt-1">"Click 'Add Resource' to create one."</p>
                                             </div>
-                                        }.into_view()
+                                        })
                                     } else {
-                                        view! {
+                                        EitherOf3::C(view! {
                                             <div class="space-y-3">
                                                 <div class="toolbar">
                                                     <h2 class="text-sm font-medium text-huly-secondary">"Resource List"</h2>
@@ -228,10 +229,10 @@ pub fn Resources() -> impl IntoView {
                                                     />
                                                 </div>
                                             </div>
-                                        }.into_view()
+                                        })
                                     }
                                 }}
-                            </div> }.into_view()
+                            </div> })
                         }
                     }}
                 </div>

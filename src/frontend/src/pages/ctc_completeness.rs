@@ -1,8 +1,9 @@
 use crate::auth::{
     auth_token, authenticated_get, clear_auth_storage, use_auth, validate_token, AuthContext,
 };
-use leptos::*;
-use leptos_router::*;
+use leptos::prelude::*;
+use leptos::either::EitherOf3;
+use leptos_router::hooks::*;
 use serde_json::Value;
 
 #[derive(Clone, Debug)]
@@ -312,41 +313,41 @@ fn get_color_class(pct: f64) -> &'static str {
 pub fn CtcCompleteness() -> impl IntoView {
     let auth = use_auth();
     let navigate = use_navigate();
-    let (auth_checked, set_auth_checked) = create_signal(false);
-    let (auth_check_in_progress, set_auth_check_in_progress) = create_signal(false);
+    let (auth_checked, set_auth_checked) = signal(false);
+    let (auth_check_in_progress, set_auth_check_in_progress) = signal(false);
 
-    let (_loading, set_loading) = create_signal(false);
-    let (error, set_error) = create_signal(None::<String>);
-    let (success, set_success) = create_signal(None::<String>);
+    let (_loading, set_loading) = signal(false);
+    let (error, set_error) = signal(None::<String>);
+    let (success, set_success) = signal(None::<String>);
 
-    let (departments, set_departments) = create_signal(Vec::<DepartmentRow>::new());
-    let (dept_filter, set_dept_filter) = create_signal(String::new());
-    let (dept_options, set_dept_options) = create_signal(Vec::<(String, String)>::new());
-    let (total_employees_summary, set_total_employees_summary) = create_signal(0i64);
-    let (with_ctc_summary, set_with_ctc_summary) = create_signal(0i64);
-    let (missing_ctc_summary, set_missing_ctc_summary) = create_signal(0i64);
-    let (completion_pct_summary, set_completion_pct_summary) = create_signal(0.0f64);
+    let (departments, set_departments) = signal(Vec::<DepartmentRow>::new());
+    let (dept_filter, set_dept_filter) = signal(String::new());
+    let (dept_options, set_dept_options) = signal(Vec::<(String, String)>::new());
+    let (total_employees_summary, set_total_employees_summary) = signal(0i64);
+    let (with_ctc_summary, set_with_ctc_summary) = signal(0i64);
+    let (missing_ctc_summary, set_missing_ctc_summary) = signal(0i64);
+    let (completion_pct_summary, set_completion_pct_summary) = signal(0.0f64);
 
-    let (missing_employees, set_missing_employees) = create_signal(Vec::<MissingEmployee>::new());
-    let (show_missing, set_show_missing) = create_signal(false);
+    let (missing_employees, set_missing_employees) = signal(Vec::<MissingEmployee>::new());
+    let (show_missing, set_show_missing) = signal(false);
 
-    let (start_date, set_start_date) = create_signal(String::new());
-    let (end_date, set_end_date) = create_signal(String::new());
-    let (compliance_results, set_compliance_results) = create_signal(Vec::<ComplianceRow>::new());
-    let (compliance_loading, set_compliance_loading) = create_signal(false);
-    let (total_validated, set_total_validated) = create_signal(0i64);
-    let (passed, set_passed) = create_signal(0i64);
-    let (discrepancies, set_discrepancies) = create_signal(0i64);
-    let (compliance_rate, set_compliance_rate) = create_signal(0.0f64);
+    let (start_date, set_start_date) = signal(String::new());
+    let (end_date, set_end_date) = signal(String::new());
+    let (compliance_results, set_compliance_results) = signal(Vec::<ComplianceRow>::new());
+    let (compliance_loading, set_compliance_loading) = signal(false);
+    let (total_validated, set_total_validated) = signal(0i64);
+    let (passed, set_passed) = signal(0i64);
+    let (discrepancies, set_discrepancies) = signal(0i64);
+    let (compliance_rate, set_compliance_rate) = signal(0.0f64);
 
     {
         let navigate = navigate.clone();
-        create_effect(move |_| {
+        Effect::new(move |_| {
             if !auth.is_authenticated.get() {
                 navigate("/login", Default::default());
                 return;
             }
-
+        
             if let Some(user) = auth.user.get() {
                 set_auth_checked.set(true);
                 if user.role != "hr" && user.role != "department_head" && user.role != "finance" {
@@ -354,11 +355,11 @@ pub fn CtcCompleteness() -> impl IntoView {
                 }
                 return;
             }
-
+        
             if auth_check_in_progress.get() {
                 return;
             }
-
+        
             let token = match current_access_token(&auth) {
                 Some(t) => t,
                 None => {
@@ -366,10 +367,10 @@ pub fn CtcCompleteness() -> impl IntoView {
                     return;
                 }
             };
-
+        
             set_auth_check_in_progress.set(true);
             let navigate = navigate.clone();
-            spawn_local(async move {
+            leptos::task::spawn_local(async move {
                 match validate_token(token).await {
                     Ok(user) => {
                         auth.user.set(Some(user));
@@ -402,17 +403,17 @@ pub fn CtcCompleteness() -> impl IntoView {
             .unwrap_or(false)
     });
 
-    create_effect(move |_| {
+    Effect::new(move |_| {
         if auth.token.get().is_some() {
             if !is_authorized.get() {
                 return;
             }
             set_loading.set(true);
-            spawn_local(async move {
+            leptos::task::spawn_local(async move {
                 if let Ok(depts) = fetch_departments_list().await {
                     set_dept_options.set(depts);
                 }
-
+                
                 match fetch_completeness(None).await {
                     Ok((deps, total, with_ctc, missing, pct)) => {
                         set_departments.set(deps);
@@ -436,7 +437,7 @@ pub fn CtcCompleteness() -> impl IntoView {
         }
 
         set_loading.set(true);
-        spawn_local(async move {
+        leptos::task::spawn_local(async move {
             match fetch_missing_employees().await {
                 Ok(emps) => {
                     set_missing_employees.set(emps);
@@ -462,7 +463,7 @@ pub fn CtcCompleteness() -> impl IntoView {
         }
 
         set_compliance_loading.set(true);
-        spawn_local(async move {
+        leptos::task::spawn_local(async move {
             match fetch_compliance_report(&s_date, &e_date).await {
                 Ok((results, total, pass, disc, rate)) => {
                     set_compliance_results.set(results);
@@ -484,22 +485,22 @@ pub fn CtcCompleteness() -> impl IntoView {
             <div class="page-container fade-in">
                 {move || {
                     if !auth_checked.get() {
-                        return view! {
+                        return EitherOf3::A(view! {
                             <div class="alert-info">
                                 "Checking access..."
                             </div>
-                        }.into_view();
+                        });
                     }
 
                     if !is_authorized.get() {
-                        return view! {
+                        return EitherOf3::B(view! {
                             <div class="alert-error">
                                 "Access denied."
                             </div>
-                        }.into_view();
+                        });
                     }
 
-                    view! {
+                    EitherOf3::C(view! {
                         <div class="space-y-4">
                             <div class="page-header">
                                 <h1 class="text-xl font-semibold text-huly-caption">
@@ -528,7 +529,7 @@ pub fn CtcCompleteness() -> impl IntoView {
                                             let selected = event_target_value(&ev);
                                             set_dept_filter.set(selected.clone());
                                             set_loading.set(true);
-                                            spawn_local(async move {
+                                            leptos::task::spawn_local(async move {
                                                 let filter = if selected.is_empty() { None } else { Some(selected) };
                                                 match fetch_completeness(filter).await {
                                                     Ok((deps, total, with_ctc, missing, pct)) => {
@@ -767,7 +768,7 @@ pub fn CtcCompleteness() -> impl IntoView {
                                 </div>
                             })}
                         </div>
-                    }.into_view()
+                    })
                 }}
             </div>
         </div>

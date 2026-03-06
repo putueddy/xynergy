@@ -20,10 +20,10 @@ tracing = { workspace = true }
 xynergy-shared = { workspace = true }
 
 # Leptos framework
-leptos = { version = "0.6" }
-leptos_router = { version = "0.6" }
-leptos_meta = { version = "0.6" }
-leptos_axum = { version = "0.6", optional = true }
+leptos = { version = "0.8" }
+leptos_router = { version = "0.8" }
+leptos_meta = { version = "0.8" }
+leptos_axum = { version = "0.8", optional = true }
 
 # HTTP client
 reqwest = { version = "0.11", features = ["json"] }
@@ -32,7 +32,7 @@ reqwest = { version = "0.11", features = ["json"] }
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
 js-sys = "0.3"
-web-sys = { version = "0.3", features = ["console", "Window", "Document", "Storage", "Location"] }
+web-sys = { version = "0.3", features = ["console", "Window", "Document", "Element", "Node", "NodeList", "HtmlElement", "Storage", "Location"] }
 
 # Utilities
 console_error_panic_hook = "0.1"
@@ -40,14 +40,14 @@ gloo-timers = { version = "0.3", features = ["futures"] }
 
 [features]
 default = ["csr"]
-csr = ["leptos/csr", "leptos_router/csr", "leptos_meta/csr"]
+csr = ["leptos/csr"]
 ssr = [
     "leptos/ssr",
     "leptos_router/ssr",
     "leptos_meta/ssr",
     "dep:leptos_axum",
 ]
-hydrate = ["leptos/hydrate", "leptos_router/hydrate", "leptos_meta/hydrate"]
+hydrate = ["leptos/hydrate"]
 
 [package.metadata.leptos]
 output-name = "xynergy"

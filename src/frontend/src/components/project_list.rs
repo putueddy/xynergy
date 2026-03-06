@@ -1,5 +1,5 @@
 use chrono::NaiveDate;
-use leptos::*;
+use leptos::prelude::*;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -100,43 +100,43 @@ pub fn ProjectList(
                                     <td class="td-cell-compact whitespace-nowrap text-right text-sm font-medium">
                                         <button
                                             class="link mr-3"
-                                            on:click=move |_| on_view_expenses.call(project_id)
+                                            on:click=move |_| on_view_expenses.run(project_id)
                                         >
                                             "Expenses"
                                         </button>
                                         <button
                                             class="text-positive-default hover:text-positive-default/80 mr-3"
-                                            on:click=move |_| on_view_resource_costs.call(project_id)
+                                            on:click=move |_| on_view_resource_costs.run(project_id)
                                         >
                                             "Costs"
                                         </button>
                                         <button
                                             class="text-primary-400 hover:text-primary-400/80 mr-3"
-                                            on:click=move |_| on_view_revenue.call(project_id)
+                                            on:click=move |_| on_view_revenue.run(project_id)
                                         >
                                             "Revenue"
                                         </button>
                                         <button
                                             class="link-danger mr-3"
-                                            on:click=move |_| on_view_pnl.call(project_id)
+                                            on:click=move |_| on_view_pnl.run(project_id)
                                         >
                                             "P&L"
                                         </button>
                                         <button
                                             class="text-accent-orange hover:text-accent-orange/80 mr-3"
-                                            on:click=move |_| on_view_budget.call(project_id)
+                                            on:click=move |_| on_view_budget.run(project_id)
                                         >
                                             "Budget"
                                         </button>
                                         <button
                                             class="link mr-3"
-                                            on:click=move |_| on_edit.call(project_id)
+                                            on:click=move |_| on_edit.run(project_id)
                                         >
                                             "Edit"
                                         </button>
                                         <button
                                             class="link-danger"
-                                            on:click=move |_| on_delete.call(project_id)
+                                            on:click=move |_| on_delete.run(project_id)
                                         >
                                             "Delete"
                                         </button>

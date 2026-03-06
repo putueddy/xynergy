@@ -1,10 +1,10 @@
 use crate::components::{PrimaryButton, SecondaryButton};
-use leptos::*;
+use leptos::prelude::*;
 
 /// Home page component
 #[component]
 pub fn Home() -> impl IntoView {
-    let (count, set_count) = create_signal(0);
+    let (count, set_count) = signal(0);
 
     view! {
         <div class="h-full">

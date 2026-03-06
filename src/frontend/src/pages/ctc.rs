@@ -3,8 +3,9 @@ use crate::auth::{
     validate_token, AuthContext,
 };
 use chrono::DateTime;
-use leptos::*;
-use leptos_router::*;
+use leptos::either::{Either, EitherOf3};
+use leptos::prelude::*;
+use leptos_router::hooks::*;
 use serde_json::{json, Value};
 
 #[derive(Clone, Debug)]
@@ -40,45 +41,45 @@ pub fn CtcManagement() -> impl IntoView {
     let navigate = use_navigate();
     let query_params = use_query_map();
     let initial_resource_id =
-        query_params.with(|params| params.get("resource_id").cloned().unwrap_or_default());
-    let (auth_checked, set_auth_checked) = create_signal(false);
-    let (auth_check_in_progress, set_auth_check_in_progress) = create_signal(false);
+        query_params.with(|params| params.get("resource_id").unwrap_or_default());
+    let (auth_checked, set_auth_checked) = signal(false);
+    let (auth_check_in_progress, set_auth_check_in_progress) = signal(false);
 
-    let (resources, set_resources) = create_signal(Vec::<ResourceOption>::new());
-    let (departments, set_departments) = create_signal(Vec::<(String, String)>::new());
-    let (loading, set_loading) = create_signal(false);
-    let (error, set_error) = create_signal(None::<String>);
-    let (success, set_success) = create_signal(None::<String>);
+    let (resources, set_resources) = signal(Vec::<ResourceOption>::new());
+    let (departments, set_departments) = signal(Vec::<(String, String)>::new());
+    let (loading, set_loading) = signal(false);
+    let (error, set_error) = signal(None::<String>);
+    let (success, set_success) = signal(None::<String>);
 
-    let (selected_resource, set_selected_resource) = create_signal(String::new());
-    let (base_salary, set_base_salary) = create_signal(String::new());
-    let (hra_allowance, set_hra_allowance) = create_signal(String::from("0"));
-    let (medical_allowance, set_medical_allowance) = create_signal(String::from("0"));
-    let (transport_allowance, set_transport_allowance) = create_signal(String::from("0"));
-    let (meal_allowance, set_meal_allowance) = create_signal(String::from("0"));
-    let (risk_tier, set_risk_tier) = create_signal(String::from("1"));
-    let (working_days, set_working_days) = create_signal(String::from("22"));
-    let (preview, set_preview) = create_signal(None::<Value>);
+    let (selected_resource, set_selected_resource) = signal(String::new());
+    let (base_salary, set_base_salary) = signal(String::new());
+    let (hra_allowance, set_hra_allowance) = signal(String::from("0"));
+    let (medical_allowance, set_medical_allowance) = signal(String::from("0"));
+    let (transport_allowance, set_transport_allowance) = signal(String::from("0"));
+    let (meal_allowance, set_meal_allowance) = signal(String::from("0"));
+    let (risk_tier, set_risk_tier) = signal(String::from("1"));
+    let (working_days, set_working_days) = signal(String::from("22"));
+    let (preview, set_preview) = signal(None::<Value>);
 
-    let (is_editing, set_is_editing) = create_signal(false);
-    let (change_reason, set_change_reason) = create_signal(String::new());
+    let (is_editing, set_is_editing) = signal(false);
+    let (change_reason, set_change_reason) = signal(String::new());
     let (effective_date_policy, set_effective_date_policy) =
-        create_signal(String::from("pro_rata"));
-    let (history, set_history) = create_signal(Vec::<Value>::new());
-    let (show_history, set_show_history) = create_signal(false);
-    let (history_loading, set_history_loading) = create_signal(false);
+        signal(String::from("pro_rata"));
+    let (history, set_history) = signal(Vec::<Value>::new());
+    let (show_history, set_show_history) = signal(false);
+    let (history_loading, set_history_loading) = signal(false);
 
     let (field_errors, set_field_errors) =
-        create_signal(std::collections::HashMap::<String, String>::new());
+        signal(std::collections::HashMap::<String, String>::new());
     let (server_field_errors, set_server_field_errors) =
-        create_signal(std::collections::HashMap::<String, String>::new());
+        signal(std::collections::HashMap::<String, String>::new());
     let (server_validation_warnings, set_server_validation_warnings) =
-        create_signal(Vec::<String>::new());
-    let (allowance_warning, set_allowance_warning) = create_signal(None::<String>);
+        signal(Vec::<String>::new());
+    let (allowance_warning, set_allowance_warning) = signal(None::<String>);
     let (merged_field_errors, set_merged_field_errors) =
-        create_signal(std::collections::HashMap::<String, String>::new());
+        signal(std::collections::HashMap::<String, String>::new());
 
-    create_effect(move |_| {
+    Effect::new(move |_| {
         let mut merged = field_errors.get();
         for (k, v) in server_field_errors.get() {
             merged.entry(k).or_insert(v);
@@ -88,12 +89,12 @@ pub fn CtcManagement() -> impl IntoView {
 
     {
         let navigate = navigate.clone();
-        create_effect(move |_| {
+        Effect::new(move |_| {
             if !auth.is_authenticated.get() {
                 navigate("/login", Default::default());
                 return;
             }
-
+        
             if let Some(user) = auth.user.get() {
                 set_auth_checked.set(true);
                 if user.role != "hr" {
@@ -101,11 +102,11 @@ pub fn CtcManagement() -> impl IntoView {
                 }
                 return;
             }
-
+        
             if auth_check_in_progress.get() {
                 return;
             }
-
+        
             let token = match current_access_token(&auth) {
                 Some(t) => t,
                 None => {
@@ -113,10 +114,10 @@ pub fn CtcManagement() -> impl IntoView {
                     return;
                 }
             };
-
+        
             set_auth_check_in_progress.set(true);
             let navigate = navigate.clone();
-            spawn_local(async move {
+            leptos::task::spawn_local(async move {
                 match validate_token(token).await {
                     Ok(user) => {
                         auth.user.set(Some(user));
@@ -135,10 +136,10 @@ pub fn CtcManagement() -> impl IntoView {
         });
     }
 
-    create_effect(move |_| {
+    Effect::new(move |_| {
         set_server_field_errors.set(std::collections::HashMap::new());
         let mut errs = std::collections::HashMap::new();
-
+    
         let parse_val =
             |input: &str, key: &str, e: &mut std::collections::HashMap<String, String>| -> i64 {
                 if input.is_empty() {
@@ -163,13 +164,13 @@ pub fn CtcManagement() -> impl IntoView {
                     }
                 }
             };
-
+    
         let base = parse_val(&base_salary.get(), "base_salary", &mut errs);
         let hra = parse_val(&hra_allowance.get(), "hra_allowance", &mut errs);
         let med = parse_val(&medical_allowance.get(), "medical_allowance", &mut errs);
         let trans = parse_val(&transport_allowance.get(), "transport_allowance", &mut errs);
         let meal = parse_val(&meal_allowance.get(), "meal_allowance", &mut errs);
-
+    
         if base > 0 {
             let total_allowance = hra + med + trans + meal;
             if total_allowance > base * 2 {
@@ -182,33 +183,33 @@ pub fn CtcManagement() -> impl IntoView {
         } else {
             set_allowance_warning.set(None);
         }
-
+    
         set_field_errors.set(errs);
     });
 
     let is_hr = Signal::derive(move || auth.user.get().map(|u| u.role == "hr").unwrap_or(false));
 
-    create_effect(move |_| {
+    Effect::new(move |_| {
         if auth.token.get().is_some() {
             if !is_hr.get() {
                 return;
             }
             set_loading.set(true);
             let initial_resource_id = initial_resource_id.clone();
-            spawn_local(async move {
+            leptos::task::spawn_local(async move {
                 let loaded_resources = fetch_resources().await;
                 let loaded_departments = fetch_departments().await;
-
+                
                 match (loaded_resources, loaded_departments) {
                     (Ok(res), Ok(depts)) => {
                         set_resources.set(res);
                         set_departments.set(depts);
-
+                
                         let init_id = initial_resource_id.clone();
                         if !init_id.is_empty() {
                             set_selected_resource.set(init_id.clone());
                             set_loading.set(true);
-                            spawn_local(async move {
+                            leptos::task::spawn_local(async move {
                                 match fetch_existing_ctc(&init_id).await {
                                     Ok(Some(existing)) => {
                                         set_is_editing.set(true);
@@ -230,12 +231,12 @@ pub fn CtcManagement() -> impl IntoView {
                                 set_loading.set(false);
                             });
                         }
-
+                
                         set_error.set(None);
                     }
                     (Err(e), _) | (_, Err(e)) => set_error.set(Some(e)),
                 }
-
+                
                 set_loading.set(false);
             });
         }
@@ -316,7 +317,7 @@ pub fn CtcManagement() -> impl IntoView {
         let days = working_days.get().parse::<i32>().unwrap_or(22);
 
         set_loading.set(true);
-        spawn_local(async move {
+        leptos::task::spawn_local(async move {
             let payload = json!({
                 "resource_id": resource_id,
                 "base_salary": base,
@@ -327,7 +328,7 @@ pub fn CtcManagement() -> impl IntoView {
                 "working_days_per_month": days,
                 "risk_tier": tier
             });
-
+        
             match calculate_bpjs_preview(payload).await {
                 Ok(data) => {
                     set_preview.set(Some(data));
@@ -357,7 +358,7 @@ pub fn CtcManagement() -> impl IntoView {
                                     .or_else(|| issue.get("issue_type"))
                                     .and_then(|t| t.as_str())
                                     .unwrap_or("error");
-
+        
                                 if severity == "warning" {
                                     warns.push(msg);
                                 } else {
@@ -459,7 +460,7 @@ pub fn CtcManagement() -> impl IntoView {
         }
 
         set_loading.set(true);
-        spawn_local(async move {
+        leptos::task::spawn_local(async move {
             if d_is_editing {
                 let payload = json!({
                     "components": {
@@ -474,7 +475,7 @@ pub fn CtcManagement() -> impl IntoView {
                     "reason": reason,
                     "effective_date_policy": policy
                 });
-
+        
                 match update_ctc_record(resource_id.clone(), payload).await {
                     Ok(_) => {
                         set_success.set(Some("CTC changes saved successfully".to_string()));
@@ -507,7 +508,7 @@ pub fn CtcManagement() -> impl IntoView {
                                         .or_else(|| issue.get("issue_type"))
                                         .and_then(|t| t.as_str())
                                         .unwrap_or("error");
-
+        
                                     if severity == "warning" {
                                         warns.push(msg);
                                     } else {
@@ -545,7 +546,7 @@ pub fn CtcManagement() -> impl IntoView {
                     "working_days_per_month": days,
                     "risk_tier": tier
                 });
-
+        
                 match create_ctc_record(payload).await {
                     Ok(_) => {
                         set_success.set(Some("CTC record created with status Active".to_string()));
@@ -575,7 +576,7 @@ pub fn CtcManagement() -> impl IntoView {
                                         .or_else(|| issue.get("issue_type"))
                                         .and_then(|t| t.as_str())
                                         .unwrap_or("error");
-
+        
                                     if severity == "warning" {
                                         warns.push(msg);
                                     } else {
@@ -623,24 +624,22 @@ pub fn CtcManagement() -> impl IntoView {
             <div class="page-container fade-in">
                 {move || {
                     if !auth_checked.get() {
-                        return view! {
+                        return EitherOf3::A(view! {
                             <div class="alert-info">
                                 "Checking access..."
                             </div>
-                        }
-                            .into_view();
+                        });
                     }
 
                     if !is_hr.get() {
-                        return view! {
+                        return EitherOf3::B(view! {
                             <div class="alert-error">
                                 "Access denied. CTC management is available to HR users only."
                             </div>
-                        }
-                            .into_view();
+                        });
                     }
 
-                    view! {
+                    EitherOf3::C(view! {
                 <div class="space-y-4">
                     <div class="page-header">
                         <h1 class="text-xl font-semibold text-huly-caption">
@@ -650,13 +649,13 @@ pub fn CtcManagement() -> impl IntoView {
 
                     {move || auth.user.get().map(|u| {
                         if u.role != "hr" {
-                            view! {
+                            Either::Left(view! {
                                 <div class="alert-warning">
                                     "Only HR users can create CTC records."
                                 </div>
-                            }
+                            })
                         } else {
-                            view! { <div></div> }
+                            Either::Right(view! { <div></div> })
                         }
                     })}
 
@@ -710,7 +709,7 @@ pub fn CtcManagement() -> impl IntoView {
                                     set_history_loading.set(false);
                                     set_server_validation_warnings.set(Vec::new());
                                     set_loading.set(true);
-                                    spawn_local(async move {
+                                    leptos::task::spawn_local(async move {
                                         match fetch_existing_ctc(&selected_for_load).await {
                                             Ok(Some(existing)) => {
                                                 set_is_editing.set(true);
@@ -828,16 +827,16 @@ pub fn CtcManagement() -> impl IntoView {
                         {move || {
                             let warnings = server_validation_warnings.get();
                             if warnings.is_empty() {
-                                view! { <></> }.into_view()
+                                Either::Left(())
                             } else {
-                                view! {
+                                Either::Right(view! {
                                     <div class="mt-2 alert-warning">
                                         <h3 class="text-sm font-medium">"Validation Warnings:"</h3>
                                         <ul class="list-disc pl-5 mt-1 text-sm">
                                             {warnings.into_iter().map(|w| view! { <li>{w}</li> }).collect_view()}
                                         </ul>
                                     </div>
-                                }.into_view()
+                                })
                             }
                         }}
                         {move || is_editing.get().then(|| view! {
@@ -888,7 +887,7 @@ pub fn CtcManagement() -> impl IntoView {
                                             }
 
                                             set_history_loading.set(true);
-                                            spawn_local(async move {
+                                            leptos::task::spawn_local(async move {
                                                 match fetch_ctc_history(&selected).await {
                                                     Ok(hist) => set_history.set(hist),
                                                     Err(e) => set_error.set(Some(e)),
@@ -996,8 +995,8 @@ pub fn CtcManagement() -> impl IntoView {
                         </div>
                     })}
                 </div>
-                    }
-                        .into_view()
+                    })
+                        
                 }}
             </div>
 
@@ -1034,9 +1033,9 @@ fn MoneyInput(
             {move || {
                 let errs = field_errors.get();
                 if let Some(err) = errs.get(&field_name) {
-                    view! { <p class="mt-1 text-xs text-negative-default">{err.clone()}</p> }.into_view()
+                    Either::Left(view! { <p class="mt-1 text-xs text-negative-default">{err.clone()}</p> })
                 } else {
-                    view! { <></> }.into_view()
+                    Either::Right(())
                 }
             }}
         </div>

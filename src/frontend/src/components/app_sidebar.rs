@@ -1,6 +1,6 @@
 use crate::auth::{logout_user, use_auth};
-use leptos::*;
-use leptos_router::*;
+use leptos::prelude::*;
+use leptos_router::hooks::*;
 
 /// Sidebar navigation item
 #[component]

@@ -1,7 +1,7 @@
 use crate::auth::{login_user, use_auth};
 
-use leptos::*;
-use leptos_router::*;
+use leptos::prelude::*;
+use leptos_router::hooks::*;
 
 fn role_dashboard_path(role: &str) -> &'static str {
     match role {
@@ -21,15 +21,15 @@ pub fn Login() -> impl IntoView {
     let navigate = use_navigate();
 
     // Form state
-    let (email, set_email) = create_signal("".to_string());
-    let (password, set_password) = create_signal("".to_string());
-    let (error, set_error) = create_signal(Option::<String>::None);
-    let (loading, set_loading) = create_signal(false);
+    let (email, set_email) = signal("".to_string());
+    let (password, set_password) = signal("".to_string());
+    let (error, set_error) = signal(Option::<String>::None);
+    let (loading, set_loading) = signal(false);
 
     // Redirect if already logged in
     {
         let navigate = navigate.clone();
-        create_effect(move |_| {
+        Effect::new(move |_| {
             if auth.is_authenticated.get() {
                 let path = auth
                     .user
@@ -54,7 +54,7 @@ pub fn Login() -> impl IntoView {
             let password_val = password.get();
             let navigate = navigate.clone();
 
-            spawn_local(async move {
+            leptos::task::spawn_local(async move {
                 match login_user(email_val, password_val).await {
                     Ok(response) => {
                         let destination = role_dashboard_path(&response.user.role).to_string();

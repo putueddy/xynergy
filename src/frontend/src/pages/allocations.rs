@@ -8,8 +8,9 @@ use crate::components::{
 };
 use crate::timeline::{TimelineGroup, TimelineItem};
 use chrono::{Datelike, Weekday};
-use leptos::*;
-use leptos_router::*;
+use leptos::either::Either;
+use leptos::prelude::*;
+use leptos_router::hooks::*;
 use serde::Deserialize;
 use uuid::Uuid;
 
@@ -60,7 +61,7 @@ pub fn Allocations() -> impl IntoView {
     // Redirect if not logged in
     {
         let navigate = navigate.clone();
-        create_effect(move |_| {
+        Effect::new(move |_| {
             if !auth.is_authenticated.get() {
                 navigate("/login", Default::default());
             }
@@ -68,57 +69,57 @@ pub fn Allocations() -> impl IntoView {
     }
 
     // Data signals
-    let (allocations, set_allocations) = create_signal(Vec::new());
-    let (resources, set_resources) = create_signal(Vec::new());
-    let (projects, set_projects) = create_signal(Vec::new());
-    let (holidays, set_holidays) = create_signal(Vec::new());
-    let (loading, set_loading) = create_signal(false);
-    let (error, set_error) = create_signal(Option::<String>::None);
+    let (allocations, set_allocations) = signal(Vec::new());
+    let (resources, set_resources) = signal(Vec::new());
+    let (projects, set_projects) = signal(Vec::new());
+    let (holidays, set_holidays) = signal(Vec::new());
+    let (loading, set_loading) = signal(false);
+    let (error, set_error) = signal(Option::<String>::None);
 
-    let (show_form, set_show_form) = create_signal(false);
-    let (editing_allocation, set_editing_allocation) = create_signal(Option::<Allocation>::None);
-    let (form_submitting, set_form_submitting) = create_signal(false);
-    let (deleting_id, set_deleting_id) = create_signal(Option::<String>::None);
+    let (show_form, set_show_form) = signal(false);
+    let (editing_allocation, set_editing_allocation) = signal(Option::<Allocation>::None);
+    let (form_submitting, set_form_submitting) = signal(false);
+    let (deleting_id, set_deleting_id) = signal(Option::<String>::None);
 
     // Load data on mount
-    create_effect(move |_| {
+    Effect::new(move |_| {
         set_loading.set(true);
-        spawn_local(async move {
+        leptos::task::spawn_local(async move {
             // Load allocations
             match fetch_allocations().await {
                 Ok(data) => set_allocations.set(data),
                 Err(e) => set_error.set(Some(e)),
             }
-
+            
             // Load resources
             match fetch_resources().await {
                 Ok(data) => set_resources.set(data),
                 Err(e) => set_error.set(Some(e)),
             }
-
+            
             // Load projects
             match fetch_projects().await {
                 Ok(data) => set_projects.set(data),
                 Err(e) => set_error.set(Some(e)),
             }
-
+            
             // Load holidays
             match fetch_holidays().await {
                 Ok(data) => set_holidays.set(data),
                 Err(e) => set_error.set(Some(e)),
             }
-
+            
             set_loading.set(false);
         });
     });
 
     // Convert allocations to timeline groups and items
-    let (timeline_groups, set_timeline_groups) = create_signal(Vec::<TimelineGroup>::new());
-    let (timeline_items, set_timeline_items) = create_signal(Vec::<TimelineItem>::new());
+    let (timeline_groups, set_timeline_groups) = signal(Vec::<TimelineGroup>::new());
+    let (timeline_items, set_timeline_items) = signal(Vec::<TimelineItem>::new());
 
-    create_effect(move |_| {
+    Effect::new(move |_| {
         let all_allocations = allocations.get();
-
+    
         // Create groups from unique resources
         let mut resource_map = std::collections::HashMap::new();
         for allocation in &all_allocations {
@@ -126,14 +127,14 @@ pub fn Allocations() -> impl IntoView {
                 .entry(allocation.resource_id.clone())
                 .or_insert_with(|| (allocation.resource_name.clone(), 0.0));
         }
-
+    
         // Calculate total allocation percentage per resource
         for allocation in &all_allocations {
             if let Some((_, total)) = resource_map.get_mut(&allocation.resource_id) {
                 *total += allocation.allocation_percentage;
             }
         }
-
+    
         // Create timeline groups - no background color on rows
         // Sort by resource name for stable ordering
         let mut groups: Vec<TimelineGroup> = resource_map
@@ -148,7 +149,7 @@ pub fn Allocations() -> impl IntoView {
             )
             .collect();
         groups.sort_by(|a, b| a.content.cmp(&b.content));
-
+    
         // Create timeline items from allocations
         // Assign consistent colors to projects
         let mut project_colors: std::collections::HashMap<
@@ -309,7 +310,7 @@ pub fn Allocations() -> impl IntoView {
         ];
         let mut color_index = 0;
         let mut items: Vec<TimelineItem> = Vec::new();
-
+    
         for a in all_allocations {
             // Get or assign color for this project
             let (color, bg_class, text_class, text_color) = project_colors
@@ -326,7 +327,7 @@ pub fn Allocations() -> impl IntoView {
             } else {
                 ""
             };
-
+    
             if a.include_weekend {
                 // Continuous allocation from start to end
                 // Add one day to end date to make it inclusive
@@ -339,7 +340,7 @@ pub fn Allocations() -> impl IntoView {
                 } else {
                     a.end_date.clone()
                 };
-
+    
                 items.push(TimelineItem {
                     id: a.id.to_string(),
                     group: Some(a.resource_id.to_string()),
@@ -366,10 +367,10 @@ pub fn Allocations() -> impl IntoView {
                     // Get holiday dates as a set for O(1) lookup
                     let holiday_dates: std::collections::HashSet<String> =
                         holidays.get().iter().map(|h| h.date.clone()).collect();
-
+    
                     let mut current_start: Option<chrono::NaiveDate> = None;
                     let mut current_end: Option<chrono::NaiveDate> = None;
-
+    
                     let mut current = start_date;
                     while current <= end_date {
                         let weekday = current.weekday();
@@ -378,7 +379,7 @@ pub fn Allocations() -> impl IntoView {
                         let current_date_str = current.format("%Y-%m-%d").to_string();
                         let is_holiday = holiday_dates.contains(&current_date_str);
                         let is_working_day = !is_weekend && !is_holiday;
-
+    
                         if is_working_day {
                             if current_start.is_none() {
                                 current_start = Some(current);
@@ -415,10 +416,10 @@ pub fn Allocations() -> impl IntoView {
                             current_start = None;
                             current_end = None;
                         }
-
+    
                         current = current + chrono::Duration::days(1);
                     }
-
+    
                     // Create final item if there's an ongoing working period
                     if let (Some(start), Some(end)) = (current_start, current_end) {
                         // Add one day to make end date inclusive
@@ -446,7 +447,7 @@ pub fn Allocations() -> impl IntoView {
                 }
             }
         }
-
+    
         // Add holiday background items
         for holiday in holidays.get() {
             if let Ok(date) = chrono::NaiveDate::parse_from_str(&holiday.date, "%Y-%m-%d") {
@@ -466,7 +467,7 @@ pub fn Allocations() -> impl IntoView {
                 });
             }
         }
-
+    
         // Add weekend background items for the visible range (today ± 45 days for scrolling)
         {
             let today = chrono::Local::now().date_naive();
@@ -496,7 +497,7 @@ pub fn Allocations() -> impl IntoView {
                 current += chrono::Duration::days(1);
             }
         }
-
+    
         set_timeline_groups.set(groups);
         set_timeline_items.set(items);
     });
@@ -504,16 +505,16 @@ pub fn Allocations() -> impl IntoView {
     // Handle form submission
     let handle_submit = move |form_data: AllocationFormData| {
         let editing_id = editing_allocation.get().map(|a| a.id);
-        spawn_local(async move {
+        leptos::task::spawn_local(async move {
             set_form_submitting.set(true);
             set_error.set(None);
-
+        
             let result = if let Some(allocation_id) = editing_id {
                 update_allocation_form(allocation_id.to_string(), form_data).await
             } else {
                 create_allocation(form_data).await
             };
-
+        
             match result {
                 Ok(_) => {
                     // Reload allocations
@@ -538,7 +539,7 @@ pub fn Allocations() -> impl IntoView {
     };
 
     // Convert to option types for form
-    let resource_options = create_memo(move |_| {
+    let resource_options = Memo::new(move |_| {
         resources
             .get()
             .into_iter()
@@ -549,7 +550,7 @@ pub fn Allocations() -> impl IntoView {
             .collect::<Vec<_>>()
     });
 
-    let project_options = create_memo(move |_| {
+    let project_options = Memo::new(move |_| {
         projects
             .get()
             .into_iter()
@@ -560,7 +561,7 @@ pub fn Allocations() -> impl IntoView {
             .collect::<Vec<_>>()
     });
 
-    let holiday_axis_css = create_memo(move |_| {
+    let holiday_axis_css = Memo::new(move |_| {
         let month_names = [
             "january",
             "february",
@@ -576,7 +577,7 @@ pub fn Allocations() -> impl IntoView {
             "december",
         ];
         let mut rules = String::new();
-
+    
         // Holiday axis label highlighting
         for holiday in holidays.get() {
             if let Ok(date) = chrono::NaiveDate::parse_from_str(&holiday.date, "%Y-%m-%d") {
@@ -589,7 +590,7 @@ pub fn Allocations() -> impl IntoView {
                 ));
             }
         }
-
+    
         // Weekend axis label highlighting (same style as holidays)
         {
             let today = chrono::Local::now().date_naive();
@@ -610,7 +611,7 @@ pub fn Allocations() -> impl IntoView {
                 current += chrono::Duration::days(1);
             }
         }
-
+    
         rules
     });
 
@@ -669,7 +670,7 @@ pub fn Allocations() -> impl IntoView {
                         if show_form.get() {
                             let is_edit = editing_allocation.get().is_some();
                             let title = if is_edit { "Edit Allocation" } else { "Create Allocation" };
-                            view! {
+                            Either::Left(view! {
                                 <div class="card relative">
                                     <h2 class="text-xl font-semibold text-huly-caption mb-4">
                                         {title}
@@ -684,22 +685,22 @@ pub fn Allocations() -> impl IntoView {
                                     />
                                     {move || {
                                         if form_submitting.get() {
-                                            view! {
+                                            Either::Left(view! {
                                                 <div class="absolute inset-0 flex items-center justify-center bg-huly-back/70 rounded-lg">
                                                     <div class="text-center">
                                                         <div class="spinner mx-auto mb-2"></div>
                                                         <p class="text-sm text-huly-secondary">"Saving..."</p>
                                                     </div>
                                                 </div>
-                                            }.into_view()
+                                            })
                                         } else {
-                                            view! { <div></div> }.into_view()
+                                            Either::Right(view! { <div></div> })
                                         }
                                     }}
                                 </div>
-                            }.into_view()
+                            })
                         } else {
-                            view! { <div></div> }.into_view()
+                            Either::Right(view! { <div></div> })
                         }
                     }}
 
@@ -729,7 +730,7 @@ pub fn Allocations() -> impl IntoView {
                                             }
                                         });
 
-                                        spawn_local(async move {
+                                        leptos::task::spawn_local(async move {
                                             set_error.set(None);
 
                                             web_sys::console::log_1(&"Calling update_allocation...".into());
@@ -750,7 +751,7 @@ pub fn Allocations() -> impl IntoView {
 
                                 {move || {
                                     if loading.get() {
-                                        view! {
+                                        Either::Left(view! {
                                             <div class="absolute inset-0 flex items-center justify-center bg-huly-back/70">
                                                 <div class="space-y-3 w-full max-w-md px-4">
                                                     <div class="skeleton-row"><div class="skeleton-text w-28"></div><div class="skeleton-text w-20"></div><div class="skeleton-text w-24"></div></div>
@@ -758,9 +759,9 @@ pub fn Allocations() -> impl IntoView {
                                                     <div class="skeleton-row"><div class="skeleton-text w-32"></div><div class="skeleton-text w-12"></div><div class="skeleton-text w-28"></div></div>
                                                 </div>
                                             </div>
-                                        }.into_view()
+                                        })
                                     } else {
-                                        view! { <div></div> }.into_view()
+                                        Either::Right(view! { <div></div> })
                                     }
                                 }}
                             </div>
@@ -768,7 +769,7 @@ pub fn Allocations() -> impl IntoView {
 
                         {move || {
                             if allocations.get().is_empty() && !loading.get() {
-                                view! {
+                                Either::Left(view! {
                                     <div class="empty-state py-12 panel">
                                         <svg class="w-12 h-12 text-huly-ghost mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1">
                                             <path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
@@ -776,17 +777,17 @@ pub fn Allocations() -> impl IntoView {
                                         <p class="text-huly-secondary text-sm">"No allocations found."</p>
                                         <p class="text-huly-muted text-xs mt-1">"Click 'Add Allocation' to create one."</p>
                                     </div>
-                                }.into_view()
+                                })
                             } else {
-                                view! { <div></div> }.into_view()
+                                Either::Right(view! { <div></div> })
                             }
                         }}
 
                         {move || {
                             if allocations.get().is_empty() {
-                                view! { <div></div> }.into_view()
+                                Either::Left(view! { <div></div> })
                             } else {
-                                view! {
+                                Either::Right(view! {
                                     <div class="panel">
                                         <div class="toolbar">
                                             <h2 class="text-sm font-semibold text-huly-caption">
@@ -850,7 +851,7 @@ pub fn Allocations() -> impl IntoView {
                                                                                         move |_| {
                                                                                             let id_clone = id.clone();
                                                                                             set_deleting_id.set(Some(id_clone.clone()));
-                                                                                            spawn_local(async move {
+                                                                                            leptos::task::spawn_local(async move {
                                                                                                 set_error.set(None);
 
                                                                                                 match delete_allocation(id_clone).await {
@@ -881,7 +882,7 @@ pub fn Allocations() -> impl IntoView {
                                             </table>
                                         </div>
                                     </div>
-                                }.into_view()
+                                })
                             }
                         }}
                     </div>

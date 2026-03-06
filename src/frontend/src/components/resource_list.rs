@@ -1,4 +1,4 @@
-use leptos::*;
+use leptos::prelude::*;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -75,13 +75,13 @@ pub fn ResourceList(
                                     <td class="td-cell-compact whitespace-nowrap text-right text-sm font-medium">
                                         <button
                                             class="link mr-3"
-                                            on:click=move |_| on_edit.call(resource_id)
+                                            on:click=move |_| on_edit.run(resource_id)
                                         >
                                             "Edit"
                                         </button>
                                         <button
                                             class="link-danger"
-                                            on:click=move |_| on_delete.call(resource_id)
+                                            on:click=move |_| on_delete.run(resource_id)
                                         >
                                             "Delete"
                                         </button>

@@ -1,8 +1,9 @@
 use crate::auth::{authenticated_get, logout_user, use_auth};
 
 use chrono::NaiveDate;
-use leptos::*;
-use leptos_router::*;
+use leptos::prelude::*;
+use leptos::either::Either;
+use leptos_router::hooks::*;
 use serde::Deserialize;
 
 /// Dashboard page component
@@ -14,7 +15,7 @@ pub fn Dashboard() -> impl IntoView {
     // Redirect if not logged in
     {
         let navigate = navigate.clone();
-        create_effect(move |_| {
+        Effect::new(move |_| {
             if !auth.is_authenticated.get() {
                 navigate("/login", Default::default());
             }
@@ -30,21 +31,21 @@ pub fn Dashboard() -> impl IntoView {
     };
 
     let user = auth.user;
-    let (resources_count, set_resources_count) = create_signal(0usize);
-    let (active_projects_count, set_active_projects_count) = create_signal(0usize);
-    let (allocations_count, set_allocations_count) = create_signal(0usize);
-    let (upcoming_deadlines, set_upcoming_deadlines) = create_signal(Vec::<ProjectSummary>::new());
-    let (recent_activity, set_recent_activity) = create_signal(Vec::<AuditLogEntry>::new());
-    let (dashboard_error, set_dashboard_error) = create_signal(Option::<String>::None);
-    let (loading, set_loading) = create_signal(false);
+    let (resources_count, set_resources_count) = signal(0usize);
+    let (active_projects_count, set_active_projects_count) = signal(0usize);
+    let (allocations_count, set_allocations_count) = signal(0usize);
+    let (upcoming_deadlines, set_upcoming_deadlines) = signal(Vec::<ProjectSummary>::new());
+    let (recent_activity, set_recent_activity) = signal(Vec::<AuditLogEntry>::new());
+    let (dashboard_error, set_dashboard_error) = signal(Option::<String>::None);
+    let (loading, set_loading) = signal(false);
 
-    create_effect(move |_| {
+    Effect::new(move |_| {
         set_loading.set(true);
         let navigate = navigate.clone();
-        spawn_local(async move {
+        leptos::task::spawn_local(async move {
             let mut had_error = None;
             let mut session_expired = false;
-
+            
             match fetch_resources_count().await {
                 Ok(count) => set_resources_count.set(count),
                 Err(e) => {
@@ -54,7 +55,7 @@ pub fn Dashboard() -> impl IntoView {
                     had_error = Some(e)
                 }
             }
-
+            
             match fetch_allocations_count().await {
                 Ok(count) => set_allocations_count.set(count),
                 Err(e) => {
@@ -64,12 +65,12 @@ pub fn Dashboard() -> impl IntoView {
                     had_error = Some(e)
                 }
             }
-
+            
             match fetch_projects().await {
                 Ok(projects) => {
                     let active = projects.iter().filter(|p| p.status == "Active").count();
                     set_active_projects_count.set(active);
-
+            
                     let today = chrono::Local::now().date_naive();
                     let mut upcoming: Vec<ProjectSummary> = projects
                         .into_iter()
@@ -86,7 +87,7 @@ pub fn Dashboard() -> impl IntoView {
                     had_error = Some(e)
                 }
             }
-
+            
             match fetch_audit_logs().await {
                 Ok(entries) => set_recent_activity.set(entries),
                 Err(e) => {
@@ -96,7 +97,7 @@ pub fn Dashboard() -> impl IntoView {
                     had_error = Some(e)
                 }
             }
-
+            
             if session_expired {
                 logout_user(&auth);
                 set_dashboard_error.set(Some(
@@ -106,7 +107,7 @@ pub fn Dashboard() -> impl IntoView {
                 set_loading.set(false);
                 return;
             }
-
+            
             set_dashboard_error.set(had_error);
             set_loading.set(false);
         });
@@ -189,9 +190,9 @@ pub fn Dashboard() -> impl IntoView {
                             <h3 class="text-xs font-semibold text-huly-secondary uppercase tracking-wider">"Upcoming Deadlines"</h3>
                             {move || {
                                 if loading.get() {
-                                    view! { <span class="skeleton-text w-16 h-2 ml-auto"></span> }.into_view()
+                                    Either::Left(view! { <span class="skeleton-text w-16 h-2 ml-auto"></span> })
                                 } else {
-                                    view! { <span></span> }.into_view()
+                                    Either::Right(view! { <span></span> })
                                 }
                             }}
                         </div>
@@ -199,16 +200,16 @@ pub fn Dashboard() -> impl IntoView {
                             {move || {
                                 let items = upcoming_deadlines.get();
                                 if items.is_empty() {
-                                    view! {
+                                    Either::Left(view! {
                                         <div class="empty-state py-6">
                                             <svg class="w-8 h-8 text-huly-ghost mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1">
                                                 <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
                                             </svg>
                                             <p class="text-huly-muted text-xs">"No upcoming deadlines."</p>
                                         </div>
-                                    }.into_view()
+                                    })
                                 } else {
-                                    view! {
+                                    Either::Right(view! {
                                         <div>
                                             {items.into_iter().map(|p| {
                                                 view! {
@@ -219,7 +220,7 @@ pub fn Dashboard() -> impl IntoView {
                                                 }
                                             }).collect_view()}
                                         </div>
-                                    }.into_view()
+                                    })
                                 }
                             }}
                         </div>
@@ -231,9 +232,9 @@ pub fn Dashboard() -> impl IntoView {
                             <h3 class="text-xs font-semibold text-huly-secondary uppercase tracking-wider">"Recent Activity"</h3>
                             {move || {
                                 if loading.get() {
-                                    view! { <span class="skeleton-text w-16 h-2 ml-auto"></span> }.into_view()
+                                    Either::Left(view! { <span class="skeleton-text w-16 h-2 ml-auto"></span> })
                                 } else {
-                                    view! { <span></span> }.into_view()
+                                    Either::Right(view! { <span></span> })
                                 }
                             }}
                         </div>
@@ -241,16 +242,16 @@ pub fn Dashboard() -> impl IntoView {
                             {move || {
                                 let items = recent_activity.get();
                                 if items.is_empty() {
-                                    view! {
+                                    Either::Left(view! {
                                         <div class="empty-state py-6">
                                             <svg class="w-8 h-8 text-huly-ghost mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1">
                                                 <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
                                             </svg>
                                             <p class="text-huly-muted text-xs">"No recent activity."</p>
                                         </div>
-                                    }.into_view()
+                                    })
                                 } else {
-                                    view! {
+                                    Either::Right(view! {
                                         <div>
                                             {items.into_iter().map(|entry| {
                                                 let user_label = entry.user_name.unwrap_or_else(|| "System".to_string());
@@ -271,7 +272,7 @@ pub fn Dashboard() -> impl IntoView {
                                                 }
                                             }).collect_view()}
                                         </div>
-                                    }.into_view()
+                                    })
                                 }
                             }}
                         </div>

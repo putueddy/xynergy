@@ -1,4 +1,5 @@
-use leptos::*;
+use leptos::either::Either;
+use leptos::prelude::*;
 
 /// Project form data
 #[derive(Debug, Clone, Default)]
@@ -23,67 +24,67 @@ pub fn ProjectForm(
     on_submit: Callback<ProjectFormData>,
     on_cancel: Callback<()>,
 ) -> impl IntoView {
-    let (name, set_name) = create_signal(
+    let (name, set_name) = signal(
         initial_data
             .as_ref()
             .map(|d| d.name.clone())
             .unwrap_or_default(),
     );
-    let (description, set_description) = create_signal(
+    let (description, set_description) = signal(
         initial_data
             .as_ref()
             .map(|d| d.description.clone())
             .unwrap_or_default(),
     );
-    let (client, set_client) = create_signal(
+    let (client, set_client) = signal(
         initial_data
             .as_ref()
             .map(|d| d.client.clone())
             .unwrap_or_default(),
     );
-    let (start_date, set_start_date) = create_signal(
+    let (start_date, set_start_date) = signal(
         initial_data
             .as_ref()
             .map(|d| d.start_date.clone())
             .unwrap_or_default(),
     );
-    let (end_date, set_end_date) = create_signal(
+    let (end_date, set_end_date) = signal(
         initial_data
             .as_ref()
             .map(|d| d.end_date.clone())
             .unwrap_or_default(),
     );
-    let (status, set_status) = create_signal(
+    let (status, set_status) = signal(
         initial_data
             .as_ref()
             .map(|d| d.status.clone())
             .unwrap_or_else(|| "Active".to_string()),
     );
-    let (total_budget_idr, set_total_budget_idr) = create_signal(
+    let (total_budget_idr, set_total_budget_idr) = signal(
         initial_data
             .as_ref()
             .map(|d| d.total_budget_idr.clone())
             .unwrap_or_default(),
     );
-    let (budget_hr_idr, set_budget_hr_idr) = create_signal(
+    let (budget_hr_idr, set_budget_hr_idr) = signal(
         initial_data
             .as_ref()
             .map(|d| d.budget_hr_idr.clone())
             .unwrap_or_default(),
     );
-    let (budget_software_idr, set_budget_software_idr) = create_signal(
+    let (budget_software_idr, set_budget_software_idr) = signal(
         initial_data
             .as_ref()
             .map(|d| d.budget_software_idr.clone())
             .unwrap_or_default(),
     );
-    let (budget_hardware_idr, set_budget_hardware_idr) = create_signal(
+    let (budget_hardware_idr, set_budget_hardware_idr) = signal(
         initial_data
             .as_ref()
             .map(|d| d.budget_hardware_idr.clone())
             .unwrap_or_default(),
     );
-    let (budget_overhead_idr, set_budget_overhead_idr) = create_signal(
+    let (budget_overhead_idr, set_budget_overhead_idr) = signal(
         initial_data
             .as_ref()
             .map(|d| d.budget_overhead_idr.clone())
@@ -121,7 +122,7 @@ pub fn ProjectForm(
         (total, sum)
     };
 
-    let (validation_error, set_validation_error) = create_signal(Option::<String>::None);
+    let (validation_error, set_validation_error) = signal(Option::<String>::None);
 
     let handle_submit = move |ev: leptos::ev::SubmitEvent| {
         ev.prevent_default();
@@ -192,7 +193,7 @@ pub fn ProjectForm(
         }
 
         set_validation_error.set(None);
-        on_submit.call(ProjectFormData {
+        on_submit.run(ProjectFormData {
             name: name.get(),
             client: client.get(),
             description: description.get(),
@@ -352,14 +353,14 @@ pub fn ProjectForm(
                 {move || {
                     let (total, sum) = budget_totals();
                     if total > 0 && sum != total {
-                        view! {
+                        Either::Left(view! {
                             <p class="text-sm text-warning-default">
                                 {format!("⚠ Category sum ({}) does not equal total budget ({})", sum, total)}
                             </p>
-                        }
-                            .into_view()
+                        })
+
                     } else {
-                        view! { <></> }.into_view()
+                        Either::Right(view! { <></> })
                     }
                 }}
 
@@ -419,7 +420,7 @@ pub fn ProjectForm(
                 <button
                     type="button"
                     class="btn-secondary btn-press"
-                    on:click=move |_| on_cancel.call(())
+                    on:click=move |_| on_cancel.run(())
                 >
                     "Cancel"
                 </button>

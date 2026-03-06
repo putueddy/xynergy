@@ -1,9 +1,10 @@
 use crate::timeline::{
-    create_timeline_options, groups_to_js_array,
-    items_to_js_array, Timeline, TimelineGroup, TimelineItem,
+    create_timeline_options, groups_to_js_array, items_to_js_array, Timeline, TimelineGroup,
+    TimelineItem,
 };
+use leptos::either::Either;
 use js_sys::{Function, Reflect};
-use leptos::*;
+use leptos::prelude::*;
 use wasm_bindgen::closure::Closure;
 use wasm_bindgen::JsCast;
 use wasm_bindgen::JsValue;
@@ -18,9 +19,9 @@ pub fn TimelineChart(
     #[prop(default = Vec::new())] holidays: Vec<String>,
     #[prop(optional)] on_item_move: Option<Callback<(String, String, String)>>, // (item_id, new_start, new_end)
 ) -> impl IntoView {
-    let timeline_ref = create_node_ref::<leptos::html::Div>();
+    let timeline_ref = NodeRef::<leptos::html::Div>::new();
     // Use StoredValue instead of create_signal because Timeline doesn't implement Clone
-    let timeline_instance = store_value::<Option<Timeline>>(None);
+    let timeline_instance = StoredValue::new_local(None);
 
     // Calculate date range centered around today
     let (start_date, end_date) = {
@@ -34,7 +35,7 @@ pub fn TimelineChart(
     };
 
     // Initialize timeline when component mounts
-    create_effect(move |_| {
+    Effect::new(move |_| {
         if let Some(container) = timeline_ref.get() {
             let groups_data = groups.get();
             let items_data = items.get();
@@ -108,7 +109,7 @@ pub fn TimelineChart(
                                         ))
                                         .unwrap();
 
-                                    callback_clone.call((id, start, end));
+                                    callback_clone.run((id, start, end));
                                 } else {
                                     web_sys::console::log_1(
                                         &"Failed to convert item to object".into(),
@@ -149,7 +150,7 @@ pub fn TimelineChart(
     });
 
     // Update timeline when data changes
-    create_effect(move |_| {
+    Effect::new(move |_| {
         let items_data = items.get();
         let groups_data = groups.get();
 
@@ -169,16 +170,16 @@ pub fn TimelineChart(
 
     view! {
         <div class="timeline-container w-full h-full min-h-[400px]">
-            <div _ref=timeline_ref class="vis-timeline-wrapper w-full h-full">
+            <div node_ref=timeline_ref class="vis-timeline-wrapper w-full h-full">
                 {move || {
                     if groups.get().is_empty() {
-                        view! {
+                        Either::Left(view! {
                             <div class="flex items-center justify-center h-full text-huly-muted">
                                 "No resources to display"
                             </div>
-                        }.into_view()
+                        })
                     } else {
-                        view! { <div></div> }.into_view()
+                        Either::Right(view! { <div></div> })
                     }
                 }}
             </div>
