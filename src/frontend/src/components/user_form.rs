@@ -85,17 +85,17 @@ pub fn UserForm(
     };
 
     view! {
-        <form on:submit=handle_submit class="space-y-4">
+        <form on:submit=handle_submit class="space-y-3">
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 // Email
                 <div>
-                    <label for="email" class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    <label for="email" class="label">
                         "Email *"
                     </label>
                     <input
                         type="email"
                         id="email"
-                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white sm:text-sm"
+                        class="input"
                         placeholder="user@example.com"
                         prop:value=email
                         on:input=move |ev| set_email.set(event_target_value(&ev))
@@ -108,13 +108,13 @@ pub fn UserForm(
                 {if !is_edit {
                     view! {
                         <div>
-                            <label for="password" class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                            <label for="password" class="label">
                                 "Password *"
                             </label>
                             <input
                                 type="password"
                                 id="password"
-                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white sm:text-sm"
+                                class="input"
                                 placeholder="••••••••"
                                 prop:value=password
                                 on:input=move |ev| set_password.set(event_target_value(&ev))
@@ -128,13 +128,13 @@ pub fn UserForm(
 
                 // First Name
                 <div>
-                    <label for="first_name" class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    <label for="first_name" class="label">
                         "First Name *"
                     </label>
                     <input
                         type="text"
                         id="first_name"
-                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white sm:text-sm"
+                        class="input"
                         placeholder="John"
                         prop:value=first_name
                         on:input=move |ev| set_first_name.set(event_target_value(&ev))
@@ -144,13 +144,13 @@ pub fn UserForm(
 
                 // Last Name
                 <div>
-                    <label for="last_name" class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    <label for="last_name" class="label">
                         "Last Name *"
                     </label>
                     <input
                         type="text"
                         id="last_name"
-                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white sm:text-sm"
+                        class="input"
                         placeholder="Doe"
                         prop:value=last_name
                         on:input=move |ev| set_last_name.set(event_target_value(&ev))
@@ -160,12 +160,12 @@ pub fn UserForm(
 
                 // Role
                 <div>
-                    <label for="role" class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    <label for="role" class="label">
                         "Role *"
                     </label>
                     <select
                         id="role"
-                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white sm:text-sm"
+                        class="input"
                         prop:value=role
                         on:change=move |ev| set_role.set(event_target_value(&ev))
                         required
@@ -181,12 +181,12 @@ pub fn UserForm(
 
                 // Department
                 <div>
-                    <label for="department" class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    <label for="department" class="label">
                         "Department"
                     </label>
                     <select
                         id="department"
-                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white sm:text-sm"
+                        class="input"
                         prop:value=department_id
                         on:change=move |ev| set_department_id.set(event_target_value(&ev))
                     >
@@ -201,10 +201,10 @@ pub fn UserForm(
             </div>
 
             // Form buttons
-            <div class="flex justify-end space-x-3 pt-4">
+            <div class="flex justify-end gap-2 pt-3">
                 <button
                     type="button"
-                    class="btn-secondary"
+                    class="btn-secondary btn-press"
                     on:click=move |_| on_cancel.call(())
                     disabled=is_submitting
                 >
@@ -212,7 +212,7 @@ pub fn UserForm(
                 </button>
                 <button
                     type="submit"
-                    class="btn-primary"
+                    class="btn-primary btn-press"
                     disabled=is_submitting
                 >
                     {if is_submitting {

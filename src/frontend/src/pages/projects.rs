@@ -3,7 +3,7 @@ use crate::auth::{
     use_auth,
 };
 use crate::components::project_list::Project;
-use crate::components::{project_form::ProjectFormData, Footer, Header, ProjectForm, ProjectList};
+use crate::components::{project_form::ProjectFormData, ProjectForm, ProjectList};
 use chrono::{Datelike, NaiveDate};
 use gloo_timers::callback::Interval;
 use leptos::*;
@@ -213,14 +213,14 @@ fn ExpenseFormPanel(
 ) -> impl IntoView {
     view! {
         <form
-            class="space-y-4 mb-8 bg-gray-50 dark:bg-gray-700/50 p-4 rounded-lg"
+            class="space-y-4 mb-8 bg-huly-surface-2 p-4 rounded-lg"
             on:submit=move |ev| on_submit.call(ev)
         >
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">"Category"</label>
+                    <label class="label">"Category"</label>
                     <select
-                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                        class="mt-1 select"
                         on:change=move |ev| set_category.set(event_target_value(&ev))
                         prop:value=category
                         required
@@ -233,43 +233,43 @@ fn ExpenseFormPanel(
                     </select>
                 </div>
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">"Amount (IDR)"</label>
+                    <label class="label">"Amount (IDR)"</label>
                     <input
                         type="text"
                         inputmode="numeric"
                         pattern="[0-9]*"
                         autocomplete="off"
-                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                        class="mt-1 input"
                         on:input=move |ev| set_amount.set(event_target_value(&ev))
                         prop:value=amount
                         required
                     />
                 </div>
                 <div class="md:col-span-2">
-                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">"Description"</label>
+                    <label class="label">"Description"</label>
                     <input
                         type="text"
-                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                        class="mt-1 input"
                         on:input=move |ev| set_description.set(event_target_value(&ev))
                         prop:value=description
                         required
                     />
                 </div>
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">"Date"</label>
+                    <label class="label">"Date"</label>
                     <input
                         type="date"
-                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                        class="mt-1 input"
                         on:input=move |ev| set_date_value.set(event_target_value(&ev))
                         prop:value=date_value
                         required
                     />
                 </div>
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">"Vendor (Optional)"</label>
+                    <label class="label">"Vendor (Optional)"</label>
                     <input
                         type="text"
-                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                        class="mt-1 input"
                         on:input=move |ev| set_vendor.set(event_target_value(&ev))
                         prop:value=vendor
                     />
@@ -277,10 +277,10 @@ fn ExpenseFormPanel(
                 {move || if is_editing.get() {
                     view! {
                         <div class="md:col-span-2">
-                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">"Edit Reason"</label>
+                            <label class="label">"Edit Reason"</label>
                             <input
                                 type="text"
-                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                                class="mt-1 input"
                                 on:input=move |ev| set_edit_reason.set(event_target_value(&ev))
                                 prop:value=edit_reason
                                 required
@@ -295,14 +295,14 @@ fn ExpenseFormPanel(
             <div class="flex justify-end space-x-3 pt-4">
                 <button
                     type="button"
-                    class="btn-secondary"
+                    class="btn-secondary btn-press"
                     on:click=move |_| on_cancel.call(())
                 >
                     "Cancel"
                 </button>
                 <button
                     type="submit"
-                    class="btn-primary"
+                    class="btn-primary btn-press"
                     disabled=move || loading.get()
                 >
                     {move || if is_editing.get() { "Update Expense" } else { "Save Expense" }}
@@ -846,17 +846,16 @@ pub fn Projects() -> impl IntoView {
     let expense_cancel_callback = Callback::new(move |_| handle_cancel_expense());
 
     view! {
-        <div class="min-h-screen flex flex-col bg-gray-50 dark:bg-gray-900">
-            <Header/>
+        <div class="h-full">
 
-            <main class="flex-grow max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 w-full">
-                <div class="space-y-6">
-                    <div class="flex items-center justify-between">
-                        <h1 class="text-3xl font-bold text-gray-900 dark:text-white">
+            <div class="page-container fade-in">
+                <div class="space-y-4">
+                    <div class="page-header">
+                        <h1 class="text-xl font-semibold text-huly-caption">
                             "Projects"
                         </h1>
                         <button
-                            class="btn-primary"
+                            class="btn-primary btn-press"
                             on:click=move |_| {
                                 set_editing_project.set(None);
                                 set_show_form.set(true);
@@ -868,10 +867,10 @@ pub fn Projects() -> impl IntoView {
 
                     {move || error.get().map(|err| {
                         view! {
-                            <div class="rounded-md bg-red-50 p-4 dark:bg-red-900/20">
+                            <div class="alert-error">
                                 <div class="flex">
                                     <div class="ml-3">
-                                        <h3 class="text-sm font-medium text-red-800 dark:text-red-200">
+                                        <h3 class="text-sm font-medium text-negative-default">
                                             {err}
                                         </h3>
                                     </div>
@@ -897,8 +896,8 @@ pub fn Projects() -> impl IntoView {
                             });
 
                             view! {
-                                <div class="bg-white dark:bg-gray-800 shadow rounded-lg p-6">
-                                    <h2 class="text-xl font-semibold text-gray-900 dark:text-white mb-4">
+                                <div class="card">
+                                    <h2 class="text-xl font-semibold text-huly-caption mb-4">
                                         {if editing_project.get().is_some() { "Edit Project" } else { "Add Project" }}
                                     </h2>
                                     <ProjectForm
@@ -913,16 +912,23 @@ pub fn Projects() -> impl IntoView {
                                 {move || {
                                     if loading.get() {
                                         view! {
-                                            <div class="text-center py-12">
-                                                <div class="spinner mx-auto mb-4"></div>
-                                                <p class="text-gray-600 dark:text-gray-400">"Loading projects..."</p>
+                                            <div class="space-y-3">
+                                                <div class="toolbar"><div class="skeleton-text w-32 h-3"></div></div>
+                                                <div class="panel overflow-hidden">
+                                                    <div class="skeleton-row"><div class="skeleton-text w-28"></div><div class="skeleton-text w-20"></div><div class="skeleton-text w-16"></div><div class="skeleton-text w-24"></div></div>
+                                                    <div class="skeleton-row"><div class="skeleton-text w-24"></div><div class="skeleton-text w-16"></div><div class="skeleton-text w-20"></div><div class="skeleton-text w-20"></div></div>
+                                                    <div class="skeleton-row"><div class="skeleton-text w-32"></div><div class="skeleton-text w-12"></div><div class="skeleton-text w-24"></div><div class="skeleton-text w-16"></div></div>
+                                                </div>
                                             </div>
                                         }.into_view()
                                     } else if projects.get().is_empty() {
                                         view! {
-                                            <div class="text-center py-12 bg-white dark:bg-gray-800 rounded-lg shadow">
-                                                <p class="text-gray-600 dark:text-gray-400">"No projects found."</p>
-                                                <p class="text-sm text-gray-500 dark:text-gray-500 mt-2">"Click 'Add Project' to create one."</p>
+                                            <div class="empty-state py-12">
+                                                <svg class="w-12 h-12 text-huly-ghost mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25z" />
+                                                </svg>
+                                                <p class="text-huly-secondary text-sm">"No projects found."</p>
+                                                <p class="text-huly-muted text-xs mt-1">"Click 'Add Project' to create one."</p>
                                             </div>
                                         }.into_view()
                                     } else {
@@ -940,13 +946,13 @@ pub fn Projects() -> impl IntoView {
                                             {move || {
                                                 selected_budget.get().map(|budget| {
                                                     view! {
-                                                        <div class="bg-white dark:bg-gray-800 shadow rounded-lg p-6 mt-6">
-                                                            <div class="flex items-center justify-between mb-4">
-                                                                <h2 class="text-xl font-semibold text-gray-900 dark:text-white">
+                                                        <div class="panel mt-6">
+                                                            <div class="toolbar">
+                                                                <h2 class="text-xl font-semibold text-huly-caption">
                                                                     {format!("Budget Summary - {}", budget.project_name)}
                                                                 </h2>
                                                                 <button
-                                                                    class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                                                                    class="text-huly-ghost hover:text-huly-content"
                                                                     on:click=move |_| set_selected_budget.set(None)
                                                                 >
                                                                     "Close"
@@ -954,60 +960,62 @@ pub fn Projects() -> impl IntoView {
                                                             </div>
 
                                                             <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                                                                <div class="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4">
-                                                                    <p class="text-sm text-blue-600 dark:text-blue-400">"Total Budget"</p>
-                                                                    <p class="text-2xl font-bold text-blue-900 dark:text-blue-100">{format_idr(budget.total_budget_idr)}</p>
+                                                                <div class="bg-primary-600/10 rounded-lg p-4">
+                                                                    <p class="text-sm text-primary-400">"Total Budget"</p>
+                                                                    <p class="text-2xl font-bold text-huly-caption">{format_idr(budget.total_budget_idr)}</p>
                                                                 </div>
-                                                                <div class="bg-green-50 dark:bg-green-900/20 rounded-lg p-4">
-                                                                    <p class="text-sm text-green-600 dark:text-green-400">"Spent"</p>
-                                                                    <p class="text-2xl font-bold text-green-900 dark:text-green-100">{format_idr(budget.spent_to_date_idr)}</p>
+                                                                <div class="bg-positive-default/10 rounded-lg p-4">
+                                                                    <p class="text-sm text-positive-default">"Spent"</p>
+                                                                    <p class="text-2xl font-bold text-huly-caption">{format_idr(budget.spent_to_date_idr)}</p>
                                                                 </div>
-                                                                <div class="bg-orange-50 dark:bg-orange-900/20 rounded-lg p-4">
-                                                                    <p class="text-sm text-orange-600 dark:text-orange-400">"Remaining"</p>
-                                                                    <p class="text-2xl font-bold text-orange-900 dark:text-orange-100">{format_idr(budget.remaining_idr)}</p>
+                                                                <div class="bg-accent-orange/10 rounded-lg p-4">
+                                                                    <p class="text-sm text-accent-orange">"Remaining"</p>
+                                                                    <p class="text-2xl font-bold text-huly-caption">{format_idr(budget.remaining_idr)}</p>
                                                                 </div>
                                                             </div>
 
-                                                            <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-3">"Category Breakdown"</h3>
+                                                            <div class="toolbar">
+                                                                <h3 class="text-sm font-medium text-huly-secondary">"Category Breakdown"</h3>
+                                                            </div>
                                                             <div class="overflow-x-auto">
-                                                                <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                                                                    <thead class="bg-gray-50 dark:bg-gray-700">
+                                                                <table class="min-w-full divide-y divide-huly-divider">
+                                                                    <thead class="table-head">
                                                                         <tr>
-                                                                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">"Category"</th>
-                                                                            <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">"Total"</th>
-                                                                            <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">"Spent"</th>
-                                                                            <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">"Remaining"</th>
-                                                                            <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">"%"</th>
+                                                                            <th class="th-cell-compact">"Category"</th>
+                                                                            <th class="th-cell-compact text-right">"Total"</th>
+                                                                            <th class="th-cell-compact text-right">"Spent"</th>
+                                                                            <th class="th-cell-compact text-right">"Remaining"</th>
+                                                                            <th class="th-cell-compact text-right">"%"</th>
                                                                         </tr>
                                                                     </thead>
-                                                                    <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                                                                    <tbody class="divide-y divide-huly-divider">
                                                                         <tr>
-                                                                            <td class="px-4 py-2 text-sm text-gray-600 dark:text-gray-300">"HR"</td>
-                                                                            <td class="px-4 py-2 text-sm text-right font-medium text-gray-900 dark:text-white">{format_idr(budget.budget_hr_idr)}</td>
-                                                                            <td class="px-4 py-2 text-sm text-right text-gray-700 dark:text-gray-300">{format_idr(budget.spent_hr_idr)}</td>
-                                                                            <td class="px-4 py-2 text-sm text-right text-gray-700 dark:text-gray-300">{format_idr(budget.remaining_hr_idr)}</td>
-                                                                            <td class="px-4 py-2 text-sm text-right text-gray-500 dark:text-gray-400">{format!("{:.1}%", budget.hr_pct)}</td>
+                                                                            <td class="td-cell-compact text-huly-secondary">"HR"</td>
+                                                                            <td class="td-cell-compact text-right font-medium text-huly-caption">{format_idr(budget.budget_hr_idr)}</td>
+                                                                            <td class="td-cell-compact text-right text-huly-content">{format_idr(budget.spent_hr_idr)}</td>
+                                                                            <td class="td-cell-compact text-right text-huly-content">{format_idr(budget.remaining_hr_idr)}</td>
+                                                                            <td class="td-cell-compact text-right text-huly-muted">{format!("{:.1}%", budget.hr_pct)}</td>
                                                                         </tr>
                                                                         <tr>
-                                                                            <td class="px-4 py-2 text-sm text-gray-600 dark:text-gray-300">"Software"</td>
-                                                                            <td class="px-4 py-2 text-sm text-right font-medium text-gray-900 dark:text-white">{format_idr(budget.budget_software_idr)}</td>
-                                                                            <td class="px-4 py-2 text-sm text-right text-gray-700 dark:text-gray-300">{format_idr(budget.spent_software_idr)}</td>
-                                                                            <td class="px-4 py-2 text-sm text-right text-gray-700 dark:text-gray-300">{format_idr(budget.remaining_software_idr)}</td>
-                                                                            <td class="px-4 py-2 text-sm text-right text-gray-500 dark:text-gray-400">{format!("{:.1}%", budget.software_pct)}</td>
+                                                                            <td class="td-cell-compact text-huly-secondary">"Software"</td>
+                                                                            <td class="td-cell-compact text-right font-medium text-huly-caption">{format_idr(budget.budget_software_idr)}</td>
+                                                                            <td class="td-cell-compact text-right text-huly-content">{format_idr(budget.spent_software_idr)}</td>
+                                                                            <td class="td-cell-compact text-right text-huly-content">{format_idr(budget.remaining_software_idr)}</td>
+                                                                            <td class="td-cell-compact text-right text-huly-muted">{format!("{:.1}%", budget.software_pct)}</td>
                                                                         </tr>
                                                                         <tr>
-                                                                            <td class="px-4 py-2 text-sm text-gray-600 dark:text-gray-300">"Hardware"</td>
-                                                                            <td class="px-4 py-2 text-sm text-right font-medium text-gray-900 dark:text-white">{format_idr(budget.budget_hardware_idr)}</td>
-                                                                            <td class="px-4 py-2 text-sm text-right text-gray-700 dark:text-gray-300">{format_idr(budget.spent_hardware_idr)}</td>
-                                                                            <td class="px-4 py-2 text-sm text-right text-gray-700 dark:text-gray-300">{format_idr(budget.remaining_hardware_idr)}</td>
-                                                                            <td class="px-4 py-2 text-sm text-right text-gray-500 dark:text-gray-400">{format!("{:.1}%", budget.hardware_pct)}</td>
+                                                                            <td class="td-cell-compact text-huly-secondary">"Hardware"</td>
+                                                                            <td class="td-cell-compact text-right font-medium text-huly-caption">{format_idr(budget.budget_hardware_idr)}</td>
+                                                                            <td class="td-cell-compact text-right text-huly-content">{format_idr(budget.spent_hardware_idr)}</td>
+                                                                            <td class="td-cell-compact text-right text-huly-content">{format_idr(budget.remaining_hardware_idr)}</td>
+                                                                            <td class="td-cell-compact text-right text-huly-muted">{format!("{:.1}%", budget.hardware_pct)}</td>
                                                                         </tr>
                                                                         <tr>
-                                                                            <td class="px-4 py-2 text-sm text-gray-600 dark:text-gray-300">"Overhead"</td>
-                                                                            <td class="px-4 py-2 text-sm text-right font-medium text-gray-900 dark:text-white">{format_idr(budget.budget_overhead_idr)}</td>
-                                                                            <td class="px-4 py-2 text-sm text-right text-gray-700 dark:text-gray-300">{format_idr(budget.spent_overhead_idr)}</td>
-                                                                            <td class="px-4 py-2 text-sm text-right text-gray-700 dark:text-gray-300">{format_idr(budget.remaining_overhead_idr)}</td>
-                                                                            <td class="px-4 py-2 text-sm text-right text-gray-500 dark:text-gray-400">{format!("{:.1}%", budget.overhead_pct)}</td>
+                                                                            <td class="td-cell-compact text-huly-secondary">"Overhead"</td>
+                                                                            <td class="td-cell-compact text-right font-medium text-huly-caption">{format_idr(budget.budget_overhead_idr)}</td>
+                                                                            <td class="td-cell-compact text-right text-huly-content">{format_idr(budget.spent_overhead_idr)}</td>
+                                                                            <td class="td-cell-compact text-right text-huly-content">{format_idr(budget.remaining_overhead_idr)}</td>
+                                                                            <td class="td-cell-compact text-right text-huly-muted">{format!("{:.1}%", budget.overhead_pct)}</td>
                                                                         </tr>
                                                                     </tbody>
                                                                 </table>
@@ -1019,15 +1027,15 @@ pub fn Projects() -> impl IntoView {
                                             {move || {
                                                 resource_costs.get().map(|costs| {
                                                     view! {
-                                                        <div class="bg-white dark:bg-gray-800 shadow rounded-lg p-6 mt-6">
-                                                            <div class="flex items-center justify-between mb-4">
-                                                                <h2 class="text-xl font-semibold text-gray-900 dark:text-white">
+                                                        <div class="panel mt-6">
+                                                            <div class="toolbar">
+                                                                <h2 class="text-xl font-semibold text-huly-caption">
                                                                     "Resource Costs"
                                                                 </h2>
                                                                 <div class="flex items-center space-x-4">
-                                                                    <span class="text-lg font-bold text-gray-900 dark:text-white">{format_idr(costs.total_resource_cost_idr)}</span>
+                                                                    <span class="text-lg font-bold text-huly-caption">{format_idr(costs.total_resource_cost_idr)}</span>
                                                                     <button
-                                                                        class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                                                                        class="text-huly-ghost hover:text-huly-content"
                                                                         on:click=move |_| set_resource_costs.set(None)
                                                                     >
                                                                         "Close"
@@ -1037,16 +1045,16 @@ pub fn Projects() -> impl IntoView {
 
                                                             // Employee table
                                                             <div class="overflow-x-auto mb-6">
-                                                                <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                                                                    <thead class="bg-gray-50 dark:bg-gray-700">
+                                                                <table class="min-w-full divide-y divide-huly-divider">
+                                                                    <thead class="table-head">
                                                                         <tr>
-                                                                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">"Employee"</th>
-                                                                            <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">"Daily Rate"</th>
-                                                                            <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">"Days Allocated"</th>
-                                                                            <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">"Total Cost"</th>
+                                                                            <th class="th-cell-compact">"Employee"</th>
+                                                                            <th class="th-cell-compact text-right">"Daily Rate"</th>
+                                                                            <th class="th-cell-compact text-right">"Days Allocated"</th>
+                                                                            <th class="th-cell-compact text-right">"Total Cost"</th>
                                                                         </tr>
                                                                     </thead>
-                                                                    <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                                                                    <tbody class="divide-y divide-huly-divider">
                                                                         {costs.employees.into_iter().map(|emp| {
                                                                             let rate_display = if emp.missing_rate {
                                                                                 "Rate unavailable".to_string()
@@ -1054,28 +1062,28 @@ pub fn Projects() -> impl IntoView {
                                                                                 emp.daily_rate_idr.map(|r| format_idr(r)).unwrap_or_else(|| "N/A".to_string())
                                                                             };
                                                                             let rate_class = if emp.missing_rate {
-                                                                                "px-4 py-3 whitespace-nowrap text-sm text-right text-amber-600 dark:text-amber-400 italic"
+                                                                                "td-cell-compact text-right text-accent-orange italic"
                                                                             } else {
-                                                                                "px-4 py-3 whitespace-nowrap text-sm text-right text-gray-900 dark:text-white"
+                                                                                "td-cell-compact text-right text-huly-caption"
                                                                             };
                                                                             let note = emp.rate_change_note.clone();
                                                                             view! {
-                                                                                <tr class="hover:bg-gray-50 dark:hover:bg-gray-700">
-                                                                                    <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900 dark:text-white">
+                                                                                <tr class="table-row-hover">
+                                                                                    <td class="td-cell-compact text-huly-caption">
                                                                                         {emp.resource_name}
                                                                                         {if emp.has_rate_change {
-                                                                                            view! { <span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200">"Rate Changed"</span> }.into_view()
+                                                                                            view! { <span class="ml-2 badge-warning">"Rate Changed"</span> }.into_view()
                                                                                         } else {
                                                                                             view! { <span></span> }.into_view()
                                                                                         }}
                                                                                     </td>
                                                                                     <td class=rate_class>{rate_display}</td>
-                                                                                    <td class="px-4 py-3 whitespace-nowrap text-sm text-right text-gray-900 dark:text-white">{emp.days_allocated}</td>
-                                                                                    <td class="px-4 py-3 whitespace-nowrap text-sm text-right font-medium text-gray-900 dark:text-white">{format_idr(emp.total_cost_idr)}</td>
+                                                                                    <td class="td-cell-compact text-right text-huly-caption">{emp.days_allocated}</td>
+                                                                                    <td class="td-cell-compact text-right font-medium text-huly-caption">{format_idr(emp.total_cost_idr)}</td>
                                                                                 </tr>
                                                                                 {note.map(|n| view! {
-                                                                                    <tr class="bg-yellow-50 dark:bg-yellow-900/10">
-                                                                                        <td colspan="4" class="px-4 py-1 text-xs text-yellow-700 dark:text-yellow-300 italic">{n}</td>
+                                                                                    <tr class="bg-warning-default/10">
+                                                                                        <td colspan="4" class="px-4 py-1 text-xs text-warning-default italic">{n}</td>
                                                                                     </tr>
                                                                                 })}
                                                                             }
@@ -1088,14 +1096,14 @@ pub fn Projects() -> impl IntoView {
                                                             {if !costs.monthly_breakdown.is_empty() {
                                                                 view! {
                                                                     <div>
-                                                                        <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-3">"Monthly Breakdown"</h3>
+                                                                        <h3 class="text-lg font-medium text-huly-caption mb-3">"Monthly Breakdown"</h3>
                                                                         <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
                                                                             {costs.monthly_breakdown.into_iter().map(|m| {
                                                                                 view! {
-                                                                                    <div class="bg-gray-50 dark:bg-gray-700 rounded-lg p-3">
-                                                                                        <p class="text-sm font-medium text-gray-600 dark:text-gray-300">{m.month}</p>
-                                                                                        <p class="text-lg font-bold text-gray-900 dark:text-white">{format_idr(m.cost_idr)}</p>
-                                                                                        <p class="text-xs text-gray-500 dark:text-gray-400">{format!("{} working days", m.working_days)}</p>
+                                                                                    <div class="bg-huly-surface-2 rounded-lg p-3">
+                                                                                        <p class="text-sm font-medium text-huly-secondary">{m.month}</p>
+                                                                                        <p class="text-lg font-bold text-huly-caption">{format_idr(m.cost_idr)}</p>
+                                                                                        <p class="text-xs text-huly-muted">{format!("{} working days", m.working_days)}</p>
                                                                                     </div>
                                                                                 }
                                                                             }).collect_view()}
@@ -1117,14 +1125,14 @@ pub fn Projects() -> impl IntoView {
                                         let year = grid.year;
                                         let ytd = grid.ytd_total_idr;
                                         view! {
-                                            <div class="bg-white dark:bg-gray-800 shadow rounded-lg p-6 mt-6">
-                                                <div class="flex items-center justify-between mb-4">
-                                                    <h2 class="text-xl font-semibold text-gray-900 dark:text-white">
+                                            <div class="panel mt-6">
+                                                            <div class="toolbar">
+                                                    <h2 class="text-xl font-semibold text-huly-caption">
                                                         "Revenue"
                                                     </h2>
                                                     <div class="flex items-center space-x-4">
                                                         <button
-                                                            class="text-gray-600 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200 px-2"
+                                                            class="text-huly-secondary hover:text-huly-caption px-2"
                                                             on:click=move |_| {
                                                                 let new_year = revenue_year.get() - 1;
                                                                 set_revenue_year.set(new_year);
@@ -1132,9 +1140,9 @@ pub fn Projects() -> impl IntoView {
                                                         >
                                                             "◀"
                                                         </button>
-                                                        <span class="text-lg font-bold text-gray-900 dark:text-white">{year}</span>
+                                                        <span class="text-lg font-bold text-huly-caption">{year}</span>
                                                         <button
-                                                            class="text-gray-600 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200 px-2"
+                                                            class="text-huly-secondary hover:text-huly-caption px-2"
                                                             on:click=move |_| {
                                                                 let new_year = revenue_year.get() + 1;
                                                                 set_revenue_year.set(new_year);
@@ -1143,7 +1151,7 @@ pub fn Projects() -> impl IntoView {
                                                             "▶"
                                                         </button>
                                                         <button
-                                                            class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                                                            class="text-huly-ghost hover:text-huly-content"
                                                             on:click=move |_| {
                                                                 set_revenue_project_id.set(None);
                                                                 set_revenue_edit_month.set(None);
@@ -1156,27 +1164,27 @@ pub fn Projects() -> impl IntoView {
                                                 </div>
 
                                                 <div class="overflow-x-auto mb-4">
-                                                    <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                                                        <thead class="bg-gray-50 dark:bg-gray-700">
+                                                    <table class="min-w-full divide-y divide-huly-divider">
+                                                        <thead class="table-head">
                                                             <tr>
-                                                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">"Month"</th>
-                                                                <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">"Amount (IDR)"</th>
-                                                                <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">"Source"</th>
-                                                                <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">"Entry Date"</th>
-                                                                <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">"Entered By"</th>
-                                                                <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">"Actions"</th>
+                                                                <th class="th-cell-compact">"Month"</th>
+                                                                <th class="th-cell-compact text-right">"Amount (IDR)"</th>
+                                                                <th class="th-cell-compact text-center">"Source"</th>
+                                                                <th class="th-cell-compact text-center">"Entry Date"</th>
+                                                                <th class="th-cell-compact text-center">"Entered By"</th>
+                                                                <th class="th-cell-compact text-right">"Actions"</th>
                                                             </tr>
                                                         </thead>
-                                                        <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                                                        <tbody class="divide-y divide-huly-divider">
                                                             {grid.months.into_iter().map(|entry| {
                                                                 let month_num = entry.month;
                                                                 let is_erp = entry.source_type.as_deref() == Some("erp_synced");
                                                                 let has_data = entry.revenue_id.is_some();
                                                                 let source_badge = match entry.source_type.as_deref() {
-                                                                    Some("manual") => view! { <span class="px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">"Manual"</span> }.into_view(),
-                                                                    Some("erp_synced") => view! { <span class="px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">"ERP Synced"</span> }.into_view(),
-                                                                    Some("manual_override") => view! { <span class="px-2 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200">"Override"</span> }.into_view(),
-                                                                    _ => view! { <span class="text-xs text-gray-400">"—"</span> }.into_view(),
+                                                                    Some("manual") => view! { <span class="badge-positive">"Manual"</span> }.into_view(),
+                                                                    Some("erp_synced") => view! { <span class="badge-primary">"ERP Synced"</span> }.into_view(),
+                                                                    Some("manual_override") => view! { <span class="badge-warning">"Override"</span> }.into_view(),
+                                                                    _ => view! { <span class="text-xs text-huly-ghost">"—"</span> }.into_view(),
                                                                 };
                                                                 let entry_date_str = entry.entry_date.unwrap_or_else(|| "—".to_string());
                                                                 let entered_by_str = entry
@@ -1184,9 +1192,9 @@ pub fn Projects() -> impl IntoView {
                                                                     .map(|user_id| user_id.to_string())
                                                                     .unwrap_or_else(|| "—".to_string());
                                                                 view! {
-                                                                    <tr class="hover:bg-gray-50 dark:hover:bg-gray-700">
-                                                                        <td class="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">{entry.month_label}</td>
-                                                                        <td class="px-4 py-3 whitespace-nowrap text-sm text-right text-gray-900 dark:text-white">
+                                                                    <tr class="table-row-hover">
+                                                                        <td class="td-cell-compact font-medium text-huly-caption">{entry.month_label}</td>
+                                                                        <td class="td-cell-compact text-right text-huly-caption">
                                                                             {move || {
                                                                                 if revenue_edit_month.get() == Some(month_num) {
                                                                                     view! {
@@ -1202,22 +1210,22 @@ pub fn Projects() -> impl IntoView {
                                                                                 }
                                                                             }}
                                                                         </td>
-                                                                        <td class="px-4 py-3 whitespace-nowrap text-sm text-center">{source_badge}</td>
-                                                                        <td class="px-4 py-3 whitespace-nowrap text-sm text-center text-gray-500 dark:text-gray-400">{entry_date_str}</td>
-                                                                        <td class="px-4 py-3 whitespace-nowrap text-xs text-center font-mono text-gray-500 dark:text-gray-400">{entered_by_str}</td>
-                                                                        <td class="px-4 py-3 whitespace-nowrap text-right text-sm font-medium">
+                                                                        <td class="td-cell-compact text-center">{source_badge}</td>
+                                                                        <td class="td-cell-compact text-center text-huly-muted">{entry_date_str}</td>
+                                                                        <td class="td-cell-compact text-center font-mono text-huly-muted">{entered_by_str}</td>
+                                                                        <td class="td-cell-compact text-right font-medium">
                                                                             {move || {
                                                                                 if revenue_edit_month.get() == Some(month_num) {
                                                                                     view! {
                                                                                         <button
-                                                                                            class="text-green-600 hover:text-green-900 dark:text-green-400 mr-2"
+                                                                                            class="link mr-2"
                                                                                             prop:disabled=revenue_saving
                                                                                             on:click=move |_| handle_revenue_save(month_num)
                                                                                         >
                                                                                             "Save"
                                                                                         </button>
                                                                                         <button
-                                                                                            class="text-gray-500 hover:text-gray-700 dark:text-gray-400"
+                                                                                            class="text-huly-muted hover:text-huly-content"
                                                                                             on:click=move |_| set_revenue_edit_month.set(None)
                                                                                         >
                                                                                             "Cancel"
@@ -1226,7 +1234,7 @@ pub fn Projects() -> impl IntoView {
                                                                                 } else if is_erp {
                                                                                     view! {
                                                                                         <button
-                                                                                            class="text-orange-600 hover:text-orange-900 dark:text-orange-400"
+                                                                                            class="link-warning"
                                                                                             on:click=move |_| {
                                                                                                 set_revenue_edit_month.set(Some(month_num));
                                                                                                 set_revenue_edit_amount.set(entry.amount_idr.to_string());
@@ -1238,7 +1246,7 @@ pub fn Projects() -> impl IntoView {
                                                                                 } else {
                                                                                     view! {
                                                                                         <button
-                                                                                            class="text-blue-600 hover:text-blue-900 dark:text-blue-400"
+                                                                                            class="link"
                                                                                             on:click=move |_| {
                                                                                                 set_revenue_edit_month.set(Some(month_num));
                                                                                                 set_revenue_edit_amount.set(if has_data { entry.amount_idr.to_string() } else { String::new() });
@@ -1257,9 +1265,9 @@ pub fn Projects() -> impl IntoView {
                                                     </table>
                                                 </div>
 
-                                                <div class="flex justify-between items-center p-3 bg-teal-50 dark:bg-teal-900/20 rounded">
-                                                    <span class="text-sm font-medium text-teal-700 dark:text-teal-300">"Year-to-Date Total"</span>
-                                                    <span class="text-lg font-bold text-teal-800 dark:text-teal-200">{format_idr(ytd)}</span>
+                                                <div class="flex justify-between items-center p-3 bg-primary-600/10 rounded">
+                                                    <span class="text-sm font-medium text-primary-300">"Year-to-Date Total"</span>
+                                                    <span class="text-lg font-bold text-primary-200">{format_idr(ytd)}</span>
                                                 </div>
                                             </div>
                                         }
@@ -1269,9 +1277,9 @@ pub fn Projects() -> impl IntoView {
                                     pnl_data.get().map(|pnl| {
                                         let year = pnl.year;
                                         let margin_color = if pnl.margin_alert.is_some() {
-                                            "text-red-600 dark:text-red-400"
+                                            "text-negative-default"
                                         } else {
-                                            "text-green-600 dark:text-green-400"
+                                            "text-positive-default"
                                         };
 
                                         let months_for_chart = pnl.months.clone();
@@ -1287,37 +1295,37 @@ pub fn Projects() -> impl IntoView {
                                         let chart_height = 150.0;
 
                                         view! {
-                                            <div class="bg-white dark:bg-gray-800 shadow rounded-lg p-6 mt-6">
+                                            <div class="panel mt-6">
                                                 {pnl.margin_alert.clone().map(|alert| view! {
-                                                    <div class="mb-4 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 p-3 rounded-lg border border-red-200 dark:border-red-800 flex items-center">
+                                                    <div class="alert-error mb-4 flex items-center">
                                                         <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
                                                         <span class="font-medium">"Alert: "</span> <span class="ml-1">{alert}</span>
                                                     </div>
                                                 })}
 
-                                                <div class="flex items-center justify-between mb-4">
-                                                    <h2 class="text-xl font-semibold text-gray-900 dark:text-white">
+                                                <div class="toolbar">
+                                                    <h2 class="text-xl font-semibold text-huly-caption">
                                                         "P&L Dashboard"
                                                     </h2>
                                                     <div class="flex items-center space-x-4">
                                                         <button
-                                                            class="text-gray-600 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200 px-2"
+                                                            class="text-huly-secondary hover:text-huly-caption px-2"
                                                             on:click=move |_| set_pnl_year.update(|y| *y -= 1)
                                                         >
                                                             "◀"
                                                         </button>
-                                                        <span class="text-lg font-bold text-gray-900 dark:text-white">{year}</span>
+                                                        <span class="text-lg font-bold text-huly-caption">{year}</span>
                                                         <button
-                                                            class="text-gray-600 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200 px-2"
+                                                            class="text-huly-secondary hover:text-huly-caption px-2"
                                                             on:click=move |_| set_pnl_year.update(|y| *y += 1)
                                                         >
                                                             "▶"
                                                         </button>
                                                         <button
                                                             class=move || if show_forecast.get() {
-                                                                "px-3 py-1 text-sm font-medium rounded-md bg-indigo-600 text-white"
+                                                                "px-3 py-1 text-sm font-medium rounded-md bg-primary-600 text-huly-caption"
                                                             } else {
-                                                                "px-3 py-1 text-sm font-medium rounded-md bg-gray-200 text-gray-700 dark:bg-gray-600 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-500"
+                                                                "px-3 py-1 text-sm font-medium rounded-md bg-huly-btn-default text-huly-content border border-huly-btn-border hover:bg-huly-btn-hover"
                                                             }
                                                             on:click=move |_| set_show_forecast.update(|v| *v = !*v)
                                                             aria-pressed=move || show_forecast.get().to_string()
@@ -1325,7 +1333,7 @@ pub fn Projects() -> impl IntoView {
                                                             "Forecast"
                                                         </button>
                                                         <button
-                                                            class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                                                            class="text-huly-ghost hover:text-huly-content"
                                                             on:click=move |_| set_pnl_project_id.set(None)
                                                         >
                                                             "Close"
@@ -1334,26 +1342,26 @@ pub fn Projects() -> impl IntoView {
                                                 </div>
 
                                                 <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-                                                    <div class="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 border border-gray-100 dark:border-gray-600">
-                                                        <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">"Revenue"</p>
-                                                        <p class="text-xl font-bold text-gray-900 dark:text-white">{format_idr(pnl.total_revenue_idr)}</p>
+                                                    <div class="bg-huly-surface-2 rounded-lg p-4 border border-huly-divider">
+                                                        <p class="text-sm text-huly-muted mb-1">"Revenue"</p>
+                                                        <p class="text-xl font-bold text-huly-caption">{format_idr(pnl.total_revenue_idr)}</p>
                                                     </div>
-                                                    <div class="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 border border-gray-100 dark:border-gray-600">
-                                                        <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">"Total Costs"</p>
-                                                        <p class="text-xl font-bold text-gray-900 dark:text-white">{format_idr(pnl.total_cost_idr)}</p>
+                                                    <div class="bg-huly-surface-2 rounded-lg p-4 border border-huly-divider">
+                                                        <p class="text-sm text-huly-muted mb-1">"Total Costs"</p>
+                                                        <p class="text-xl font-bold text-huly-caption">{format_idr(pnl.total_cost_idr)}</p>
                                                     </div>
-                                                    <div class="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 border border-gray-100 dark:border-gray-600">
-                                                        <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">"Gross Profit"</p>
-                                                        <p class="text-xl font-bold text-gray-900 dark:text-white">{format_idr(pnl.gross_profit_idr)}</p>
+                                                    <div class="bg-huly-surface-2 rounded-lg p-4 border border-huly-divider">
+                                                        <p class="text-sm text-huly-muted mb-1">"Gross Profit"</p>
+                                                        <p class="text-xl font-bold text-huly-caption">{format_idr(pnl.gross_profit_idr)}</p>
                                                     </div>
-                                                    <div class="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 border border-gray-100 dark:border-gray-600">
-                                                        <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">"Margin %"</p>
+                                                    <div class="bg-huly-surface-2 rounded-lg p-4 border border-huly-divider">
+                                                        <p class="text-sm text-huly-muted mb-1">"Margin %"</p>
                                                         <p class=format!("text-xl font-bold {}", margin_color)>{format!("{:.1}%", pnl.margin_pct)}</p>
                                                     </div>
                                                 </div>
 
-                                                <div class="mb-6 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4">
-                                                    <h3 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-4">"Revenue vs Cost (Monthly)"</h3>
+                                                <div class="mb-6 border border-huly-divider rounded-lg p-4">
+                                                    <h3 class="text-sm font-medium text-huly-content mb-4">"Revenue vs Cost (Monthly)"</h3>
                                                     <div class="w-full overflow-x-auto">
                                                         <svg
                                                             width="100%"
@@ -1419,7 +1427,7 @@ pub fn Projects() -> impl IntoView {
                                                                             on:focus=move |_| set_pnl_hover_month.set(Some(month_num))
                                                                             on:blur=move |_| set_pnl_hover_month.set(None)
                                                                         />
-                                                                        <text x="21" y="160" text-anchor="middle" class="text-xs fill-gray-500 dark:fill-gray-400 text-[10px]">{month_label}</text>
+                                                                        <text x="21" y="160" text-anchor="middle" class="text-xs fill-huly-muted text-[10px]">{month_label}</text>
                                                                     </g>
                                                                 }
                                                             }).collect_view()}
@@ -1435,7 +1443,7 @@ pub fn Projects() -> impl IntoView {
                                                                 })
                                                                 .map(|entry| {
                                                                     view! {
-                                                                        <div class="mt-3 bg-gray-900 text-white rounded-md px-3 py-2 text-xs space-y-1" role="status" aria-live="polite">
+                                                                        <div class="mt-3 bg-huly-tooltip-bg text-huly-content rounded-md px-3 py-2 text-xs space-y-1" role="status" aria-live="polite">
                                                                             <p><span class="font-semibold">"Revenue: "</span>{format_idr(entry.revenue_idr)}</p>
                                                                             <p><span class="font-semibold">"Resource Costs: "</span>{format_idr(entry.resource_cost_idr)}</p>
                                                                             <p><span class="font-semibold">"Non-Resource Costs: "</span>{format_idr(entry.non_resource_cost_idr)}</p>
@@ -1448,34 +1456,34 @@ pub fn Projects() -> impl IntoView {
                                                 </div>
 
                                                 <div class="overflow-x-auto mb-6">
-                                                    <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                                                        <thead class="bg-gray-50 dark:bg-gray-700">
+                                                    <table class="min-w-full divide-y divide-huly-divider">
+                                                        <thead class="table-head">
                                                             <tr>
-                                                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">"Month"</th>
-                                                                <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">"Revenue"</th>
-                                                                <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">"Res. Cost"</th>
-                                                                <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">"Non-Res. Cost"</th>
-                                                                <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">"Total Cost"</th>
-                                                                <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">"Gross Profit"</th>
-                                                                <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">"Margin %"</th>
+                                                                <th class="th-cell-compact">"Month"</th>
+                                                                <th class="th-cell-compact text-right">"Revenue"</th>
+                                                                <th class="th-cell-compact text-right">"Res. Cost"</th>
+                                                                <th class="th-cell-compact text-right">"Non-Res. Cost"</th>
+                                                                <th class="th-cell-compact text-right">"Total Cost"</th>
+                                                                <th class="th-cell-compact text-right">"Gross Profit"</th>
+                                                                <th class="th-cell-compact text-right">"Margin %"</th>
                                                             </tr>
                                                         </thead>
-                                                        <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                                                        <tbody class="divide-y divide-huly-divider">
                                                             {months_for_table.into_iter().map(|m| {
                                                                 let m_color = if m.revenue_idr > 0 && (pnl.target_margin_pct - m.margin_pct) > pnl.margin_alert_threshold_pct {
-                                                                    "text-red-600 dark:text-red-400 font-medium"
+                                                                    "text-negative-default font-medium"
                                                                 } else {
-                                                                    "text-gray-900 dark:text-white"
+                                                                    "text-huly-caption"
                                                                 };
                                                                 view! {
-                                                                    <tr class="hover:bg-gray-50 dark:hover:bg-gray-700">
-                                                                        <td class="px-3 py-2 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">{m.month_label}</td>
-                                                                        <td class="px-3 py-2 whitespace-nowrap text-sm text-right text-gray-600 dark:text-gray-300">{format_idr(m.revenue_idr)}</td>
-                                                                        <td class="px-3 py-2 whitespace-nowrap text-sm text-right text-gray-600 dark:text-gray-300">{format_idr(m.resource_cost_idr)}</td>
-                                                                        <td class="px-3 py-2 whitespace-nowrap text-sm text-right text-gray-600 dark:text-gray-300">{format_idr(m.non_resource_cost_idr)}</td>
-                                                                        <td class="px-3 py-2 whitespace-nowrap text-sm text-right text-gray-600 dark:text-gray-300">{format_idr(m.total_cost_idr)}</td>
-                                                                        <td class="px-3 py-2 whitespace-nowrap text-sm text-right font-medium text-gray-900 dark:text-white">{format_idr(m.gross_profit_idr)}</td>
-                                                                        <td class=format!("px-3 py-2 whitespace-nowrap text-sm text-right {}", m_color)>{format!("{:.1}%", m.margin_pct)}</td>
+                                                                    <tr class="table-row-hover">
+                                                                        <td class="td-cell-compact font-medium text-huly-caption">{m.month_label}</td>
+                                                                        <td class="td-cell-compact text-right text-huly-secondary">{format_idr(m.revenue_idr)}</td>
+                                                                        <td class="td-cell-compact text-right text-huly-secondary">{format_idr(m.resource_cost_idr)}</td>
+                                                                        <td class="td-cell-compact text-right text-huly-secondary">{format_idr(m.non_resource_cost_idr)}</td>
+                                                                        <td class="td-cell-compact text-right text-huly-secondary">{format_idr(m.total_cost_idr)}</td>
+                                                                        <td class="td-cell-compact text-right font-medium text-huly-caption">{format_idr(m.gross_profit_idr)}</td>
+                                                                        <td class=format!("td-cell-compact text-right {}", m_color)>{format!("{:.1}%", m.margin_pct)}</td>
                                                                     </tr>
                                                                 }
                                                             }).collect_view()}
@@ -1483,19 +1491,19 @@ pub fn Projects() -> impl IntoView {
                                                     </table>
                                                 </div>
 
-                                                <div class="bg-gray-50 dark:bg-gray-700/50 p-4 rounded-lg border border-gray-200 dark:border-gray-700">
-                                                    <h3 class="text-sm font-medium text-gray-900 dark:text-white mb-3">"Target Margin Settings"</h3>
+                                                <div class="bg-huly-surface-2 p-4 rounded-lg border border-huly-divider">
+                                                    <h3 class="text-sm font-medium text-huly-caption mb-3">"Target Margin Settings"</h3>
                                                     <div class="flex items-end space-x-4">
                                                         <div>
-                                                            <label class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">"Target Margin (%)"</label>
+                                                            <label class="label text-xs">"Target Margin (%)"</label>
                                                             <input type="number" step="0.1" _ref=pnl_target_ref class="input w-32" prop:value=pnl.target_margin_pct.to_string() />
                                                         </div>
                                                         <div>
-                                                            <label class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">"Alert Threshold (%)"</label>
+                                                            <label class="label text-xs">"Alert Threshold (%)"</label>
                                                             <input type="number" step="0.1" _ref=pnl_alert_ref class="input w-32" prop:value=pnl.margin_alert_threshold_pct.to_string() />
                                                         </div>
                                                         <button
-                                                            class="btn-primary"
+                                                            class="btn-primary btn-press"
                                                             on:click=move |_| {
                                                                 let t_val = pnl_target_ref.get().map(|i| i.value()).unwrap_or_default();
                                                                 let a_val = pnl_alert_ref.get().map(|i| i.value()).unwrap_or_default();
@@ -1541,77 +1549,79 @@ pub fn Projects() -> impl IntoView {
                                                     }
                                                     forecast_data.get().map(|fc| {
                                                         let variance_color = if fc.variance_from_target_pct >= 0.0 {
-                                                            "text-green-600 dark:text-green-400"
+                                                            "text-positive-default"
                                                         } else {
-                                                            "text-red-600 dark:text-red-400"
+                                                            "text-negative-default"
                                                         };
                                                         let margin_color = if fc.forecast_margin_pct >= fc.target_margin_pct {
-                                                            "text-green-600 dark:text-green-400"
+                                                            "text-positive-default"
                                                         } else {
-                                                            "text-red-600 dark:text-red-400"
+                                                            "text-negative-default"
                                                         };
                                                         let categories = fc.categories.clone();
                                                         let drivers = fc.resource_drivers.clone();
 
                                                         view! {
-                                                            <div class="bg-white dark:bg-gray-800 shadow rounded-lg p-6 mt-6 border-l-4 border-indigo-500">
-                                                                <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-1">"Profitability Forecast"</h3>
-                                                                <p class="text-xs text-gray-500 dark:text-gray-400 mb-4">
+                                                            <div class="panel mt-6 border-l-4 border-primary-500">
+                                                                <h3 class="text-lg font-semibold text-huly-caption mb-1">"Profitability Forecast"</h3>
+                                                                <p class="text-xs text-huly-muted mb-4">
                                                                     {format!("As of {} · {} of {} project days elapsed", fc.as_of_date, fc.elapsed_days, fc.total_project_days)}
                                                                 </p>
 
                                                                 <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-                                                                    <div class="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 border border-gray-100 dark:border-gray-600">
-                                                                        <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">"Current Spend"</p>
-                                                                        <p class="text-xl font-bold text-gray-900 dark:text-white">{format_idr(fc.current_spend_idr)}</p>
+                                                                    <div class="bg-huly-surface-2 rounded-lg p-4 border border-huly-divider">
+                                                                        <p class="text-sm text-huly-muted mb-1">"Current Spend"</p>
+                                                                        <p class="text-xl font-bold text-huly-caption">{format_idr(fc.current_spend_idr)}</p>
                                                                     </div>
-                                                                    <div class="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 border border-gray-100 dark:border-gray-600">
-                                                                        <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">"Projected Total"</p>
-                                                                        <p class="text-xl font-bold text-gray-900 dark:text-white">{format_idr(fc.projected_total_cost_idr)}</p>
+                                                                    <div class="bg-huly-surface-2 rounded-lg p-4 border border-huly-divider">
+                                                                        <p class="text-sm text-huly-muted mb-1">"Projected Total"</p>
+                                                                        <p class="text-xl font-bold text-huly-caption">{format_idr(fc.projected_total_cost_idr)}</p>
                                                                     </div>
-                                                                    <div class="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 border border-gray-100 dark:border-gray-600">
-                                                                        <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">"Forecast Margin"</p>
+                                                                    <div class="bg-huly-surface-2 rounded-lg p-4 border border-huly-divider">
+                                                                        <p class="text-sm text-huly-muted mb-1">"Forecast Margin"</p>
                                                                         <p class=format!("text-xl font-bold {}", margin_color)>{format!("{:.1}%", fc.forecast_margin_pct)}</p>
                                                                     </div>
-                                                                    <div class="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 border border-gray-100 dark:border-gray-600">
-                                                                        <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">"Variance from Target"</p>
+                                                                    <div class="bg-huly-surface-2 rounded-lg p-4 border border-huly-divider">
+                                                                        <p class="text-sm text-huly-muted mb-1">"Variance from Target"</p>
                                                                         <p class=format!("text-xl font-bold {}", variance_color)>{format!("{:+.1}%", fc.variance_from_target_pct)}</p>
                                                                     </div>
                                                                 </div>
 
                                                                 <div class="mb-6">
-                                                                    <h4 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">"Cost Category Forecast"</h4>
+                                                                    <div class="toolbar">
+                                                                        <h4 class="text-sm font-medium text-huly-secondary">"Cost Category Forecast"</h4>
+                                                                    </div>
                                                                     <div class="overflow-x-auto">
-                                                                        <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                                                                            <thead class="bg-gray-50 dark:bg-gray-700">
+                                                                        <table class="min-w-full divide-y divide-huly-divider">
+                                                                            <thead class="table-head">
                                                                                 <tr>
-                                                                                    <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">"Category"</th>
-                                                                                    <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">"Budget"</th>
-                                                                                    <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">"Current Spend"</th>
-                                                                                    <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">"Projected"</th>
-                                                                                    <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">"Overrun"</th>
-                                                                                    <th class="px-3 py-2 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">"Status"</th>
+                                                                                    <th class="th-cell-compact">"Category"</th>
+                                                                                    <th class="th-cell-compact text-right">"Budget"</th>
+                                                                                    <th class="th-cell-compact text-right">"Current Spend"</th>
+                                                                                    <th class="th-cell-compact text-right">"Projected"</th>
+                                                                                    <th class="th-cell-compact text-right">"Overrun"</th>
+                                                                                    <th class="th-cell-compact text-center">"Status"</th>
                                                                                 </tr>
                                                                             </thead>
-                                                                            <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                                                                            <tbody class="divide-y divide-huly-divider">
                                                                                 {categories.into_iter().map(|cat| {
                                                                                     let status_badge = if cat.overrun_idr > 0 {
-                                                                                        ("Overrun", "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300")
+                                                                                        ("Overrun", "badge-negative")
                                                                                     } else if cat.budget_idr > 0 && cat.projected_idr as f64 > cat.budget_idr as f64 * 0.9 {
-                                                                                        ("At Risk", "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300")
+                                                                                        ("At Risk", "badge-warning")
                                                                                     } else {
-                                                                                        ("On Track", "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300")
+                                                                                        ("On Track", "badge-positive")
                                                                                     };
                                                                                     view! {
-                                                                                        <tr class="hover:bg-gray-50 dark:hover:bg-gray-700">
-                                                                                            <td class="px-3 py-2 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white capitalize">{cat.category}</td>
-                                                                                            <td class="px-3 py-2 whitespace-nowrap text-sm text-right text-gray-600 dark:text-gray-300">{format_idr(cat.budget_idr)}</td>
-                                                                                            <td class="px-3 py-2 whitespace-nowrap text-sm text-right text-gray-600 dark:text-gray-300">{format_idr(cat.current_spend_idr)}</td>
-                                                                                            <td class="px-3 py-2 whitespace-nowrap text-sm text-right text-gray-600 dark:text-gray-300">{format_idr(cat.projected_idr)}</td>
-                                                                                            <td class="px-3 py-2 whitespace-nowrap text-sm text-right font-medium text-red-600 dark:text-red-400">
+                                                                                        <tr class="table-row-hover">
+                                                                                            <td class="td-cell-compact font-medium text-huly-caption capitalize">{cat.category}</td>
+                                                                                            <td class="td-cell-compact text-right text-huly-secondary">{format_idr(cat.budget_idr)}</td>
+                                                                                            <td class="td-cell-compact text-right text-huly-secondary">{format_idr(cat.current_spend_idr)}</td>
+                                                                                            <td class="td-cell-compact text-right text-huly-secondary">{format_idr(cat.projected_idr)}</td>
+                                                                                            <td class="td-cell-compact text-right font-medium text-negative-default">
                                                                                                 {if cat.overrun_idr > 0 { format_idr(cat.overrun_idr) } else { "—".to_string() }}
                                                                                             </td>
-                                                                                            <td class="px-3 py-2 whitespace-nowrap text-center">
+                                                                                            <td class="td-cell-compact text-center">
                                                                                                 <span class=format!("inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {}", status_badge.1)>
                                                                                                     {status_badge.0}
                                                                                                 </span>
@@ -1627,15 +1637,15 @@ pub fn Projects() -> impl IntoView {
                                                                 {if !drivers.is_empty() {
                                                                     Some(view! {
                                                                         <div>
-                                                                            <h4 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">"Top Resource Cost Drivers"</h4>
+                                                                            <h4 class="text-sm font-medium text-huly-content mb-3">"Top Resource Cost Drivers"</h4>
                                                                             <div class="space-y-2">
                                                                                 {drivers.into_iter().map(|d| {
                                                                                     view! {
-                                                                                        <div class="flex items-center justify-between py-2 px-3 bg-gray-50 dark:bg-gray-700/50 rounded">
-                                                                                            <span class="text-sm font-medium text-gray-900 dark:text-white">{d.resource_name}</span>
+                                                                                        <div class="flex items-center justify-between py-2 px-3 bg-huly-surface-2 rounded">
+                                                                                            <span class="text-sm font-medium text-huly-caption">{d.resource_name}</span>
                                                                                             <div class="flex items-center space-x-4">
-                                                                                                <span class="text-sm text-gray-600 dark:text-gray-300">{format_idr(d.total_cost_idr)}</span>
-                                                                                                <span class="text-sm font-medium text-indigo-600 dark:text-indigo-400">{format!("{:.1}%", d.share_pct)}</span>
+                                                                                                <span class="text-sm text-huly-secondary">{format_idr(d.total_cost_idr)}</span>
+                                                                                                <span class="text-sm font-medium text-primary-400">{format!("{:.1}%", d.share_pct)}</span>
                                                                                             </div>
                                                                                         </div>
                                                                                     }
@@ -1657,9 +1667,9 @@ pub fn Projects() -> impl IntoView {
                                 {move || {
                                     selected_project_for_expenses.get().map(|project| {
                                         view! {
-                                            <div class="bg-white dark:bg-gray-800 shadow rounded-lg p-6 mt-6">
-                                                <div class="flex items-center justify-between mb-4">
-                                                    <h2 class="text-xl font-semibold text-gray-900 dark:text-white">
+                                            <div class="panel mt-6">
+                                                <div class="toolbar">
+                                                    <h2 class="text-xl font-semibold text-huly-caption">
                                                         {format!("Expenses - {}", project.name)}
                                                     </h2>
                                                     <div class="space-x-2">
@@ -1674,7 +1684,7 @@ pub fn Projects() -> impl IntoView {
                                                             "Add Expense"
                                                         </button>
                                                         <button
-                                                            class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                                                            class="text-huly-ghost hover:text-huly-content"
                                                             on:click=move |_| set_selected_project_for_expenses.set(None)
                                                         >
                                                             "Close"
@@ -1709,23 +1719,23 @@ pub fn Projects() -> impl IntoView {
                                                 }}
 
                                                 <div class="overflow-x-auto">
-                                                    <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                                                        <thead class="bg-gray-50 dark:bg-gray-700">
+                                                    <table class="min-w-full divide-y divide-huly-divider">
+                                                        <thead class="table-head">
                                                             <tr>
-                                                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">"Date"</th>
-                                                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">"Category"</th>
-                                                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">"Description"</th>
-                                                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">"Vendor"</th>
-                                                                <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">"Amount"</th>
-                                                                <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">"Actions"</th>
+                                                                <th class="th-cell-compact">"Date"</th>
+                                                                <th class="th-cell-compact">"Category"</th>
+                                                                <th class="th-cell-compact">"Description"</th>
+                                                                <th class="th-cell-compact">"Vendor"</th>
+                                                                <th class="th-cell-compact text-right">"Amount"</th>
+                                                                <th class="th-cell-compact text-right">"Actions"</th>
                                                             </tr>
                                                         </thead>
-                                                        <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                                                        <tbody class="bg-huly-surface divide-y divide-huly-divider">
                                                             {move || {
                                                                 if expenses.get().is_empty() {
                                                                     view! {
                                                                         <tr>
-                                                                            <td colspan="6" class="px-4 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400 text-center">
+                                                                            <td colspan="6" class="td-cell-compact text-huly-muted text-center">
                                                                                 "No expenses found for this project."
                                                                             </td>
                                                                         </tr>
@@ -1735,21 +1745,21 @@ pub fn Projects() -> impl IntoView {
                                                                         let exp_id = expense.id;
                                                                         let exp_clone = expense.clone();
                                                                         view! {
-                                                                            <tr class="hover:bg-gray-50 dark:hover:bg-gray-700">
-                                                                                <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{expense.expense_date}</td>
-                                                                                <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900 dark:text-white capitalize">{expense.category}</td>
-                                                                                <td class="px-4 py-3 text-sm text-gray-900 dark:text-white max-w-xs truncate">{expense.description}</td>
-                                                                                <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{expense.vendor.unwrap_or_default()}</td>
-                                                                                <td class="px-4 py-3 whitespace-nowrap text-sm font-medium text-right text-gray-900 dark:text-white">{format_idr(expense.amount_idr)}</td>
-                                                                                <td class="px-4 py-3 whitespace-nowrap text-right text-sm font-medium">
+                                                                            <tr class="table-row-hover">
+                                                                                <td class="td-cell-compact text-huly-muted">{expense.expense_date}</td>
+                                                                                <td class="td-cell-compact text-huly-caption capitalize">{expense.category}</td>
+                                                                                <td class="td-cell-compact text-huly-caption max-w-xs truncate">{expense.description}</td>
+                                                                                <td class="td-cell-compact text-huly-muted">{expense.vendor.unwrap_or_default()}</td>
+                                                                                <td class="td-cell-compact font-medium text-right text-huly-caption">{format_idr(expense.amount_idr)}</td>
+                                                                                <td class="td-cell-compact text-right">
                                                                                     <button
-                                                                                        class="text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300 mr-3"
+                                                                                        class="link mr-3"
                                                                                         on:click=move |_| handle_edit_expense_click(exp_clone.clone())
                                                                                     >
                                                                                         "Edit"
                                                                                     </button>
                                                                                     <button
-                                                                                        class="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300"
+                                                                                        class="link-danger"
                                                                                         on:click=move |_| handle_delete_expense(exp_id)
                                                                                     >
                                                                                         "Delete"
@@ -1771,9 +1781,8 @@ pub fn Projects() -> impl IntoView {
                         }
                     }}
                 </div>
-            </main>
+            </div>
 
-            <Footer/>
         </div>
     }
 }

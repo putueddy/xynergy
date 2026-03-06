@@ -1,5 +1,5 @@
 use crate::auth::{login_user, use_auth};
-use crate::components::{Footer, Header};
+
 use leptos::*;
 use leptos_router::*;
 
@@ -74,21 +74,21 @@ pub fn Login() -> impl IntoView {
     };
 
     view! {
-        <div class="min-h-screen flex flex-col bg-gray-50 dark:bg-gray-900">
-            <Header/>
+        <div class="h-full flex flex-col bg-huly-back">
 
-            <main class="flex-grow flex items-center justify-center px-4 sm:px-6 lg:px-8">
-                <div class="max-w-md w-full space-y-8">
+
+            <div class="flex-grow flex items-center justify-center px-4">
+                <div class="max-w-md w-full space-y-4">
                     <div>
-                        <h2 class="mt-6 text-center text-3xl font-extrabold text-gray-900 dark:text-white">
+                        <h2 class="mt-4 text-center text-xl font-semibold text-huly-caption">
                             "Sign in to your account"
                         </h2>
-                        <p class="mt-2 text-center text-sm text-gray-600 dark:text-gray-400">
+                        <p class="mt-2 text-center text-sm text-huly-secondary">
                             "Xynergy Resource Management"
                         </p>
                     </div>
 
-                    <form class="mt-8 space-y-6" on:submit=handle_submit>
+                    <form class="panel p-4 space-y-4" on:submit=handle_submit>
                         <div class="rounded-md shadow-sm -space-y-px">
                             <div>
                                 <label for="email" class="sr-only">"Email address"</label>
@@ -97,7 +97,7 @@ pub fn Login() -> impl IntoView {
                                     name="email"
                                     type="email"
                                     required
-                                    class="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-t-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm dark:bg-gray-800 dark:border-gray-600 dark:text-white"
+                                    class="input rounded-t-md"
                                     placeholder="Email address"
                                     prop:value=email
                                     on:input=move |ev| set_email.set(event_target_value(&ev))
@@ -110,7 +110,7 @@ pub fn Login() -> impl IntoView {
                                     name="password"
                                     type="password"
                                     required
-                                    class="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-b-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm dark:bg-gray-800 dark:border-gray-600 dark:text-white"
+                                    class="input rounded-b-md"
                                     placeholder="Password"
                                     prop:value=password
                                     on:input=move |ev| set_password.set(event_target_value(&ev))
@@ -120,10 +120,10 @@ pub fn Login() -> impl IntoView {
 
                         {move || error.get().map(|err| {
                             view! {
-                                <div class="rounded-md bg-red-50 p-4 dark:bg-red-900/20">
+                                <div class="alert-error">
                                     <div class="flex">
                                         <div class="ml-3">
-                                            <h3 class="text-sm font-medium text-red-800 dark:text-red-200">
+                                            <h3 class="text-sm font-medium text-negative-default">
                                                 {err}
                                             </h3>
                                         </div>
@@ -146,16 +146,16 @@ pub fn Login() -> impl IntoView {
                             </button>
                         </div>
 
-                        <div class="text-center text-sm text-gray-600 dark:text-gray-400">
+                        <div class="text-center text-sm text-huly-secondary">
                             <p>"Default credentials:"</p>
                             <p>"Email: admin@xynergy.com"</p>
                             <p>"Password: admin123"</p>
                         </div>
                     </form>
                 </div>
-            </main>
+            </div>
 
-            <Footer/>
+
         </div>
     }
 }

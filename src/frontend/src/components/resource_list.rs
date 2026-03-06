@@ -23,64 +23,64 @@ pub fn ResourceList(
     on_delete: Callback<Uuid>,
 ) -> impl IntoView {
     view! {
-        <div class="bg-white dark:bg-gray-800 shadow rounded-lg overflow-hidden">
-            <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                <thead class="bg-gray-50 dark:bg-gray-700">
+        <div class="overflow-hidden overflow-x-auto">
+            <table class="min-w-full divide-y divide-huly-divider">
+                <thead class="bg-huly-surface-2">
                     <tr>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                        <th class="th-cell-compact">
                             "Name"
                         </th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                        <th class="th-cell-compact">
                             "Type"
                         </th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                        <th class="th-cell-compact">
                             "Capacity"
                         </th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                        <th class="th-cell-compact">
                             "Department"
                         </th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                        <th class="th-cell-compact">
                             "Start Date"
                         </th>
-                        <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                        <th class="th-cell-compact text-right">
                             "Actions"
                         </th>
                     </tr>
                 </thead>
-                <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                <tbody class="bg-huly-surface divide-y divide-huly-divider">
                     {move || {
                         resources.get().into_iter().map(|resource| {
                             let resource_id = resource.id;
                             view! {
-                                <tr class="hover:bg-gray-50 dark:hover:bg-gray-700">
-                                    <td class="px-6 py-4 whitespace-nowrap">
-                                        <div class="text-sm font-medium text-gray-900 dark:text-white">
+                                <tr class="table-row-hover">
+                                    <td class="td-cell-compact whitespace-nowrap">
+                                        <div class="text-sm font-medium text-huly-caption">
                                             {resource.name.clone()}
                                         </div>
                                     </td>
-                                    <td class="px-6 py-4 whitespace-nowrap">
-                                        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
+                                    <td class="td-cell-compact whitespace-nowrap">
+                                        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full badge-primary">
                                             {resource.resource_type.clone()}
                                         </span>
                                     </td>
-                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                                    <td class="td-cell-compact whitespace-nowrap text-sm text-huly-muted">
                                         {resource.capacity.map(|c| c.to_string()).unwrap_or_else(|| "-".to_string())}
                                     </td>
-                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                                    <td class="td-cell-compact whitespace-nowrap text-sm text-huly-muted">
                                         {resource.department_name.clone().or_else(|| resource.department_id.as_ref().map(|id| id.to_string())).unwrap_or_else(|| "-".to_string())}
                                     </td>
-                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                                    <td class="td-cell-compact whitespace-nowrap text-sm text-huly-muted">
                                         {resource.employment_start_date.clone().unwrap_or_else(|| "-".to_string())}
                                     </td>
-                                    <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                    <td class="td-cell-compact whitespace-nowrap text-right text-sm font-medium">
                                         <button
-                                            class="text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300 mr-4"
+                                            class="link mr-3"
                                             on:click=move |_| on_edit.call(resource_id)
                                         >
                                             "Edit"
                                         </button>
                                         <button
-                                            class="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300"
+                                            class="link-danger"
                                             on:click=move |_| on_delete.call(resource_id)
                                         >
                                             "Delete"

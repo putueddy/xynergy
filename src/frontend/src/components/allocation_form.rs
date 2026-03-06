@@ -129,15 +129,15 @@ pub fn AllocationForm(
     };
 
     view! {
-        <form class="space-y-4" on:submit=handle_submit>
+        <form class="space-y-3" on:submit=handle_submit>
             <div class="grid grid-cols-2 gap-4">
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    <label class="label">
                         "Resource"
                     </label>
                     <select
                         required
-                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                        class="input"
                         prop:value=resource_id
                         on:change=move |ev| set_resource_id.set(event_target_value(&ev))
                     >
@@ -151,12 +151,12 @@ pub fn AllocationForm(
                 </div>
 
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    <label class="label">
                         "Project"
                     </label>
                     <select
                         required
-                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                        class="input"
                         prop:value=project_id
                         on:change=move |ev| set_project_id.set(event_target_value(&ev))
                     >
@@ -172,26 +172,26 @@ pub fn AllocationForm(
 
             <div class="grid grid-cols-2 gap-4">
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    <label class="label">
                         "Start Date"
                     </label>
                     <input
                         type="date"
                         required
-                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                        class="input"
                         prop:value=start_date
                         on:input=move |ev| set_start_date.set(event_target_value(&ev))
                     />
                 </div>
 
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    <label class="label">
                         "End Date"
                     </label>
                     <input
                         type="date"
                         required
-                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                        class="input"
                         prop:value=end_date
                         on:input=move |ev| set_end_date.set(event_target_value(&ev))
                     />
@@ -200,7 +200,7 @@ pub fn AllocationForm(
 
             <div class="grid grid-cols-3 gap-4">
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    <label class="label">
                         "Allocation Percentage"
                     </label>
                     <div class="flex items-center space-x-2 mt-1">
@@ -213,27 +213,27 @@ pub fn AllocationForm(
                             prop:value=allocation_percentage
                             on:input=move |ev| set_allocation_percentage.set(event_target_value(&ev))
                         />
-                        <span class="text-sm font-medium text-gray-700 dark:text-gray-300 w-12">
+                        <span class="text-sm font-medium text-huly-content w-12">
                             {move || format!("{}%", allocation_percentage.get())}
                         </span>
                     </div>
                 </div>
 
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    <label class="label">
                         "Hours/Day"
                     </label>
-                    <div class="mt-1 block w-full rounded-md border border-gray-300 bg-gray-50 px-3 py-2 text-sm text-gray-700 dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                    <div class="mt-1 block w-full rounded-md input bg-huly-surface-2">
                         {move || format!("{:.1} hours", hours_per_day.get())}
                     </div>
                 </div>
 
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    <label class="label">
                         "Total Days"
                     </label>
                     <div class="flex items-center space-x-2 mt-1">
-                        <div class="flex-1 rounded-md border border-gray-300 bg-gray-50 px-3 py-2 text-sm text-gray-700 dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                        <div class="flex-1 rounded-md input bg-huly-surface-2">
                             {move || total_days.get().to_string()}
                         </div>
                         <label class="flex items-center space-x-2 text-sm">
@@ -242,16 +242,16 @@ pub fn AllocationForm(
                                 prop:checked=include_weekend
                                 on:change=move |ev| set_include_weekend.set(event_target_checked(&ev))
                             />
-                            <span class="text-gray-700 dark:text-gray-300">"Include Weekend"</span>
+                            <span class="text-huly-content">"Include Weekend"</span>
                         </label>
                     </div>
                 </div>
             </div>
 
-            <div class="flex justify-end space-x-3 pt-4">
+            <div class="flex justify-end gap-2 pt-3">
                 <button
                     type="button"
-                    class="btn-secondary"
+                    class="btn-secondary btn-press"
                     disabled=is_submitting
                     on:click=move |_| on_cancel.call(())
                 >
@@ -259,7 +259,7 @@ pub fn AllocationForm(
                 </button>
                 <button
                     type="submit"
-                    class="btn-primary"
+                    class="btn-primary btn-press"
                     disabled=is_submitting
                 >
                     {move || {

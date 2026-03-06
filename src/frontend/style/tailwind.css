@@ -1,116 +1,919 @@
 @import "tailwindcss";
 
+/* Class-based dark mode — always active via <html class="dark"> */
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme {
-  --color-primary-50: #eff6ff;
-  --color-primary-100: #dbeafe;
-  --color-primary-200: #bfdbfe;
-  --color-primary-300: #93c5fd;
-  --color-primary-400: #60a5fa;
-  --color-primary-500: #3b82f6;
-  --color-primary-600: #2563eb;
-  --color-primary-700: #1d4ed8;
-  --color-primary-800: #1e40af;
-  --color-primary-900: #1e3a8a;
+  /* ─── Huly-Inspired Background Hierarchy ─── */
+  --color-huly-back: #0f0f18;
+  --color-huly-bg: #1A1A28;
+  --color-huly-nav: #14141F;
+  --color-huly-header: #1F1F2C;
+  --color-huly-popup: #2A2939;
+  --color-huly-surface: #21212F;
+  --color-huly-surface-hover: #282834;
+  --color-huly-surface-2: #262634;
+
+  /* ─── Huly Text Colors ─── */
+  --color-huly-caption: #FFFFFF;
+  --color-huly-content: rgba(255, 255, 255, 0.8);
+  --color-huly-secondary: rgba(255, 255, 255, 0.6);
+  --color-huly-muted: rgba(255, 255, 255, 0.4);
+  --color-huly-ghost: rgba(255, 255, 255, 0.3);
+
+  /* ─── Huly Interactive Surface Colors ─── */
+  --color-huly-btn-default: rgba(255, 255, 255, 0.02);
+  --color-huly-btn-hover: rgba(255, 255, 255, 0.04);
+  --color-huly-btn-pressed: rgba(255, 255, 255, 0.08);
+  --color-huly-btn-border: rgba(255, 255, 255, 0.09);
+
+  /* ─── Huly Dividers ─── */
+  --color-huly-divider: rgba(255, 255, 255, 0.06);
+  --color-huly-divider-hard: #282834;
+
+  /* ─── Huly Selection / Highlight ─── */
+  --color-huly-highlight-hover: #282834;
+  --color-huly-highlight-select: #252b3a;
+  --color-huly-highlight-select-border: #44506b;
+
+  /* ─── Huly Navpanel (Sidebar) ─── */
+  --color-huly-nav-hover: rgba(255, 255, 255, 0.04);
+  --color-huly-nav-selected: rgba(255, 255, 255, 0.08);
+  --color-huly-nav-divider: rgba(255, 255, 255, 0.1);
+  --color-huly-nav-icon: #7F7F7F;
+
+  /* ─── Huly Scrollbar ─── */
+  --color-huly-scrollbar: #35354a;
+  --color-huly-scrollbar-hover: #8a8aa5;
+
+  /* ─── Primary Blue (from Huly's palette) ─── */
+  --color-primary-50: #EBF2FC;
+  --color-primary-100: #D3E1F8;
+  --color-primary-200: #BDD2F5;
+  --color-primary-300: #93B8ED;
+  --color-primary-400: #5190EC;
+  --color-primary-500: #3575DE;
+  --color-primary-600: #205DC2;
+  --color-primary-700: #1C52AB;
+  --color-primary-800: #173F85;
+  --color-primary-900: #0f2a5a;
+
+  /* ─── Status / Semantic Colors ─── */
+  --color-positive-default: #05A05C;
+  --color-positive-hover: #05AD63;
+  --color-negative-default: #CB4B42;
+  --color-negative-hover: #DC5148;
+  --color-warning-default: #FCC500;
+  --color-urgent-default: #F5694A;
+  --color-accent-orange: #F47758;
+  --color-link: #377AE6;
+  --color-active-green: #34DB80;
+
+  /* ─── Huly Popup / Tooltip ─── */
+  --color-huly-tooltip-bg: #353347;
+  --color-huly-popup-hover: #333240;
+  --color-huly-popup-shadow: 0 0 0.5rem rgba(0, 0, 0, 0.2);
+
+  /* ─── Fonts ─── */
+  --font-sans: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'IBM Plex Mono', monospace;
+
+  /* ─── Timing Functions ─── */
+  --ease-huly: cubic-bezier(0.25, 0.46, 0.45, 0.94);
 }
 
+/* ─── Base Styles ─── */
 @layer base {
   html {
-    font-family: system-ui, sans-serif;
+    font-family: var(--font-sans);
+    font-size: 14px;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
   }
-  
+
   body {
-    background-color: var(--color-gray-50);
-    color: var(--color-gray-900);
+    background-color: var(--color-huly-back);
+    color: var(--color-huly-content);
+    scrollbar-color: var(--color-huly-scrollbar) transparent;
+    scrollbar-width: thin;
+    overflow: hidden;
+    height: 100vh;
+    width: 100vw;
   }
-  
-  @media (prefers-color-scheme: dark) {
-    body {
-      background-color: var(--color-gray-900);
-      color: var(--color-gray-100);
-    }
+
+  /* Custom Scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+  }
+  ::-webkit-scrollbar:horizontal {
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+    margin: 6px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background-color: var(--color-huly-scrollbar);
+    border-radius: 0.25rem;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: var(--color-huly-scrollbar-hover);
+  }
+  ::-webkit-scrollbar-corner {
+    background-color: transparent;
+  }
+
+  /* Selection */
+  ::selection {
+    background-color: var(--color-huly-highlight-select);
+    color: var(--color-huly-caption);
   }
 }
 
+/* ─── Huly-Style Button Utilities ─── */
 @utility btn {
-  padding-inline: 1rem;
-  padding-block: 0.5rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  padding-inline: 0.75rem;
+  padding-block: 0.375rem;
   border-radius: 0.375rem;
   font-weight: 500;
-  transition-property: color, background-color, border-color;
-  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+  white-space: nowrap;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition-property: color, background-color, border-color, box-shadow;
+  transition-timing-function: var(--ease-huly);
   transition-duration: 150ms;
+  user-select: none;
 }
 
 @utility btn-primary {
   @apply btn;
-  background-color: var(--color-blue-600);
-  color: white;
-  
+  background-color: var(--color-primary-600);
+  color: #fff;
+
   &:hover {
-    background-color: var(--color-blue-700);
+    background-color: var(--color-primary-500);
+  }
+  &:active {
+    background-color: var(--color-primary-700);
+  }
+  &:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--color-primary-400);
+  }
+  &:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
   }
 }
 
 @utility btn-secondary {
   @apply btn;
-  background-color: var(--color-gray-200);
-  color: var(--color-gray-800);
-  
+  background-color: var(--color-huly-btn-default);
+  color: var(--color-huly-content);
+  border-color: var(--color-huly-btn-border);
+
   &:hover {
-    background-color: var(--color-gray-300);
+    background-color: var(--color-huly-btn-hover);
+    color: var(--color-huly-caption);
   }
-  
-  @media (prefers-color-scheme: dark) {
-    background-color: var(--color-gray-700);
-    color: var(--color-gray-200);
+  &:active {
+    background-color: var(--color-huly-btn-pressed);
+  }
+  &:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--color-primary-400);
+  }
+  &:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
   }
 }
 
+@utility btn-ghost {
+  @apply btn;
+  background-color: transparent;
+  color: var(--color-huly-secondary);
+
+  &:hover {
+    background-color: var(--color-huly-btn-hover);
+    color: var(--color-huly-caption);
+  }
+  &:active {
+    background-color: var(--color-huly-btn-pressed);
+  }
+  &:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--color-primary-400);
+  }
+}
+
+@utility btn-danger {
+  @apply btn;
+  background-color: var(--color-negative-default);
+  color: #fff;
+
+  &:hover {
+    background-color: var(--color-negative-hover);
+  }
+  &:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+}
+
+@utility btn-positive {
+  @apply btn;
+  background-color: var(--color-positive-default);
+  color: #fff;
+
+  &:hover {
+    background-color: var(--color-positive-hover);
+  }
+  &:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+}
+
+/* ─── Huly-Style Card ─── */
 @utility card {
-  background-color: white;
+  background-color: var(--color-huly-surface);
+  border: 1px solid var(--color-huly-divider);
   border-radius: 0.5rem;
-  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
   padding: 1.5rem;
-  
-  @media (prefers-color-scheme: dark) {
-    background-color: var(--color-gray-800);
-  }
 }
 
+/* ─── Huly-Style Input ─── */
 @utility input {
   width: 100%;
   padding-inline: 0.75rem;
   padding-block: 0.5rem;
-  border: 1px solid var(--color-gray-300);
+  background-color: var(--color-huly-btn-default);
+  border: 1px solid var(--color-huly-btn-border);
   border-radius: 0.375rem;
-  
+  color: var(--color-huly-content);
+  font-size: 0.875rem;
+  transition: border-color 150ms var(--ease-huly), background-color 150ms var(--ease-huly);
+
+  &::placeholder {
+    color: var(--color-huly-muted);
+  }
   &:focus {
     outline: none;
-    box-shadow: 0 0 0 2px var(--color-blue-500);
+    border-color: var(--color-primary-400);
+    background-color: var(--color-huly-btn-hover);
   }
-  
-  @media (prefers-color-scheme: dark) {
-    border-color: var(--color-gray-600);
-    background-color: var(--color-gray-700);
+  &:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
   }
 }
 
+/* ─── Huly-Style Form Label ─── */
+@utility label {
+  display: block;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--color-huly-secondary);
+  margin-bottom: 0.25rem;
+}
+
+/* ─── Huly-Style Select ─── */
+@utility select {
+  @apply input;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%237F7F7F' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.75rem center;
+  padding-right: 2rem;
+}
+
+/* ─── Huly-Style Badge ─── */
+@utility badge {
+  display: inline-flex;
+  align-items: center;
+  padding-inline: 0.5rem;
+  padding-block: 0.125rem;
+  border-radius: 9999px;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  line-height: 1.25rem;
+}
+
+@utility badge-primary {
+  @apply badge;
+  background-color: rgba(32, 93, 194, 0.15);
+  color: var(--color-primary-400);
+}
+
+@utility badge-positive {
+  @apply badge;
+  background-color: rgba(5, 160, 92, 0.15);
+  color: var(--color-positive-default);
+}
+
+@utility badge-negative {
+  @apply badge;
+  background-color: rgba(203, 75, 66, 0.15);
+  color: var(--color-negative-default);
+}
+
+@utility badge-warning {
+  @apply badge;
+  background-color: rgba(252, 197, 0, 0.15);
+  color: var(--color-warning-default);
+}
+
+@utility badge-neutral {
+  @apply badge;
+  background-color: var(--color-huly-btn-default);
+  color: var(--color-huly-secondary);
+  border: 1px solid var(--color-huly-btn-border);
+}
+
+/* ─── Huly-Style Alert ─── */
+@utility alert {
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
+  font-size: 0.8125rem;
+  line-height: 1.375rem;
+  border: 1px solid transparent;
+}
+
+@utility alert-info {
+  @apply alert;
+  background-color: rgba(32, 93, 194, 0.1);
+  border-color: rgba(32, 93, 194, 0.2);
+  color: var(--color-primary-300);
+}
+
+@utility alert-error {
+  @apply alert;
+  background-color: rgba(203, 75, 66, 0.1);
+  border-color: rgba(203, 75, 66, 0.2);
+  color: var(--color-negative-default);
+}
+
+@utility alert-warning {
+  @apply alert;
+  background-color: rgba(252, 197, 0, 0.1);
+  border-color: rgba(252, 197, 0, 0.2);
+  color: var(--color-warning-default);
+}
+
+@utility alert-success {
+  @apply alert;
+  background-color: rgba(5, 160, 92, 0.1);
+  border-color: rgba(5, 160, 92, 0.2);
+  color: var(--color-positive-default);
+}
+
+/* ─── Huly-Style Table ─── */
+@utility table-head {
+  background-color: var(--color-huly-header);
+}
+
+@utility table-row-hover {
+  transition: background-color 100ms var(--ease-huly);
+
+  &:hover {
+    background-color: var(--color-huly-highlight-hover);
+  }
+}
+
+@utility th-cell {
+  padding: 0.5rem 1rem;
+  text-align: left;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-huly-muted);
+}
+
+@utility td-cell {
+  padding: 0.5rem 1rem;
+  font-size: 0.8125rem;
+  color: var(--color-huly-content);
+}
+
+/* ─── Huly-Style Modal ─── */
+@utility modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(2px);
+}
+
+@utility modal-container {
+  background-color: var(--color-huly-popup);
+  border: 1px solid var(--color-huly-divider);
+  border-radius: 0.75rem;
+  box-shadow: var(--color-huly-popup-shadow);
+  padding: 1.5rem;
+  width: 100%;
+}
+
+/* ─── Huly-Style Link ─── */
+@utility link {
+  color: var(--color-link);
+  transition: color 100ms var(--ease-huly);
+
+  &:hover {
+    color: var(--color-primary-400);
+  }
+}
+
+@utility link-danger {
+  color: var(--color-negative-default);
+  transition: color 100ms var(--ease-huly);
+
+  &:hover {
+    color: var(--color-negative-hover);
+  }
+}
+
+@utility link-warning {
+  color: var(--color-accent-orange);
+  transition: color 100ms var(--ease-huly);
+
+  &:hover {
+    color: var(--color-warning-default);
+  }
+}
+
+/* ─── Huly-Style Tooltip ─── */
+@utility tooltip {
+  position: absolute;
+  z-index: 50;
+  padding: 0.25rem 0.5rem;
+  background-color: var(--color-huly-tooltip-bg);
+  color: var(--color-huly-content);
+  font-size: 0.6875rem;
+  border-radius: 0.25rem;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 100ms var(--ease-huly);
+}
+
+/* ─── Huly-Style Progress Bar ─── */
+@utility progress-track {
+  width: 100%;
+  background-color: var(--color-huly-btn-default);
+  border-radius: 9999px;
+  overflow: hidden;
+  border: 1px solid var(--color-huly-divider);
+}
+
+/* ─── Phase 3: Huly Layout Utilities ─── */
+
+/* Page-level container — replaces max-w-7xl mx-auto px-6 py-8 */
+@utility page-container {
+  width: 100%;
+  height: 100%;
+  overflow-y: auto;
+  padding: 1.25rem 1.5rem;
+}
+
+/* Page header — compact title + action row */
+@utility page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--color-huly-divider);
+  margin-bottom: 1rem;
+}
+
+/* Section header — used within a page for sub-sections */
+@utility section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 0.75rem;
+  margin-bottom: 0.75rem;
+  border-bottom: 1px solid var(--color-huly-divider);
+}
+
+/* Stat card — compact KPI display */
+@utility stat-card {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  background-color: var(--color-huly-surface);
+  border: 1px solid var(--color-huly-divider);
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
+}
+
+/* Stat value — large number in stat card */
+@utility stat-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--color-huly-caption);
+}
+
+/* Stat label — small label in stat card */
+@utility stat-label {
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: var(--color-huly-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* Compact table — tighter padding for Huly-like density */
+@utility th-cell-compact {
+  padding: 0.375rem 0.75rem;
+  text-align: left;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-huly-muted);
+}
+
+@utility td-cell-compact {
+  padding: 0.375rem 0.75rem;
+  font-size: 0.8125rem;
+  color: var(--color-huly-content);
+}
+
+/* List row — borderless alternative to table rows */
+@utility list-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.375rem;
+  transition: background-color 100ms var(--ease-huly);
+
+  &:hover {
+    background-color: var(--color-huly-highlight-hover);
+  }
+}
+
+/* Icon box — colored icon container for stat cards */
+@utility icon-box {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 0.375rem;
+  flex-shrink: 0;
+}
+
+/* Activity item — for feed/log entries */
+@utility activity-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.625rem;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--color-huly-divider);
+  font-size: 0.8125rem;
+
+  &:last-child {
+    border-bottom: none;
+  }
+}
+
+/* Empty state — centered placeholder */
+@utility empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem 1rem;
+  color: var(--color-huly-muted);
+  font-size: 0.8125rem;
+  text-align: center;
+}
+
+/* Panel — flush container without card padding (for full-width tables) */
+@utility panel {
+  background-color: var(--color-huly-surface);
+  border: 1px solid var(--color-huly-divider);
+  border-radius: 0.5rem;
+  overflow: hidden;
+}
+
+/* Toolbar — filter/action bar above tables */
+@utility toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background-color: var(--color-huly-header);
+  border-bottom: 1px solid var(--color-huly-divider);
+  font-size: 0.8125rem;
+}
+
+/* Spinner utility (already used, just documenting) */
+@utility spinner {
+  width: 2rem;
+  height: 2rem;
+  border: 2px solid var(--color-huly-divider);
+  border-top-color: var(--color-primary-400);
+  border-radius: 9999px;
+  animation: spin 0.6s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ═══════════════════════════════════════════════════════════════ */
+/* Phase 4: Polish — skeletons, transitions, micro-interactions  */
+/* ═══════════════════════════════════════════════════════════════ */
+
+/* ─── Skeleton Loader ─── */
+@utility skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--color-huly-surface-2) 25%,
+    var(--color-huly-surface-hover) 50%,
+    var(--color-huly-surface-2) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+  border-radius: 0.375rem;
+}
+
+@utility skeleton-text {
+  height: 0.75rem;
+  width: 100%;
+  background: linear-gradient(
+    90deg,
+    var(--color-huly-surface-2) 25%,
+    var(--color-huly-surface-hover) 50%,
+    var(--color-huly-surface-2) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+  border-radius: 0.25rem;
+}
+
+@utility skeleton-circle {
+  border-radius: 9999px;
+  background: linear-gradient(
+    90deg,
+    var(--color-huly-surface-2) 25%,
+    var(--color-huly-surface-hover) 50%,
+    var(--color-huly-surface-2) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+
+@utility skeleton-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.375rem 0.75rem;
+  border-bottom: 1px solid var(--color-huly-divider);
+}
+
+@keyframes shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* ─── Fade / Slide Transitions ─── */
+@utility fade-in {
+  animation: fadeIn 200ms var(--ease-huly) forwards;
+}
+
+@utility slide-up {
+  animation: slideUp 200ms var(--ease-huly) forwards;
+}
+
+@utility slide-down {
+  animation: slideDown 200ms var(--ease-huly) forwards;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ─── Card Hover Lift ─── */
+@utility card-hover {
+  transition: border-color 150ms var(--ease-huly),
+              box-shadow 150ms var(--ease-huly),
+              transform 150ms var(--ease-huly);
+
+  &:hover {
+    border-color: rgba(255, 255, 255, 0.12);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+    transform: translateY(-1px);
+  }
+}
+
+/* ─── Button Press Effect ─── */
+@utility btn-press {
+  transition: transform 80ms var(--ease-huly),
+              box-shadow 80ms var(--ease-huly);
+
+  &:active {
+    transform: scale(0.97);
+    box-shadow: none;
+  }
+}
+
+/* ─── Enhanced Table Row Hover ─── */
+@utility row-highlight {
+  transition: background-color 100ms var(--ease-huly);
+
+  &:hover {
+    background-color: var(--color-huly-highlight-hover);
+  }
+}
+
+/* ─── Sidebar Tooltip (on collapsed sidebar) ─── */
+@utility sidebar-tooltip {
+  position: absolute;
+  left: 100%;
+  top: 50%;
+  transform: translateY(-50%);
+  margin-left: 0.5rem;
+  padding: 0.25rem 0.625rem;
+  background-color: var(--color-huly-tooltip-bg);
+  color: var(--color-huly-caption);
+  font-size: 0.75rem;
+  font-weight: 500;
+  border-radius: 0.375rem;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 100ms var(--ease-huly);
+  z-index: 60;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+/* ─── Focus Ring (keyboard nav) ─── */
+@utility focus-ring {
+  outline: none;
+
+  &:focus-visible {
+    outline: 2px solid var(--color-primary-400);
+    outline-offset: 2px;
+    border-radius: 0.25rem;
+  }
+}
+
+/* ─── Responsive: Scrollable Table Wrapper ─── */
+@utility table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* ─── Responsive: Stacked Stat Cards ─── */
+@utility stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 0.75rem;
+}
+
+/* ─── Vis.js Timeline Overrides (Dark Theme) ─── */
 @layer components {
+  /* Hide delete button on items */
   .vis-delete {
     display: none !important;
   }
 
+  /* ── Timeline container ── */
+  .vis-timeline {
+    border-color: rgba(255, 255, 255, 0.06) !important;
+    background: var(--color-huly-surface) !important;
+    font-family: 'IBM Plex Sans', system-ui, sans-serif !important;
+  }
+
+  /* ── Group labels (left panel — resource names) ── */
+  .vis-labelset .vis-label {
+    color: rgba(255, 255, 255, 0.8) !important;
+    background: var(--color-huly-surface) !important;
+    border-bottom-color: rgba(255, 255, 255, 0.06) !important;
+    font-size: 0.8125rem !important;
+    font-weight: 500 !important;
+  }
+  .vis-panel.vis-left {
+    border-right-color: rgba(255, 255, 255, 0.06) !important;
+  }
+
+  /* ── Time axis — minor labels (day numbers) ── */
+  .vis-time-axis .vis-text.vis-minor {
+    color: rgba(255, 255, 255, 0.6) !important;
+    font-size: 0.75rem !important;
+    font-weight: 400 !important;
+  }
+
+  /* ── Time axis — major labels (month + year) ── */
+  .vis-time-axis .vis-text.vis-major {
+    color: rgba(255, 255, 255, 0.9) !important;
+    font-size: 0.75rem !important;
+    font-weight: 600 !important;
+    background: transparent !important;
+  }
+
+  /* ── Weekend major labels ── */
   .vis-time-axis .vis-text.vis-major.vis-sunday,
   .vis-time-axis .vis-text.vis-major.vis-saturday {
     background: transparent !important;
   }
 
-  .vis-time-axis .vis-text.vis-major {
-    background: transparent !important;
+  /* ── Time axis lines & backgrounds ── */
+  .vis-time-axis .vis-grid.vis-minor {
+    border-color: rgba(255, 255, 255, 0.04) !important;
+  }
+  .vis-time-axis .vis-grid.vis-major {
+    border-color: rgba(255, 255, 255, 0.08) !important;
+  }
+  .vis-time-axis {
+    border-bottom-color: rgba(255, 255, 255, 0.06) !important;
   }
 
-  .vis-item.vis-background.holiday-bg {
-    background-color: rgba(156, 163, 175, 0.35) !important;
+  /* ── Grid background cells ── */
+  .vis-panel.vis-center,
+  .vis-panel.vis-top,
+  .vis-panel.vis-bottom {
+    background: var(--color-huly-back) !important;
+  }
+
+  /* ── Weekend column shading ── */
+  .vis-time-axis .vis-grid.vis-saturday,
+  .vis-time-axis .vis-grid.vis-sunday {
+    background: rgba(255, 255, 255, 0.03) !important;
+  }
+
+  /* ── Current time indicator ── */
+  .vis-current-time {
+    background-color: #ef4444 !important;
+    width: 2px !important;
+  }
+
+  /* ── Group rows (horizontal separators) ── */
+  .vis-foreground .vis-group {
+    border-bottom-color: rgba(255, 255, 255, 0.06) !important;
+  }
+
+  /* ── Timeline items (allocation bars) ── */
+  .vis-item {
+    color: #fff !important;
+    font-size: 0.75rem !important;
+    font-weight: 500 !important;
+    border-radius: 4px !important;
     border: none !important;
+  }
+  .vis-item .vis-item-content {
+    padding: 2px 8px !important;
+  }
+  .vis-item.vis-selected {
+    outline: 2px solid rgba(255, 255, 255, 0.3) !important;
+    outline-offset: 1px !important;
+  }
+
+  /* ── Holiday & Weekend backgrounds ── */
+  .vis-item.vis-background.holiday-bg,
+  .vis-item.vis-background.holiday-background,
+  .vis-item.vis-background.weekend-background {
+    background-color: rgba(156, 163, 175, 0.1) !important;
+    border: none !important;
+  }
+
+  /* ── Custom scrollbar for timeline ── */
+  .vis-timeline::-webkit-scrollbar {
+    height: 6px;
+    width: 6px;
+  }
+  .vis-timeline::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .vis-timeline::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 3px;
   }
 }

@@ -3,7 +3,6 @@ use crate::auth::{
     validate_token, AuthContext,
 };
 use crate::components::timeline_chart::{AllocationItem, ResourceGroup, TimelineChart};
-use crate::components::{Footer, Header};
 use crate::timeline::{TimelineGroup, TimelineItem};
 use gloo_timers::callback::Timeout;
 use js_sys::Date;
@@ -545,29 +544,29 @@ fn current_month_range() -> (String, String) {
 
 fn allocation_color(pct: f64) -> &'static str {
     if pct > 100.0 {
-        "text-red-800 dark:text-red-300 font-bold"
+        "text-negative-default font-bold"
     } else if pct >= 81.0 {
-        "text-yellow-600 dark:text-yellow-400"
+        "text-warning-default"
     } else {
-        "text-green-600 dark:text-green-400"
+        "text-positive-default"
     }
 }
 
 fn budget_health_color(health: &str) -> &'static str {
     match health {
-        "healthy" => "bg-green-500",
-        "warning" => "bg-yellow-500",
-        "critical" => "bg-red-500",
-        _ => "bg-gray-400",
+        "healthy" => "bg-positive-default",
+        "warning" => "bg-warning-default",
+        "critical" => "bg-negative-default",
+        _ => "bg-huly-muted",
     }
 }
 
 fn budget_health_text_color(health: &str) -> &'static str {
     match health {
-        "healthy" => "text-green-600 dark:text-green-400",
-        "warning" => "text-yellow-600 dark:text-yellow-400",
-        "critical" => "text-red-600 dark:text-red-400",
-        _ => "text-gray-600 dark:text-gray-400",
+        "healthy" => "text-positive-default",
+        "warning" => "text-warning-default",
+        "critical" => "text-negative-default",
+        _ => "text-huly-secondary",
     }
 }
 
@@ -1342,14 +1341,13 @@ pub fn TeamPage() -> impl IntoView {
     };
 
     view! {
-        <div class="min-h-screen flex flex-col bg-gray-50 dark:bg-gray-900">
-            <Header/>
+        <div class="h-full">
 
-            <main class="flex-grow max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 w-full">
+            <div class="page-container fade-in">
                 {move || {
                     if !auth_checked.get() {
                         return view! {
-                            <div class="rounded-md bg-blue-50 p-4 dark:bg-blue-900/20 text-blue-800 dark:text-blue-200">
+                            <div class="alert-info">
                                 "Checking access..."
                             </div>
                         }.into_view();
@@ -1357,49 +1355,52 @@ pub fn TeamPage() -> impl IntoView {
 
                     if !is_authorized.get() {
                         return view! {
-                            <div class="rounded-md bg-red-50 p-4 dark:bg-red-900/20 text-red-800 dark:text-red-200">
+                            <div class="alert-error">
                                 "Access denied."
                             </div>
                         }.into_view();
                     }
 
                     view! {
-                        <div class="space-y-8">
+                        <div class="space-y-4">
                             <div class="flex items-center justify-between">
-                                <h1 class="text-3xl font-bold text-gray-900 dark:text-white">
+                                <h1 class="text-xl font-semibold text-huly-caption">
                                     "My Team"
                                 </h1>
                             </div>
 
                             {move || error.get().map(|err| view! {
-                                <div class="rounded-md bg-red-50 p-4 dark:bg-red-900/20 text-red-800 dark:text-red-200">{err}</div>
+                                <div class="alert-error">{err}</div>
                             })}
 
-                            <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
-                                <div class="p-4 bg-white dark:bg-gray-800 shadow rounded-lg">
-                                    <div class="text-sm text-gray-500 dark:text-gray-400">"Total Team Members"</div>
-                                    <div class="text-2xl font-bold text-gray-900 dark:text-white">{move || total_members.get()}</div>
+                            <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+                                <div class="stat-card card-hover">
+                                    <div class="stat-label">"Total Team Members"</div>
+                                    <div class="stat-value">{move || total_members.get()}</div>
                                 </div>
-                                <div class="p-4 bg-white dark:bg-gray-800 shadow rounded-lg">
-                                    <div class="text-sm text-gray-500 dark:text-gray-400">"Avg Daily Rate"</div>
-                                    <div class="text-2xl font-bold text-gray-900 dark:text-white font-mono">{move || format_idr(avg_daily_rate.get())}</div>
+                                <div class="stat-card card-hover">
+                                    <div class="stat-label">"Avg Daily Rate"</div>
+                                    <div class="stat-value font-mono">{move || format_idr(avg_daily_rate.get())}</div>
                                 </div>
-                                <div class="p-4 bg-white dark:bg-gray-800 shadow rounded-lg">
-                                    <div class="text-sm text-gray-500 dark:text-gray-400">"Avg Allocation %"</div>
-                                    <div class="text-2xl font-bold text-gray-900 dark:text-white">{move || format!("{:.1}%", avg_allocation.get())}</div>
+                                <div class="stat-card card-hover">
+                                    <div class="stat-label">"Avg Allocation %"</div>
+                                    <div class="stat-value">{move || format!("{:.1}%", avg_allocation.get())}</div>
                                 </div>
-                                <div class="p-4 bg-white dark:bg-gray-800 shadow rounded-lg">
-                                    <div class="text-sm text-gray-500 dark:text-gray-400">"CTC Missing"</div>
-                                    <div class="text-2xl font-bold text-red-600 dark:text-red-400">{move || missing_ctc_count.get()}</div>
+                                <div class="stat-card card-hover">
+                                    <div class="stat-label">"CTC Missing"</div>
+                                    <div class="stat-value text-negative-default">{move || missing_ctc_count.get()}</div>
                                 </div>
                             </div>
 
-                            <div class="bg-white dark:bg-gray-800 shadow rounded-lg p-6 space-y-4">
+                            <div class="panel space-y-4">
+                                <div class="toolbar">
+                                    <div class="section-header">"Team Members"</div>
+                                </div>
                                 <div class="flex items-center gap-4">
                                     <div class="flex items-center gap-2">
-                                        <label class="text-sm font-medium text-gray-700 dark:text-gray-300">"Filter Status:"</label>
+                                        <label class="label">"Filter Status:"</label>
                                         <select
-                                            class="border rounded px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                                            class="select text-sm"
                                             prop:value=filter_status
                                             on:change=move |ev| set_filter_status.set(event_target_value(&ev))
                                         >
@@ -1409,9 +1410,9 @@ pub fn TeamPage() -> impl IntoView {
                                         </select>
                                     </div>
                                     <div class="flex items-center gap-2">
-                                        <label class="text-sm font-medium text-gray-700 dark:text-gray-300">"Sort By:"</label>
+                                        <label class="label">"Sort By:"</label>
                                         <select
-                                            class="border rounded px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                                            class="select text-sm"
                                             prop:value=sort_by
                                             on:change=move |ev| set_sort_by.set(event_target_value(&ev))
                                         >
@@ -1422,33 +1423,33 @@ pub fn TeamPage() -> impl IntoView {
                                         </select>
                                     </div>
                                     {move || loading.get().then(|| view! {
-                                        <div class="text-sm text-gray-500">"Loading..."</div>
+                                        <div class="skeleton-text w-20 h-2"></div>
                                     })}
                                 </div>
 
                                 <div class="mt-4 overflow-x-auto">
-                                    <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                                        <thead class="bg-gray-50 dark:bg-gray-700">
+                                    <table class="min-w-full divide-y divide-huly-divider">
+                                        <thead class="table-head">
                                             <tr>
-                                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">"Name"</th>
-                                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">"Role"</th>
-                                                <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">"Daily Rate"</th>
-                                                <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">"Current Allocation %"</th>
-                                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">"Projects"</th>
-                                                <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">"Status"</th>
-                                                <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">"Actions"</th>
+                                                <th class="th-cell-compact">"Name"</th>
+                                                <th class="th-cell-compact">"Role"</th>
+                                                <th class="th-cell-compact text-right">"Daily Rate"</th>
+                                                <th class="th-cell-compact text-right">"Current Allocation %"</th>
+                                                <th class="th-cell-compact">"Projects"</th>
+                                                <th class="th-cell-compact text-center">"Status"</th>
+                                                <th class="th-cell-compact text-center">"Actions"</th>
                                             </tr>
                                         </thead>
-                                        <tbody class="divide-y divide-gray-200 dark:divide-gray-700 bg-white dark:bg-gray-800">
+                                        <tbody class="divide-y divide-huly-divider">
                                             <For
                                                 each=move || filtered_and_sorted.get()
                                                 key=|m| m.resource_id.clone()
                                                 children=move |m| {
                                                     let is_missing = m.ctc_status == "Missing";
                                                     let row_class = if is_missing {
-                                                        "text-gray-400 bg-gray-50/50 dark:bg-gray-800/50"
+                                                        "text-huly-ghost bg-huly-surface/50"
                                                     } else {
-                                                        "text-gray-900 dark:text-gray-100"
+                                                        "text-huly-content"
                                                     };
 
                                                     let rate_text = match m.daily_rate {
@@ -1457,7 +1458,7 @@ pub fn TeamPage() -> impl IntoView {
                                                     };
 
                                                     let alloc_class = if is_missing {
-                                                        "text-gray-400 font-mono text-right".to_string()
+                                                        "text-huly-ghost font-mono text-right".to_string()
                                                     } else {
                                                         format!(
                                                             "font-mono text-right {}",
@@ -1490,11 +1491,11 @@ pub fn TeamPage() -> impl IntoView {
                                                     };
 
                                                     let status_badge = if is_missing {
-                                                        "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300 border-red-200"
+                                                        "badge-negative"
                                                     } else if m.is_overallocated {
-                                                        "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300 border-red-200"
+                                                        "badge-negative"
                                                     } else {
-                                                        "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300 border-green-200"
+                                                        "badge-positive"
                                                     };
 
                                                     let display_status = if is_missing {
@@ -1515,24 +1516,24 @@ pub fn TeamPage() -> impl IntoView {
 
                                                     view! {
                                                         <tr class=row_class>
-                                                            <td class="px-4 py-3 text-sm font-medium">{m.name.clone()}</td>
-                                                            <td class="px-4 py-3 text-sm">{m.role.clone()}</td>
-                                                            <td class="px-4 py-3 text-sm font-mono text-right">{rate_text}</td>
-                                                            <td class=format!("px-4 py-3 text-sm {}", alloc_class)>{format!("{:.1}%", m.current_allocation_percentage)}</td>
-                                                            <td class="px-4 py-3 text-sm" title=projects_title>{projects_display}</td>
-                                                            <td class="px-4 py-3 text-sm text-center">
-                                                                <span class=format!("px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full border {}", status_badge)>
+                                                            <td class="td-cell-compact font-medium">{m.name.clone()}</td>
+                                                            <td class="td-cell-compact">{m.role.clone()}</td>
+                                                            <td class="td-cell-compact font-mono text-right">{rate_text}</td>
+                                                            <td class=format!("td-cell-compact {}", alloc_class)>{format!("{:.1}%", m.current_allocation_percentage)}</td>
+                                                            <td class="td-cell-compact" title=projects_title>{projects_display}</td>
+                                                            <td class="td-cell-compact text-center">
+                                                                <span class=format!("inline-flex text-xs leading-5 font-semibold {}", status_badge)>
                                                                     {display_status}
                                                                 </span>
                                                             </td>
-                                                            <td class="px-4 py-3 text-sm text-center">
+                                                            <td class="td-cell-compact text-center">
                                                                 <div class="flex items-center justify-center gap-2">
                                                                     {if is_missing {
                                                                         view! {
                                                                             <button
                                                                                 disabled=true
                                                                                 title="CTC data required to assign. Contact HR to complete employee setup."
-                                                                                class="px-3 py-1 text-xs font-medium rounded bg-gray-200 text-gray-400 cursor-not-allowed dark:bg-gray-700 dark:text-gray-500"
+                                                                                class="btn-secondary text-xs opacity-50 cursor-not-allowed"
                                                                             >
                                                                                 "Assign"
                                                                             </button>
@@ -1540,7 +1541,7 @@ pub fn TeamPage() -> impl IntoView {
                                                                     } else if can_assign.get() {
                                                                         view! {
                                                                             <button
-                                                                                class="px-3 py-1 text-xs font-medium rounded bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600"
+                                                                                class="btn-primary text-xs"
                                                                                 on:click=move |_| open_assign_modal(rid_assign.clone(), rname_assign.clone())
                                                                             >
                                                                                 "Assign"
@@ -1552,7 +1553,7 @@ pub fn TeamPage() -> impl IntoView {
                                                                     {if has_assignments {
                                                                         view! {
                                                                             <button
-                                                                                class="px-3 py-1 text-xs font-medium rounded bg-indigo-600 text-white hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600"
+                                                                                class="btn-secondary text-xs"
                                                                                 on:click=move |_| open_timeline_modal(rid_timeline.clone(), rname_timeline.clone(), total_pct)
                                                                             >
                                                                                 "View Timeline"
@@ -1569,8 +1570,13 @@ pub fn TeamPage() -> impl IntoView {
                                             />
                                             {move || filtered_and_sorted.get().is_empty().then(|| view! {
                                                 <tr>
-                                                    <td colspan="7" class="px-4 py-8 text-center text-sm text-gray-500">
-                                                        "No team members found."
+                                                    <td colspan="7" class="td-cell-compact">
+                                                        <div class="empty-state py-8">
+                                                            <svg class="w-10 h-10 text-huly-ghost mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1">
+                                                                <path stroke-linecap="round" stroke-linejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
+                                                            </svg>
+                                                            <p class="text-huly-secondary text-sm">"No team members found."</p>
+                                                        </div>
                                                     </td>
                                                 </tr>
                                             })}
@@ -1579,35 +1585,33 @@ pub fn TeamPage() -> impl IntoView {
                                 </div>
                             </div>
 
-                            <div class="bg-white dark:bg-gray-800 shadow rounded-lg p-6 space-y-4">
-                                <div class="flex flex-col md:flex-row md:items-end md:justify-between gap-3">
-                                    <div>
-                                        <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
-                                            "Department Capacity Report"
-                                        </h2>
-                                        <p class="text-sm text-gray-500 dark:text-gray-400">
+                            <div class="panel space-y-4">
+                                <div class="toolbar flex flex-col md:flex-row md:items-end md:justify-between gap-3">
+                                    <div class="space-y-1">
+                                        <div class="section-header">"Department Capacity"</div>
+                                        <p class="text-sm text-huly-muted">
                                             "Utilization by month with overallocated periods highlighted"
                                         </p>
                                     </div>
                                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
                                         <div>
-                                            <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
+                                            <label class="label text-xs">
                                                 "Start Date"
                                             </label>
                                             <input
                                                 type="date"
-                                                class="border rounded px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                                                class="input text-sm"
                                                 prop:value=capacity_start_date
                                                 on:input=move |ev| set_capacity_start_date.set(event_target_value(&ev))
                                             />
                                         </div>
                                         <div>
-                                            <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
+                                            <label class="label text-xs">
                                                 "End Date"
                                             </label>
                                             <input
                                                 type="date"
-                                                class="border rounded px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                                                class="input text-sm"
                                                 prop:value=capacity_end_date
                                                 on:input=move |ev| set_capacity_end_date.set(event_target_value(&ev))
                                             />
@@ -1616,11 +1620,14 @@ pub fn TeamPage() -> impl IntoView {
                                 </div>
 
                                 {move || capacity_error.get().map(|err| view! {
-                                    <div class="rounded-md bg-red-50 p-3 dark:bg-red-900/20 text-red-800 dark:text-red-200 text-sm">{err}</div>
+                                    <div class="alert-error text-sm">{err}</div>
                                 })}
 
                                 {move || capacity_loading.get().then(|| view! {
-                                    <div class="text-sm text-gray-500 dark:text-gray-400">"Loading capacity report..."</div>
+                                    <div class="space-y-2 py-2">
+                                        <div class="skeleton-row"><div class="skeleton-text w-28"></div><div class="skeleton-text w-20"></div><div class="skeleton-text w-16"></div></div>
+                                        <div class="skeleton-row"><div class="skeleton-text w-24"></div><div class="skeleton-text w-16"></div><div class="skeleton-text w-20"></div></div>
+                                    </div>
                                 })}
 
                                 {move || {
@@ -1635,16 +1642,16 @@ pub fn TeamPage() -> impl IntoView {
 
                                             view! {
                                                 <div class="space-y-2">
-                                                    <div class="text-xs text-gray-500 dark:text-gray-400">
+                                                    <div class="text-xs text-huly-muted">
                                                         {format!("Range: {} to {}", report.start_date, report.end_date)}
                                                     </div>
                                                     <div class="overflow-x-auto">
-                                                        <table class="min-w-full text-sm border border-gray-200 dark:border-gray-700">
-                                                            <thead class="bg-gray-50 dark:bg-gray-700">
+                                                        <table class="min-w-full text-sm border border-huly-divider">
+                                                            <thead class="table-head">
                                                                 <tr>
-                                                                    <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">"Employee"</th>
+                                                                    <th class="th-cell-compact">"Employee"</th>
                                                                     {periods.iter().map(|period| view! {
-                                                                        <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">{period.clone()}</th>
+                                                                        <th class="th-cell-compact text-right">{period.clone()}</th>
                                                                     }).collect::<Vec<_>>()}
                                                                 </tr>
                                                             </thead>
@@ -1652,20 +1659,20 @@ pub fn TeamPage() -> impl IntoView {
                                                                 {report.employees.iter().map(|employee| {
                                                                     let row_name = employee.resource_name.clone();
                                                                     view! {
-                                                                        <tr class="border-t border-gray-200 dark:border-gray-700">
-                                                                            <td class="px-3 py-2 font-medium text-gray-900 dark:text-gray-100">{row_name}</td>
+                                                                        <tr class="border-t border-huly-divider">
+                                                                            <td class="td-cell-compact font-medium text-huly-caption">{row_name}</td>
                                                                             {employee.periods.iter().map(|period| {
                                                                                 let pct = period.total_allocation_percentage;
                                                                                 let cell_class = if period.is_overallocated {
-                                                                                    "bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300"
+                                                                                    "bg-negative-default/10 text-negative-default"
                                                                                 } else if pct >= 80.0 {
-                                                                                    "bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-300"
+                                                                                    "bg-warning-default/10 text-warning-default"
                                                                                 } else {
-                                                                                    "bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300"
+                                                                                    "bg-positive-default/10 text-positive-default"
                                                                                 };
 
                                                                                 view! {
-                                                                                    <td class=format!("px-3 py-2 text-right font-mono {}", cell_class) title=format!("{} allocations", period.allocation_count)>
+                                                                                    <td class=format!("td-cell-compact text-right font-mono {}", cell_class) title=format!("{} allocations", period.allocation_count)>
                                                                                         {format!("{:.1}%", pct)}
                                                                                     </td>
                                                                                 }
@@ -1689,19 +1696,17 @@ pub fn TeamPage() -> impl IntoView {
 
                 // Department Budget Section
                 {move || auth_checked.get().then(|| view! {
-                    <div class="bg-white dark:bg-gray-800 shadow rounded-lg p-6 space-y-6 mt-6">
-                        <div class="flex flex-col md:flex-row md:items-end md:justify-between gap-3">
-                            <div>
-                                <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
-                                    "Department Budget"
-                                </h2>
-                                <p class="text-sm text-gray-500 dark:text-gray-400">
+                    <div class="panel space-y-4 mt-4">
+                        <div class="toolbar flex flex-col md:flex-row md:items-end md:justify-between gap-3">
+                            <div class="space-y-1">
+                                <div class="section-header">"Department Budget"</div>
+                                <p class="text-sm text-huly-muted">
                                     "Budget utilization and breakdown by employee, project, and period"
                                 </p>
                             </div>
                             <div class="flex items-center gap-2">
                                 <select
-                                    class="border rounded px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                                    class="select text-sm"
                                     prop:value=budget_period
                                     on:change=move |ev| set_budget_period.set(event_target_value(&ev))
                                 >
@@ -1725,7 +1730,7 @@ pub fn TeamPage() -> impl IntoView {
                                     })()}
                                 </select>
                                 <button
-                                    class="px-4 py-2 text-sm font-medium rounded bg-blue-600 text-white hover:bg-blue-700"
+                                    class="btn-primary btn-press"
                                     on:click=move |_| {
                                         set_show_budget_edit.set(true);
                                         set_budget_edit_error.set(None);
@@ -1751,21 +1756,21 @@ pub fn TeamPage() -> impl IntoView {
                             let threshold = s.alert_threshold_pct as f64;
                             if util >= threshold && s.budget_configured {
                                 let (bg, badge_text) = if util >= 80.0 {
-                                    ("bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800", "Critical")
+                                    ("bg-negative-default/10 border border-negative-default/20", "Critical")
                                 } else {
-                                    ("bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800", "Warning")
+                                    ("bg-warning-default/10 border border-warning-default/20", "Warning")
                                 };
                                 let remaining_str = format_idr(s.remaining_idr);
                                 let budget_str = format_idr(s.total_budget_idr);
                                 Some(view! {
                                     <div class=format!("rounded-md border p-4 flex items-center gap-3 {}", bg)>
                                         <span class=format!("inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {}",
-                                            if util >= 80.0 { "bg-red-100 text-red-800 dark:bg-red-800 dark:text-red-100" }
-                                            else { "bg-yellow-100 text-yellow-800 dark:bg-yellow-800 dark:text-yellow-100" }
+                                            if util >= 80.0 { "badge-negative" }
+                                            else { "badge-warning" }
                                         )>
                                             {badge_text}
                                         </span>
-                                        <span class="text-sm text-gray-700 dark:text-gray-300">
+                                        <span class="text-sm text-huly-content">
                                             {format!("Department budget utilization at {:.1}% \u{2014} {} remaining of {} budget", util, remaining_str, budget_str)}
                                         </span>
                                     </div>
@@ -1776,11 +1781,14 @@ pub fn TeamPage() -> impl IntoView {
                         })}
 
                         {move || budget_error.get().map(|err| view! {
-                            <div class="rounded-md bg-red-50 p-3 dark:bg-red-900/20 text-red-800 dark:text-red-200 text-sm">{err}</div>
+                            <div class="alert-error text-sm">{err}</div>
                         })}
 
                         {move || budget_loading.get().then(|| view! {
-                            <div class="text-sm text-gray-500 dark:text-gray-400">"Loading budget data..."</div>
+                            <div class="space-y-2 py-2">
+                                <div class="skeleton-row"><div class="skeleton-text w-28"></div><div class="skeleton-text w-20"></div><div class="skeleton-text w-16"></div></div>
+                                <div class="skeleton-row"><div class="skeleton-text w-24"></div><div class="skeleton-text w-16"></div><div class="skeleton-text w-20"></div></div>
+                            </div>
                         })}
 
                         // Budget Summary Cards
@@ -1789,32 +1797,32 @@ pub fn TeamPage() -> impl IntoView {
                             view! {
                                 <div class="space-y-4">
                                     {(!s.budget_configured).then(|| view! {
-                                        <div class="text-sm text-gray-500 dark:text-gray-400 italic">"Budget not configured for this period"</div>
+                                        <div class="empty-state">"Budget not configured for this period"</div>
                                     })}
-                                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-                                        <div class="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4">
-                                            <div class="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">"Total Budget"</div>
-                                            <div class="font-mono text-lg text-blue-600 dark:text-blue-400">{format_idr(s.total_budget_idr)}</div>
+                                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+                                        <div class="stat-card card-hover">
+                                            <div class="stat-label">"Total Budget"</div>
+                                            <div class="stat-value font-mono text-primary-400">{format_idr(s.total_budget_idr)}</div>
                                         </div>
-                                        <div class="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4">
-                                            <div class="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">"Committed"</div>
-                                            <div class="font-mono text-lg text-gray-900 dark:text-gray-100">{format_idr(s.total_committed_idr)}</div>
+                                        <div class="stat-card card-hover">
+                                            <div class="stat-label">"Committed"</div>
+                                            <div class="stat-value font-mono text-huly-caption">{format_idr(s.total_committed_idr)}</div>
                                         </div>
-                                        <div class="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4">
-                                            <div class="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">"Spent (Actual)"</div>
-                                            <div class="font-mono text-lg text-gray-900 dark:text-gray-100">{format_idr(s.spent_actual_idr)}</div>
-                                            <div class="text-xs text-gray-400 dark:text-gray-500 mt-1">"Epic 3 proxy: mirrors committed"</div>
+                                        <div class="stat-card card-hover">
+                                            <div class="stat-label">"Spent (Actual)"</div>
+                                            <div class="stat-value font-mono text-huly-caption">{format_idr(s.spent_actual_idr)}</div>
+                                            <div class="text-xs text-huly-ghost mt-1">"Epic 3 proxy: mirrors committed"</div>
                                         </div>
-                                        <div class="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4">
-                                            <div class="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">"Remaining"</div>
-                                            <div class=format!("font-mono text-lg {}", if s.remaining_idr >= 0 { "text-green-600 dark:text-green-400" } else { "text-red-600 dark:text-red-400" })>
+                                        <div class="stat-card card-hover">
+                                            <div class="stat-label">"Remaining"</div>
+                                            <div class=format!("stat-value font-mono {}", if s.remaining_idr >= 0 { "text-positive-default" } else { "text-negative-default" })>
                                                 {format_idr(s.remaining_idr)}
                                             </div>
                                         </div>
-                                        <div class="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4">
-                                            <div class="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">"Utilization"</div>
+                                        <div class="stat-card card-hover">
+                                            <div class="stat-label">"Utilization"</div>
                                             <div class="flex items-center gap-2">
-                                                <span class="font-mono text-lg text-gray-900 dark:text-gray-100">{format!("{:.1}%", s.utilization_percentage)}</span>
+                                                <span class="stat-value font-mono text-huly-caption">{format!("{:.1}%", s.utilization_percentage)}</span>
                                                 <span class=format!("inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium {}", health_color)>
                                                     {s.budget_health.clone()}
                                                 </span>
@@ -1825,7 +1833,7 @@ pub fn TeamPage() -> impl IntoView {
                                     // Utilization Gauge
                                     <div class="space-y-1">
                                         <div
-                                            class="relative w-full h-6 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden"
+                                            class="progress-track relative h-6"
                                             role="progressbar"
                                             aria-label=format!("Budget utilization: {:.1}% - {}", s.utilization_percentage, s.budget_health)
                                             aria-valuenow=s.utilization_percentage.to_string()
@@ -1837,12 +1845,12 @@ pub fn TeamPage() -> impl IntoView {
                                                 style=format!("width: {}%", s.utilization_percentage.min(100.0))
                                             ></div>
                                             <div
-                                                class="absolute top-0 bottom-0 w-0.5 bg-gray-800 dark:bg-gray-200"
+                                                class="absolute top-0 bottom-0 w-0.5 bg-huly-caption"
                                                 style=format!("left: {}%", s.alert_threshold_pct)
                                                 title=format!("Alert threshold: {}%", s.alert_threshold_pct)
                                             ></div>
                                         </div>
-                                        <div class="text-xs text-gray-500 dark:text-gray-400">
+                                        <div class="text-xs text-huly-muted">
                                             {format!("Utilization: {:.1}% \u{2014} Health: {} \u{2014} Alert threshold: {}%", s.utilization_percentage, s.budget_health, s.alert_threshold_pct)}
                                         </div>
                                     </div>
@@ -1855,10 +1863,10 @@ pub fn TeamPage() -> impl IntoView {
                             let tab = breakdown_tab.get();
                             view! {
                                 <div class="space-y-4">
-                                    <div class="flex border-b border-gray-200 dark:border-gray-700">
+                                    <div class="flex border-b border-huly-divider">
                                         <button
-                                            class=move || format!("px-4 py-2 text-sm font-medium border-b-2 rounded-t-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 {}",
-                                                if breakdown_tab.get() == "employee" { "bg-blue-600 text-white border-blue-600" } else { "border-transparent text-gray-500 dark:text-gray-300 hover:text-gray-700 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-700" }
+                                            class=move || format!("px-4 py-2 text-sm font-medium border-b-2 rounded-t-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-400 {}",
+                                                if breakdown_tab.get() == "employee" { "bg-primary-600 text-huly-caption border-primary-600" } else { "border-transparent text-huly-secondary hover:text-huly-caption hover:bg-huly-surface-hover" }
                                             )
                                             on:click=move |_| set_breakdown_tab.set("employee".to_string())
                                             on:keydown=move |ev| {
@@ -1871,8 +1879,8 @@ pub fn TeamPage() -> impl IntoView {
                                             "By Employee"
                                         </button>
                                         <button
-                                            class=move || format!("px-4 py-2 text-sm font-medium border-b-2 rounded-t-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 {}",
-                                                if breakdown_tab.get() == "project" { "bg-blue-600 text-white border-blue-600" } else { "border-transparent text-gray-500 dark:text-gray-300 hover:text-gray-700 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-700" }
+                                            class=move || format!("px-4 py-2 text-sm font-medium border-b-2 rounded-t-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-400 {}",
+                                                if breakdown_tab.get() == "project" { "bg-primary-600 text-huly-caption border-primary-600" } else { "border-transparent text-huly-secondary hover:text-huly-caption hover:bg-huly-surface-hover" }
                                             )
                                             on:click=move |_| set_breakdown_tab.set("project".to_string())
                                             on:keydown=move |ev| {
@@ -1885,8 +1893,8 @@ pub fn TeamPage() -> impl IntoView {
                                             "By Project"
                                         </button>
                                         <button
-                                            class=move || format!("px-4 py-2 text-sm font-medium border-b-2 rounded-t-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 {}",
-                                                if breakdown_tab.get() == "period" { "bg-blue-600 text-white border-blue-600" } else { "border-transparent text-gray-500 dark:text-gray-300 hover:text-gray-700 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-700" }
+                                            class=move || format!("px-4 py-2 text-sm font-medium border-b-2 rounded-t-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-400 {}",
+                                                if breakdown_tab.get() == "period" { "bg-primary-600 text-huly-caption border-primary-600" } else { "border-transparent text-huly-secondary hover:text-huly-caption hover:bg-huly-surface-hover" }
                                             )
                                             on:click=move |_| set_breakdown_tab.set("period".to_string())
                                             on:keydown=move |ev| {
@@ -1905,27 +1913,27 @@ pub fn TeamPage() -> impl IntoView {
                                         let employees = bd.by_employee.clone();
                                         view! {
                                             <div class="overflow-x-auto">
-                                                <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                                                    <thead class="bg-gray-50 dark:bg-gray-700">
+                                                <table class="min-w-full divide-y divide-huly-divider">
+                                                    <thead class="table-head">
                                                         <tr>
-                                                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">"Name"</th>
-                                                            <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">"Daily Rate"</th>
-                                                            <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">"Allocations"</th>
-                                                            <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">"Working Days"</th>
-                                                            <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">"Committed Cost"</th>
+                                                            <th class="th-cell-compact">"Name"</th>
+                                                            <th class="th-cell-compact text-right">"Daily Rate"</th>
+                                                            <th class="th-cell-compact text-right">"Allocations"</th>
+                                                            <th class="th-cell-compact text-right">"Working Days"</th>
+                                                            <th class="th-cell-compact text-right">"Committed Cost"</th>
                                                         </tr>
                                                     </thead>
-                                                    <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+                                                    <tbody class="divide-y divide-huly-divider">
                                                         {employees.into_iter().map(|emp| {
                                                             view! {
                                                                 <tr>
-                                                                    <td class="px-4 py-2 text-sm text-gray-900 dark:text-gray-100">{emp.resource_name}</td>
-                                                                    <td class="px-4 py-2 text-sm text-right font-mono text-gray-700 dark:text-gray-300">
+                                                                    <td class="td-cell-compact">{emp.resource_name}</td>
+                                                                    <td class="td-cell-compact text-right font-mono text-huly-content">
                                                                         {emp.daily_rate_idr.map(format_idr).unwrap_or_else(|| "N/A".to_string())}
                                                                     </td>
-                                                                    <td class="px-4 py-2 text-sm text-right text-gray-700 dark:text-gray-300">{emp.allocation_count}</td>
-                                                                    <td class="px-4 py-2 text-sm text-right text-gray-700 dark:text-gray-300">{emp.working_days}</td>
-                                                                    <td class="px-4 py-2 text-sm text-right font-mono text-gray-900 dark:text-gray-100">{format_idr(emp.committed_cost_idr)}</td>
+                                                                    <td class="td-cell-compact text-right text-huly-content">{emp.allocation_count}</td>
+                                                                    <td class="td-cell-compact text-right text-huly-content">{emp.working_days}</td>
+                                                                    <td class="td-cell-compact text-right font-mono text-huly-caption">{format_idr(emp.committed_cost_idr)}</td>
                                                                 </tr>
                                                             }
                                                         }).collect::<Vec<_>>()}
@@ -1940,21 +1948,21 @@ pub fn TeamPage() -> impl IntoView {
                                         let projects = bd.by_project.clone();
                                         view! {
                                             <div class="overflow-x-auto">
-                                                <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                                                    <thead class="bg-gray-50 dark:bg-gray-700">
+                                                <table class="min-w-full divide-y divide-huly-divider">
+                                                    <thead class="table-head">
                                                         <tr>
-                                                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">"Project"</th>
-                                                            <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">"Resources"</th>
-                                                            <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">"Committed Cost"</th>
+                                                            <th class="th-cell-compact">"Project"</th>
+                                                            <th class="th-cell-compact text-right">"Resources"</th>
+                                                            <th class="th-cell-compact text-right">"Committed Cost"</th>
                                                         </tr>
                                                     </thead>
-                                                    <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+                                                    <tbody class="divide-y divide-huly-divider">
                                                         {projects.into_iter().map(|proj| {
                                                             view! {
                                                                 <tr>
-                                                                    <td class="px-4 py-2 text-sm text-gray-900 dark:text-gray-100">{proj.project_name}</td>
-                                                                    <td class="px-4 py-2 text-sm text-right text-gray-700 dark:text-gray-300">{proj.resource_count}</td>
-                                                                    <td class="px-4 py-2 text-sm text-right font-mono text-gray-900 dark:text-gray-100">{format_idr(proj.committed_cost_idr)}</td>
+                                                                    <td class="td-cell-compact">{proj.project_name}</td>
+                                                                    <td class="td-cell-compact text-right text-huly-content">{proj.resource_count}</td>
+                                                                    <td class="td-cell-compact text-right font-mono text-huly-caption">{format_idr(proj.committed_cost_idr)}</td>
                                                                 </tr>
                                                             }
                                                         }).collect::<Vec<_>>()}
@@ -1969,26 +1977,26 @@ pub fn TeamPage() -> impl IntoView {
                                         let periods = bd.by_period.clone();
                                         view! {
                                             <div class="overflow-x-auto">
-                                                <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                                                    <thead class="bg-gray-50 dark:bg-gray-700">
+                                                <table class="min-w-full divide-y divide-huly-divider">
+                                                    <thead class="table-head">
                                                         <tr>
-                                                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">"Month"</th>
-                                                            <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">"Budget"</th>
-                                                            <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">"Committed"</th>
-                                                            <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">"Remaining"</th>
-                                                            <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">"Utilization"</th>
+                                                            <th class="th-cell-compact">"Month"</th>
+                                                            <th class="th-cell-compact text-right">"Budget"</th>
+                                                            <th class="th-cell-compact text-right">"Committed"</th>
+                                                            <th class="th-cell-compact text-right">"Remaining"</th>
+                                                            <th class="th-cell-compact text-right">"Utilization"</th>
                                                         </tr>
                                                     </thead>
-                                                    <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+                                                    <tbody class="divide-y divide-huly-divider">
                                                         {periods.into_iter().map(|p| {
                                                             let health_color = budget_health_text_color(&p.budget_health);
                                                             view! {
                                                                 <tr>
-                                                                    <td class="px-4 py-2 text-sm text-gray-900 dark:text-gray-100">{p.period}</td>
-                                                                    <td class="px-4 py-2 text-sm text-right font-mono text-gray-700 dark:text-gray-300">{format_idr(p.total_budget_idr)}</td>
-                                                                    <td class="px-4 py-2 text-sm text-right font-mono text-gray-700 dark:text-gray-300">{format_idr(p.committed_idr)}</td>
-                                                                    <td class="px-4 py-2 text-sm text-right font-mono text-gray-700 dark:text-gray-300">{format_idr(p.remaining_idr)}</td>
-                                                                    <td class="px-4 py-2 text-sm text-right">
+                                                                    <td class="td-cell-compact">{p.period}</td>
+                                                                    <td class="td-cell-compact text-right font-mono text-huly-content">{format_idr(p.total_budget_idr)}</td>
+                                                                    <td class="td-cell-compact text-right font-mono text-huly-content">{format_idr(p.committed_idr)}</td>
+                                                                    <td class="td-cell-compact text-right font-mono text-huly-content">{format_idr(p.remaining_idr)}</td>
+                                                                    <td class="td-cell-compact text-right">
                                                                         <span class=format!("font-mono {}", health_color)>{format!("{:.1}%", p.utilization_percentage)}</span>
                                                                         " "
                                                                         <span class=format!("inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium {}", health_color)>
@@ -2009,18 +2017,18 @@ pub fn TeamPage() -> impl IntoView {
                     </div>
                 })}
 
-            </main>
+            </div>
 
             // Assignment Modal
             {move || show_assign_modal.get().then(|| view! {
-                <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-                    <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-lg mx-4 p-6 space-y-4">
+                <div class="modal-overlay">
+                    <div class="modal-container max-w-lg mx-4 space-y-4">
                         <div class="flex items-center justify-between">
-                            <h2 class="text-xl font-bold text-gray-900 dark:text-white">
+                            <h2 class="text-xl font-bold text-huly-caption">
                                 "Assign to Project"
                             </h2>
                             <button
-                                class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                                class="text-huly-ghost hover:text-huly-content"
                                 on:click=move |_| {
                                     set_show_assign_modal.set(false);
                                     set_show_confirm_overallocation.set(false);
@@ -2031,24 +2039,24 @@ pub fn TeamPage() -> impl IntoView {
                             </button>
                         </div>
 
-                        <p class="text-sm text-gray-600 dark:text-gray-400">
+                        <p class="text-sm text-huly-secondary">
                             "Assigning: "
-                            <span class="font-semibold text-gray-900 dark:text-white">{move || assign_resource_name.get()}</span>
+                            <span class="font-semibold text-huly-caption">{move || assign_resource_name.get()}</span>
                         </p>
 
                         {move || assign_error.get().map(|err| view! {
-                            <div class="rounded-md bg-red-50 p-3 dark:bg-red-900/20 text-red-800 dark:text-red-200 text-sm">{err}</div>
+                            <div class="alert-error text-sm">{err}</div>
                         })}
 
                         {move || assign_success.get().map(|msg| view! {
-                            <div class="rounded-md bg-green-50 p-3 dark:bg-green-900/20 text-green-800 dark:text-green-200 text-sm">{msg}</div>
+                            <div class="alert-success text-sm">{msg}</div>
                         })}
 
                         <div class="space-y-3">
                             <div>
-                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">"Project"</label>
+                                <label class="label">"Project"</label>
                                 <select
-                                    class="w-full border rounded px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                                    class="select text-sm"
                                     prop:value=assign_project_id
                                     on:change=move |ev| {
                                         let project_id = event_target_value(&ev);
@@ -2078,21 +2086,21 @@ pub fn TeamPage() -> impl IntoView {
                                 </select>
                             </div>
 
-                            <div class="grid grid-cols-2 gap-3">
+                            <div class="stat-grid">
                                 <div>
-                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">"Start Date"</label>
+                                    <label class="label">"Start Date"</label>
                                     <input
                                         type="date"
-                                        class="w-full border rounded px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                                        class="input text-sm"
                                         prop:value=assign_start_date
                                         on:input=move |ev| set_assign_start_date.set(event_target_value(&ev))
                                     />
                                 </div>
                                 <div>
-                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">"End Date"</label>
+                                    <label class="label">"End Date"</label>
                                     <input
                                         type="date"
-                                        class="w-full border rounded px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                                        class="input text-sm"
                                         prop:value=assign_end_date
                                         on:input=move |ev| set_assign_end_date.set(event_target_value(&ev))
                                     />
@@ -2100,14 +2108,14 @@ pub fn TeamPage() -> impl IntoView {
                             </div>
 
                             <div>
-                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">"Allocation %"</label>
+                                <label class="label">"Allocation %"</label>
                                 <input
                                     type="number"
                                     min="1"
                                     max="100"
                                     step="1"
                                     placeholder="e.g. 50"
-                                    class="w-full border rounded px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                                    class="input text-sm"
                                     prop:value=assign_pct
                                     on:input=move |ev| set_assign_pct.set(event_target_value(&ev))
                                 />
@@ -2117,10 +2125,10 @@ pub fn TeamPage() -> impl IntoView {
                         {move || {
                             if preview_loading.get() && preview_data.get().is_none() {
                                 return view! {
-                                    <div class="mt-4 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg animate-pulse space-y-3">
-                                        <div class="h-4 bg-gray-200 dark:bg-gray-600 rounded w-1/3"></div>
-                                        <div class="h-8 bg-gray-200 dark:bg-gray-600 rounded w-1/2"></div>
-                                        <div class="h-4 bg-gray-200 dark:bg-gray-600 rounded w-2/3"></div>
+                                    <div class="mt-4 p-4 bg-huly-surface-2 rounded-lg animate-pulse space-y-3">
+                                        <div class="h-4 bg-huly-surface-hover rounded w-1/3"></div>
+                                        <div class="h-8 bg-huly-surface-hover rounded w-1/2"></div>
+                                        <div class="h-4 bg-huly-surface-hover rounded w-2/3"></div>
                                     </div>
                                 }
                                 .into_view();
@@ -2128,7 +2136,7 @@ pub fn TeamPage() -> impl IntoView {
 
                             if let Some(err) = preview_error.get() {
                                 return view! {
-                                    <div class="mt-4 rounded-md bg-red-50 p-3 dark:bg-red-900/20 text-red-800 dark:text-red-200 text-sm">
+                                    <div class="mt-4 alert-error text-sm">
                                         {format!("Preview error: {}", err)}
                                     </div>
                                 }
@@ -2153,16 +2161,16 @@ pub fn TeamPage() -> impl IntoView {
                                     let requires_approval = data.requires_approval;
 
                                     view! {
-                                        <div class=format!("mt-4 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg space-y-4 border border-blue-200 dark:border-blue-800 {}", if loading_now { "opacity-60" } else { "" })>
-                                            <h3 class="text-sm font-semibold text-blue-900 dark:text-blue-200">"Cost Impact Preview"</h3>
+                                        <div class=format!("mt-4 p-4 bg-primary-600/10 rounded-lg space-y-4 border border-primary-600/20 {}", if loading_now { "opacity-60" } else { "" })>
+                                            <h3 class="text-sm font-semibold text-primary-300">"Cost Impact Preview"</h3>
 
                                             <div class="relative group">
-                                                <div class="text-xs text-gray-500 dark:text-gray-400">"Total Cost"</div>
-                                                <div class="text-2xl font-bold text-gray-900 dark:text-white font-mono">{total_cost_formatted}</div>
-                                                <div class="text-xs text-gray-500 dark:text-gray-400">
+                                                <div class="text-xs text-huly-muted">"Total Cost"</div>
+                                                <div class="text-2xl font-bold text-huly-caption font-mono">{total_cost_formatted}</div>
+                                                <div class="text-xs text-huly-muted">
                                                     {format!("{} daily rate × {} working days × {}%", format_idr(data.daily_rate_idr), data.working_days, data.allocation_percentage)}
                                                 </div>
-                                                <div class="absolute z-50 px-2 py-1 bg-gray-900 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity bottom-full mb-1 whitespace-nowrap pointer-events-none">
+                                                <div class="absolute z-50 px-2 py-1 bg-huly-tooltip-bg text-huly-content text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity bottom-full mb-1 whitespace-nowrap pointer-events-none">
                                                     {formula_tooltip}
                                                 </div>
                                             </div>
@@ -2170,10 +2178,10 @@ pub fn TeamPage() -> impl IntoView {
                                             {if !monthly.is_empty() {
                                                 view! {
                                                     <div>
-                                                        <div class="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">"Monthly Breakdown"</div>
+                                                        <div class="text-xs font-medium text-huly-muted mb-2">"Monthly Breakdown"</div>
                                                         <table class="w-full text-sm">
                                                             <thead>
-                                                                <tr class="text-xs text-gray-500 dark:text-gray-400">
+                                                                <tr class="text-xs text-huly-muted">
                                                                     <th class="text-left py-1">"Month"</th>
                                                                     <th class="text-right py-1">"Working Days"</th>
                                                                     <th class="text-right py-1">"Cost (IDR)"</th>
@@ -2187,7 +2195,7 @@ pub fn TeamPage() -> impl IntoView {
                                                                         let days = bucket.working_days;
                                                                         let cost = format_idr(bucket.cost_idr);
                                                                         view! {
-                                                                            <tr class="text-gray-900 dark:text-gray-100">
+                                                                            <tr class="text-huly-content">
                                                                                 <td class="py-1">{month}</td>
                                                                                 <td class="text-right py-1 font-mono">{days}</td>
                                                                                 <td class="text-right py-1 font-mono">{cost}</td>
@@ -2225,8 +2233,8 @@ pub fn TeamPage() -> impl IntoView {
                                                         format_idr(bi.projected_committed_idr);
                                                     view! {
                                                         <div>
-                                                            <div class="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">"Department Budget Impact"</div>
-                                                            <div class="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-3 mb-2">
+                                                            <div class="text-xs font-medium text-huly-muted mb-2">"Department Budget Impact"</div>
+                                                            <div class="progress-track h-3 mb-2">
                                                                 <div
                                                                     class=format!("{} h-3 rounded-full transition-all", health_color)
                                                                     style=format!("width: {}%", bar_width)
@@ -2234,9 +2242,9 @@ pub fn TeamPage() -> impl IntoView {
                                                             </div>
                                                             <div class="flex justify-between text-xs">
                                                                 <span class=text_color>{format!("{:.1}% utilized", bi.utilization_percentage)}</span>
-                                                                <span class="text-gray-500 dark:text-gray-400">{format!("Remaining: {}", remaining)}</span>
+                                                                <span class="text-huly-muted">{format!("Remaining: {}", remaining)}</span>
                                                             </div>
-                                                            <div class="mt-1 space-y-1 text-[11px] text-gray-500 dark:text-gray-400">
+                                                            <div class="mt-1 space-y-1 text-[11px] text-huly-muted">
                                                                 <div>{format!("Current committed: {}", current_committed)}</div>
                                                                 <div>{format!("Projected committed: {} / Budget: {}", projected_committed, budget_total)}</div>
                                                             </div>
@@ -2246,7 +2254,7 @@ pub fn TeamPage() -> impl IntoView {
                                                 }
                                                 None => {
                                                     view! {
-                                                        <div class="text-xs text-gray-400 dark:text-gray-500 italic">
+                                                        <div class="text-xs text-huly-ghost italic">
                                                             "Department budget not configured."
                                                         </div>
                                                     }
@@ -2257,7 +2265,7 @@ pub fn TeamPage() -> impl IntoView {
                                             {match warning {
                                                 Some(w) => {
                                                     view! {
-                                                        <div class="rounded-md bg-red-100 dark:bg-red-900/30 border border-red-300 dark:border-red-700 p-3 text-sm text-red-800 dark:text-red-200">
+                                                        <div class="alert-error text-sm">
                                                             <span class="font-semibold">"⚠ Budget Warning: "</span>
                                                             {w}
                                                             {if requires_approval {
@@ -2287,36 +2295,36 @@ pub fn TeamPage() -> impl IntoView {
                                     projects.iter().find(|p| p.id == pid).map(|p| p.name.clone()).unwrap_or_default()
                                 };
                                 view! {
-                                    <div class="w-full mb-3 p-3 bg-gray-50 dark:bg-gray-700/50 rounded text-xs space-y-1">
-                                        <div class="font-semibold text-gray-700 dark:text-gray-300">"Assignment Summary"</div>
+                                    <div class="w-full mb-3 p-3 bg-huly-surface-2 rounded text-xs space-y-1">
+                                        <div class="font-semibold text-huly-content">"Assignment Summary"</div>
                                         <div class="flex justify-between">
-                                            <span class="text-gray-500">"Resource:"</span>
-                                            <span class="font-medium text-gray-900 dark:text-white">{assign_resource_name.get()}</span>
+                                            <span class="text-huly-muted">"Resource:"</span>
+                                            <span class="font-medium text-huly-caption">{assign_resource_name.get()}</span>
                                         </div>
                                         <div class="flex justify-between">
-                                            <span class="text-gray-500">"Daily Rate:"</span>
-                                            <span class="font-mono text-gray-900 dark:text-white">{format_idr(data.daily_rate_idr)}</span>
+                                            <span class="text-huly-muted">"Daily Rate:"</span>
+                                            <span class="font-mono text-huly-caption">{format_idr(data.daily_rate_idr)}</span>
                                         </div>
                                         <div class="flex justify-between">
-                                            <span class="text-gray-500">"Project:"</span>
-                                            <span class="font-medium text-gray-900 dark:text-white">{project_name}</span>
+                                            <span class="text-huly-muted">"Project:"</span>
+                                            <span class="font-medium text-huly-caption">{project_name}</span>
                                         </div>
                                         <div class="flex justify-between">
-                                            <span class="text-gray-500">"Duration:"</span>
-                                            <span class="font-mono text-gray-900 dark:text-white">{format!("{} \u{2014} {} ({} working days)", assign_start_date.get(), assign_end_date.get(), data.working_days)}</span>
+                                            <span class="text-huly-muted">"Duration:"</span>
+                                            <span class="font-mono text-huly-caption">{format!("{} \u{2014} {} ({} working days)", assign_start_date.get(), assign_end_date.get(), data.working_days)}</span>
                                         </div>
                                         <div class="flex justify-between">
-                                            <span class="text-gray-500">"Allocation:"</span>
-                                            <span class="font-mono text-gray-900 dark:text-white">{format!("{}%", assign_pct.get())}</span>
+                                            <span class="text-huly-muted">"Allocation:"</span>
+                                            <span class="font-mono text-huly-caption">{format!("{}%", assign_pct.get())}</span>
                                         </div>
                                         <div class="flex justify-between">
-                                            <span class="text-gray-500">"Total Cost:"</span>
-                                            <span class="font-mono font-semibold text-gray-900 dark:text-white">{format_idr(data.total_cost_idr)}</span>
+                                            <span class="text-huly-muted">"Total Cost:"</span>
+                                            <span class="font-mono font-semibold text-huly-caption">{format_idr(data.total_cost_idr)}</span>
                                         </div>
                                         {data.budget_impact.as_ref().map(|bi| {
                                             view! {
                                                 <div class="flex justify-between">
-                                                    <span class="text-gray-500">"Budget Remaining:"</span>
+                                                    <span class="text-huly-muted">"Budget Remaining:"</span>
                                                     <span class=format!("font-mono {}", budget_health_text_color(&bi.budget_health))>
                                                         {format_idr(bi.remaining_after_assignment_idr)}
                                                     </span>
@@ -2330,7 +2338,7 @@ pub fn TeamPage() -> impl IntoView {
 
                         <div class="flex justify-end gap-3 pt-2">
                             <button
-                                class="px-4 py-2 text-sm font-medium rounded border border-gray-300 text-gray-700 bg-white hover:bg-gray-50 dark:bg-gray-700 dark:text-gray-300 dark:border-gray-600 dark:hover:bg-gray-600"
+                                class="btn-secondary btn-press"
                                 on:click=move |_| {
                                     set_show_assign_modal.set(false);
                                     set_show_confirm_overallocation.set(false);
@@ -2340,7 +2348,7 @@ pub fn TeamPage() -> impl IntoView {
                                 "Cancel"
                             </button>
                             <button
-                                class="px-4 py-2 text-sm font-medium rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                                class="btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
                                 prop:disabled=move || assign_submitting.get()
                                 on:click=submit_assignment
                             >
@@ -2354,22 +2362,22 @@ pub fn TeamPage() -> impl IntoView {
             {move || show_confirm_overallocation.get().then(|| {
                 let warning = overallocation_warning.get();
                 view! {
-                    <div class="fixed inset-0 z-[60] flex items-center justify-center bg-black/60">
-                        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-md mx-4 p-6 space-y-4">
-                            <h3 class="text-lg font-semibold text-gray-900 dark:text-white">"Confirm Over-Allocation"</h3>
+                    <div class="modal-overlay z-[60]">
+                        <div class="modal-container max-w-md mx-4 space-y-4">
+                            <h3 class="text-lg font-semibold text-huly-caption">"Confirm Over-Allocation"</h3>
 
                             {warning.as_ref().map(|w| view! {
-                                <div class="rounded-md bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-300 dark:border-yellow-700 p-3 text-sm text-yellow-900 dark:text-yellow-200 space-y-1">
+                                <div class="alert-warning text-sm space-y-1">
                                     <div class="font-medium">{w.warning_message.clone()}</div>
                                     <div>{format!("Current: {:.1}%", w.current_allocation_percentage)}</div>
                                     <div>{format!("Requested: {:.1}%", w.requested_allocation_percentage)}</div>
-                                    <div class="font-semibold text-red-700 dark:text-red-300">{format!("Projected: {:.1}%", w.projected_allocation_percentage)}</div>
+                                    <div class="font-semibold text-negative-default">{format!("Projected: {:.1}%", w.projected_allocation_percentage)}</div>
                                 </div>
                             })}
 
                             <div class="flex justify-end gap-3 pt-2">
                                 <button
-                                    class="px-4 py-2 text-sm font-medium rounded border border-gray-300 text-gray-700 bg-white hover:bg-gray-50 dark:bg-gray-700 dark:text-gray-300 dark:border-gray-600 dark:hover:bg-gray-600"
+                                    class="btn-secondary btn-press"
                                     on:click=move |_| {
                                         set_show_confirm_overallocation.set(false);
                                         set_confirm_submitting.set(false);
@@ -2378,7 +2386,7 @@ pub fn TeamPage() -> impl IntoView {
                                     "Cancel"
                                 </button>
                                 <button
-                                    class="px-4 py-2 text-sm font-medium rounded bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                                    class="btn-danger disabled:opacity-50 disabled:cursor-not-allowed"
                                     prop:disabled=move || confirm_submitting.get()
                                     on:click=confirm_overallocation_assignment
                                 >
@@ -2395,7 +2403,7 @@ pub fn TeamPage() -> impl IntoView {
                 let period_display = budget_period.get();
                 view! {
                     <div
-                        class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+                        class="modal-overlay"
                         on:keydown=move |ev| {
                             if ev.key() == "Escape" {
                                 set_show_budget_edit.set(false);
@@ -2404,13 +2412,13 @@ pub fn TeamPage() -> impl IntoView {
                             trap_focus_within_budget_modal(ev);
                         }
                     >
-                        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-md mx-4 p-6 space-y-4" data-budget-modal="true" tabindex="-1" on:click=move |ev| ev.stop_propagation()>
+                        <div class="modal-container max-w-md mx-4 space-y-4" data-budget-modal="true" tabindex="-1" on:click=move |ev| ev.stop_propagation()>
                             <div class="flex items-center justify-between">
-                                <h2 class="text-xl font-bold text-gray-900 dark:text-white">
+                                <h2 class="text-xl font-bold text-huly-caption">
                                     "Set Department Budget"
                                 </h2>
                                 <button
-                                    class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                                    class="text-huly-ghost hover:text-huly-content"
                                     on:click=move |_| set_show_budget_edit.set(false)
                                 >
                                     "\u{2715}"
@@ -2418,21 +2426,21 @@ pub fn TeamPage() -> impl IntoView {
                             </div>
 
                             {move || budget_edit_error.get().map(|err| view! {
-                                <div class="rounded-md bg-red-50 p-3 dark:bg-red-900/20 text-red-800 dark:text-red-200 text-sm">{err}</div>
+                                <div class="alert-error text-sm">{err}</div>
                             })}
 
                             <div class="space-y-3">
                                 <div>
-                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">"Period"</label>
-                                    <div class="text-sm text-gray-900 dark:text-white font-mono bg-gray-50 dark:bg-gray-700 px-3 py-2 rounded">{period_display}</div>
+                                    <label class="label">"Period"</label>
+                                    <div class="text-sm text-huly-caption font-mono bg-huly-surface-2 px-3 py-2 rounded">{period_display}</div>
                                 </div>
                                 <div>
-                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">"Total Budget (IDR)"</label>
+                                    <label class="label">"Total Budget (IDR)"</label>
                                     <input
                                         type="number"
                                         min="1"
                                         step="1"
-                                        class="w-full border rounded px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                                        class="input text-sm"
                                         placeholder="e.g. 100000000"
                                         data-budget-modal-input="true"
                                         prop:value=budget_edit_amount
@@ -2440,28 +2448,28 @@ pub fn TeamPage() -> impl IntoView {
                                     />
                                 </div>
                                 <div>
-                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">"Alert Threshold (%)"</label>
+                                    <label class="label">"Alert Threshold (%)"</label>
                                     <input
                                         type="number"
                                         min="50"
                                         max="100"
-                                        class="w-full border rounded px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                                        class="input text-sm"
                                         prop:value=budget_edit_threshold
                                         on:input=move |ev| set_budget_edit_threshold.set(event_target_value(&ev))
                                     />
-                                    <p class="text-xs text-gray-400 mt-1">"50\u{2013}100. Alert fires when utilization reaches this %"</p>
+                                    <p class="text-xs text-huly-ghost mt-1">"50\u{2013}100. Alert fires when utilization reaches this %"</p>
                                 </div>
                             </div>
 
                             <div class="flex justify-end gap-2">
                                 <button
-                                    class="px-4 py-2 text-sm font-medium rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
+                                    class="btn-secondary btn-press"
                                     on:click=move |_| set_show_budget_edit.set(false)
                                 >
                                     "Cancel"
                                 </button>
                                 <button
-                                    class="px-4 py-2 text-sm font-medium rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                                    class="btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
                                     prop:disabled=move || budget_edit_submitting.get()
                                     on:click=move |_| {
                                         let amount: i64 = match budget_edit_amount.get().parse() {
@@ -2506,14 +2514,14 @@ pub fn TeamPage() -> impl IntoView {
 
             // Timeline Modal
             {move || show_timeline_modal.get().then(|| view! {
-                <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-                    <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-4xl mx-4 p-6 space-y-4">
+                <div class="modal-overlay">
+                    <div class="modal-container max-w-4xl mx-4 space-y-4">
                         <div class="flex items-center justify-between">
-                            <h2 class="text-xl font-bold text-gray-900 dark:text-white">
+                            <h2 class="text-xl font-bold text-huly-caption">
                                 {move || format!("Timeline: {}", timeline_resource_name.get())}
                             </h2>
                             <button
-                                class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                                class="text-huly-ghost hover:text-huly-content"
                                 on:click=move |_| {
                                     set_show_timeline_modal.set(false);
                                     set_timeline_groups.set(Vec::new());
@@ -2536,7 +2544,6 @@ pub fn TeamPage() -> impl IntoView {
                 </div>
             })}
 
-            <Footer/>
         </div>
     }
 }

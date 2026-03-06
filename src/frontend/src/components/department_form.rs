@@ -73,17 +73,17 @@ pub fn DepartmentForm(
     };
 
     view! {
-        <form on:submit=handle_submit class="space-y-4">
+        <form on:submit=handle_submit class="space-y-3">
             <div class="grid grid-cols-1 gap-4">
                 // Department Name
                 <div>
-                    <label for="name" class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    <label for="name" class="label">
                         "Department Name *"
                     </label>
                     <input
                         type="text"
                         id="name"
-                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white sm:text-sm"
+                        class="input"
                         placeholder="Engineering"
                         prop:value=name
                         on:input=move |ev| set_name.set(event_target_value(&ev))
@@ -93,12 +93,12 @@ pub fn DepartmentForm(
 
                 // Department Head
                 <div>
-                    <label for="head" class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    <label for="head" class="label">
                         "Department Head"
                     </label>
                     <select
                         id="head"
-                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white sm:text-sm"
+                        class="input"
                         prop:value=head_id
                         on:change=move |ev| set_head_id.set(event_target_value(&ev))
                     >
@@ -111,17 +111,17 @@ pub fn DepartmentForm(
                             }
                         }).collect_view()}
                     </select>
-                    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    <p class="mt-1 text-xs text-huly-muted">
                         "Only admin and project manager roles can be department heads"
                     </p>
                 </div>
             </div>
 
             // Form buttons
-            <div class="flex justify-end space-x-3 pt-4">
+            <div class="flex justify-end gap-2 pt-3">
                 <button
                     type="button"
-                    class="btn-secondary"
+                    class="btn-secondary btn-press"
                     on:click=move |_| on_cancel.call(())
                     disabled=is_submitting
                 >
@@ -129,7 +129,7 @@ pub fn DepartmentForm(
                 </button>
                 <button
                     type="submit"
-                    class="btn-primary"
+                    class="btn-primary btn-press"
                     disabled=is_submitting
                 >
                     {if is_submitting {

@@ -35,12 +35,12 @@ pub fn GanttChart(
     });
 
     view! {
-        <div class="bg-white dark:bg-gray-800 shadow rounded-lg p-6 overflow-x-auto">
+        <div class="card overflow-x-auto">
             <div _ref=gantt_ref class="gantt-container min-w-full" style="height: 400px;">
                 {move || {
                     if tasks.get().is_empty() {
                         view! {
-                            <div class="flex items-center justify-center h-full text-gray-500 dark:text-gray-400">
+                            <div class="flex items-center justify-center h-full text-huly-muted">
                                 "No tasks to display"
                             </div>
                         }.into_view()
@@ -57,17 +57,17 @@ pub fn GanttChart(
 #[component]
 pub fn GanttTaskItem(task: GanttTask) -> impl IntoView {
     view! {
-        <div class="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded mb-2">
+        <div class="flex items-center justify-between p-3 bg-huly-surface-2 rounded mb-2">
             <div class="flex items-center space-x-3">
                 <div class="w-3 h-3 rounded-full bg-blue-500"></div>
                 <div>
-                    <div class="font-medium text-gray-900 dark:text-white">{task.name.clone()}</div>
-                    <div class="text-sm text-gray-500 dark:text-gray-400">
+                    <div class="font-medium text-huly-caption">{task.name.clone()}</div>
+                    <div class="text-sm text-huly-muted">
                         {format!("{} - {}", task.start, task.end)}
                     </div>
                 </div>
             </div>
-            <div class="text-sm text-gray-600 dark:text-gray-300">
+            <div class="text-sm text-huly-secondary">
                 {format!("{}% complete", task.progress)}
             </div>
         </div>

@@ -2,7 +2,6 @@ use crate::auth::{
     auth_token, authenticated_get, authenticated_post_json, clear_auth_storage, use_auth,
     validate_token, AuthContext,
 };
-use crate::components::{Footer, Header};
 use chrono::NaiveDate;
 use leptos::*;
 use leptos_router::*;
@@ -276,14 +275,13 @@ pub fn ThrManagement() -> impl IntoView {
     };
 
     view! {
-        <div class="min-h-screen flex flex-col bg-gray-50 dark:bg-gray-900">
-            <Header/>
+        <div class="h-full">
 
-            <main class="flex-grow max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 w-full">
+            <div class="page-container fade-in">
                 {move || {
                     if !auth_checked.get() {
                         return view! {
-                            <div class="rounded-md bg-blue-50 p-4 dark:bg-blue-900/20 text-blue-800 dark:text-blue-200">
+                            <div class="alert-info">
                                 "Checking access..."
                             </div>
                         }
@@ -292,7 +290,7 @@ pub fn ThrManagement() -> impl IntoView {
 
                     if !is_hr.get() {
                         return view! {
-                            <div class="rounded-md bg-red-50 p-4 dark:bg-red-900/20 text-red-800 dark:text-red-200">
+                            <div class="alert-error">
                                 "Access denied. THR management is available to HR users only."
                             </div>
                         }
@@ -300,9 +298,9 @@ pub fn ThrManagement() -> impl IntoView {
                     }
 
                     view! {
-                        <div class="space-y-6">
-                            <div class="flex items-center justify-between">
-                                <h1 class="text-3xl font-bold text-gray-900 dark:text-white">
+                        <div class="space-y-4">
+                            <div class="page-header">
+                                <h1 class="text-xl font-semibold text-huly-caption">
                                     "THR Management"
                                 </h1>
                             </div>
@@ -310,7 +308,7 @@ pub fn ThrManagement() -> impl IntoView {
                             {move || auth.user.get().map(|u| {
                                 if u.role != "hr" {
                                     view! {
-                                        <div class="rounded-md bg-yellow-50 p-4 dark:bg-yellow-900/20 text-yellow-800 dark:text-yellow-200">
+                                        <div class="alert-warning">
                                             "Only HR users can manage THR data."
                                         </div>
                                     }
@@ -320,20 +318,20 @@ pub fn ThrManagement() -> impl IntoView {
                             })}
 
                             {move || error.get().map(|err| view! {
-                                <div class="rounded-md bg-red-50 p-4 dark:bg-red-900/20 text-red-800 dark:text-red-200">{err}</div>
+                                <div class="alert-error">{err}</div>
                             })}
 
                             {move || success.get().map(|msg| view! {
-                                <div class="rounded-md bg-green-50 p-4 dark:bg-green-900/20 text-green-800 dark:text-green-200">{msg}</div>
+                                <div class="alert-success">{msg}</div>
                             })}
 
-                            <div class="bg-white dark:bg-gray-800 shadow rounded-lg p-6 space-y-4">
-                                <h2 class="text-xl font-semibold text-gray-900 dark:text-white">"A. THR Configuration (Per Employee)"</h2>
+                            <div class="card p-4 space-y-4">
+                                <h2 class="section-header">"A. THR Configuration (Per Employee)"</h2>
 
                                 <div>
-                                    <label class="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">"Employee"</label>
+                                    <label class="label">"Employee"</label>
                                     <select
-                                        class="w-full border rounded px-3 py-2 bg-white dark:bg-gray-700"
+                                        class="input"
                                         prop:value=selected_resource
                                         on:change=move |ev| {
                                             let selected = event_target_value(&ev);
@@ -390,17 +388,17 @@ pub fn ThrManagement() -> impl IntoView {
 
                                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div>
-                                        <label class="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">"Name"</label>
+                                        <label class="label">"Name"</label>
                                         <input
-                                            class="w-full border rounded px-3 py-2 bg-gray-100 dark:bg-gray-700"
+                                            class="input"
                                             readonly=true
                                             value=move || selected_resource_view.get().map(|r| r.name).unwrap_or_default()
                                         />
                                     </div>
                                     <div>
-                                        <label class="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">"Department ID"</label>
+                                        <label class="label">"Department ID"</label>
                                         <input
-                                            class="w-full border rounded px-3 py-2 bg-gray-100 dark:bg-gray-700"
+                                            class="input"
                                             readonly=true
                                             value=move || selected_resource_view
                                                 .get()
@@ -419,15 +417,15 @@ pub fn ThrManagement() -> impl IntoView {
                                             prop:checked=thr_eligible
                                             on:change=move |ev| set_thr_eligible.set(event_target_checked(&ev))
                                         />
-                                        <label for="thr_eligible" class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                                        <label for="thr_eligible" class="text-sm font-medium text-huly-content">
                                             "THR Eligible"
                                         </label>
                                     </div>
 
                                     <div>
-                                        <label class="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">"Calculation Basis"</label>
+                                        <label class="label">"Calculation Basis"</label>
                                         <select
-                                            class="w-full border rounded px-3 py-2 bg-white dark:bg-gray-700"
+                                            class="input"
                                             prop:value=thr_calculation_basis
                                             on:change=move |ev| set_thr_calculation_basis.set(event_target_value(&ev))
                                         >
@@ -437,9 +435,9 @@ pub fn ThrManagement() -> impl IntoView {
                                     </div>
 
                                     <div>
-                                        <label class="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">"Employment Start Date"</label>
+                                        <label class="label">"Employment Start Date"</label>
                                         <input
-                                            class="w-full border rounded px-3 py-2 bg-white dark:bg-gray-700"
+                                            class="input"
                                             prop:value=employment_start_date
                                             placeholder="YYYY-MM-DD"
                                             on:input=move |ev| set_employment_start_date.set(event_target_value(&ev))
@@ -448,20 +446,22 @@ pub fn ThrManagement() -> impl IntoView {
                                 </div>
 
                                 <div class="flex gap-3 items-center">
-                                    <button class="btn-primary" disabled=loading on:click=save_config>
+                                    <button class="btn-primary btn-press" disabled=loading on:click=save_config>
                                         "Save"
                                     </button>
                                 </div>
                             </div>
 
-                            <div class="bg-white dark:bg-gray-800 shadow rounded-lg p-6 space-y-4">
-                                <h2 class="text-xl font-semibold text-gray-900 dark:text-white">"B. Run Monthly Accrual"</h2>
+                            <div class="panel space-y-4">
+                                <div class="toolbar">
+                                    <h2 class="section-header">"B. Run Monthly Accrual"</h2>
+                                </div>
 
                                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
                                     <div>
-                                        <label class="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">"Accrual Period"</label>
+                                        <label class="label">"Accrual Period"</label>
                                         <input
-                                            class="w-full border rounded px-3 py-2 bg-white dark:bg-gray-700"
+                                            class="input"
                                             prop:value=accrual_period
                                             placeholder="YYYY-MM"
                                             on:input=move |ev| set_accrual_period.set(event_target_value(&ev))
@@ -469,31 +469,31 @@ pub fn ThrManagement() -> impl IntoView {
                                     </div>
 
                                     <div>
-                                        <button class="btn-primary" disabled=loading on:click=run_accrual>
+                                        <button class="btn-primary btn-press" disabled=loading on:click=run_accrual>
                                             "Run Accrual"
                                         </button>
                                     </div>
                                 </div>
 
                                 {move || accrual_result.get().map(|(processed, skipped)| view! {
-                                    <div class="rounded-md bg-green-50 p-4 dark:bg-green-900/20 text-green-800 dark:text-green-200">
+                                    <div class="alert-success">
                                         {format!("Processed: {}, Skipped: {}", processed, skipped)}
                                     </div>
                                 })}
 
                                 <div class="pt-2">
-                                    <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-3">"Accrual History"</h3>
+                                    <h3 class="section-header mb-3">"Accrual History"</h3>
                                     {move || {
                                         if selected_resource.get().is_empty() {
                                             view! {
-                                                <p class="text-sm text-gray-500 dark:text-gray-400">
+                                                <p class="empty-state">
                                                     "Select an employee to view accrual history."
                                                 </p>
                                             }
                                                 .into_view()
                                         } else if accrual_history.get().is_empty() {
                                             view! {
-                                                <p class="text-sm text-gray-500 dark:text-gray-400">
+                                                <p class="empty-state">
                                                     "No accrual history found for this employee."
                                                 </p>
                                             }
@@ -501,28 +501,28 @@ pub fn ThrManagement() -> impl IntoView {
                                         } else {
                                             view! {
                                                 <div class="overflow-x-auto">
-                                                    <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                                                        <thead class="bg-gray-50 dark:bg-gray-700">
+                                                    <table class="min-w-full divide-y divide-huly-divider">
+                                                        <thead class="bg-huly-surface-2">
                                                             <tr>
-                                                                <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">"Period"</th>
-                                                                <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">"Service Months"</th>
-                                                                <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">"Basis"</th>
-                                                                <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">"Accrual Amount (IDR)"</th>
-                                                                <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">"Annual Entitlement (IDR)"</th>
+                                                                <th class="th-cell-compact">"Period"</th>
+                                                                <th class="th-cell-compact">"Service Months"</th>
+                                                                <th class="th-cell-compact">"Basis"</th>
+                                                                <th class="th-cell-compact">"Accrual Amount (IDR)"</th>
+                                                                <th class="th-cell-compact">"Annual Entitlement (IDR)"</th>
                                                             </tr>
                                                         </thead>
-                                                        <tbody class="divide-y divide-gray-200 dark:divide-gray-700 bg-white dark:bg-gray-800">
+                                                        <tbody class="divide-y divide-huly-divider bg-huly-surface">
                                                             <For
                                                                 each=move || accrual_history.get()
                                                                 key=|row| format!("{}-{}", row.period, row.service_months)
                                                                 children=move |row| {
                                                                     view! {
                                                                         <tr>
-                                                                            <td class="px-4 py-2 text-sm text-gray-900 dark:text-gray-100">{row.period}</td>
-                                                                            <td class="px-4 py-2 text-sm text-gray-900 dark:text-gray-100">{row.service_months}</td>
-                                                                            <td class="px-4 py-2 text-sm text-gray-900 dark:text-gray-100">{row.basis}</td>
-                                                                            <td class="px-4 py-2 text-sm text-gray-900 dark:text-gray-100">{format!("Rp {}", row.accrual_amount)}</td>
-                                                                            <td class="px-4 py-2 text-sm text-gray-900 dark:text-gray-100">{format!("Rp {}", row.annual_entitlement)}</td>
+                                                                            <td class="td-cell-compact">{row.period}</td>
+                                                                            <td class="td-cell-compact">{row.service_months}</td>
+                                                                            <td class="td-cell-compact">{row.basis}</td>
+                                                                            <td class="td-cell-compact">{format!("Rp {}", row.accrual_amount)}</td>
+                                                                            <td class="td-cell-compact">{format!("Rp {}", row.annual_entitlement)}</td>
                                                                         </tr>
                                                                     }
                                                                 }
@@ -537,21 +537,23 @@ pub fn ThrManagement() -> impl IntoView {
                                 </div>
                             </div>
 
-                            <div class="bg-white dark:bg-gray-800 shadow rounded-lg p-6 space-y-4">
-                                <h2 class="text-xl font-semibold text-gray-900 dark:text-white">"C. THR Payout Report"</h2>
+                            <div class="panel space-y-4">
+                                <div class="toolbar">
+                                    <h2 class="section-header">"C. THR Payout Report"</h2>
+                                </div>
 
                                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
                                     <div>
-                                        <label class="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">"Report Month"</label>
+                                        <label class="label">"Report Month"</label>
                                         <input
-                                            class="w-full border rounded px-3 py-2 bg-white dark:bg-gray-700"
+                                            class="input"
                                             prop:value=report_month
                                             placeholder="YYYY-MM"
                                             on:input=move |ev| set_report_month.set(event_target_value(&ev))
                                         />
                                     </div>
                                     <div>
-                                        <button class="btn-primary" disabled=loading on:click=generate_report>
+                                        <button class="btn-primary btn-press" disabled=loading on:click=generate_report>
                                             "Generate Report"
                                         </button>
                                     </div>
@@ -560,7 +562,7 @@ pub fn ThrManagement() -> impl IntoView {
                                 {move || {
                                     if report_rows.get().is_empty() {
                                         view! {
-                                            <p class="text-sm text-gray-500 dark:text-gray-400">
+                                            <p class="empty-state">
                                                 "No report data loaded. Generate a report for a month."
                                             </p>
                                         }
@@ -568,36 +570,36 @@ pub fn ThrManagement() -> impl IntoView {
                                     } else {
                                         view! {
                                             <div class="overflow-x-auto">
-                                                <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                                                    <thead class="bg-gray-50 dark:bg-gray-700">
+                                                <table class="min-w-full divide-y divide-huly-divider">
+                                                    <thead class="bg-huly-surface-2">
                                                         <tr>
-                                                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">"Resource ID"</th>
-                                                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">"Month"</th>
-                                                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">"Service Months"</th>
-                                                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">"Basis"</th>
-                                                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">"Basis Explanation"</th>
-                                                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">"THR Basis Amount"</th>
-                                                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">"Annual Entitlement"</th>
-                                                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">"Accrued To Date"</th>
-                                                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">"Remaining Top-Up"</th>
+                                                            <th class="th-cell-compact">"Resource ID"</th>
+                                                            <th class="th-cell-compact">"Month"</th>
+                                                            <th class="th-cell-compact">"Service Months"</th>
+                                                            <th class="th-cell-compact">"Basis"</th>
+                                                            <th class="th-cell-compact">"Basis Explanation"</th>
+                                                            <th class="th-cell-compact">"THR Basis Amount"</th>
+                                                            <th class="th-cell-compact">"Annual Entitlement"</th>
+                                                            <th class="th-cell-compact">"Accrued To Date"</th>
+                                                            <th class="th-cell-compact">"Remaining Top-Up"</th>
                                                         </tr>
                                                     </thead>
-                                                    <tbody class="divide-y divide-gray-200 dark:divide-gray-700 bg-white dark:bg-gray-800">
+                                                    <tbody class="divide-y divide-huly-divider bg-huly-surface">
                                                         <For
                                                             each=move || report_rows.get()
                                                             key=|row| format!("{}-{}", row.resource_id, row.month)
                                                             children=move |row| {
                                                                 view! {
                                                                     <tr>
-                                                                        <td class="px-4 py-2 text-sm text-gray-900 dark:text-gray-100">{row.resource_id}</td>
-                                                                        <td class="px-4 py-2 text-sm text-gray-900 dark:text-gray-100">{row.month}</td>
-                                                                        <td class="px-4 py-2 text-sm text-gray-900 dark:text-gray-100">{row.service_months}</td>
-                                                                        <td class="px-4 py-2 text-sm text-gray-900 dark:text-gray-100">{row.basis}</td>
-                                                                        <td class="px-4 py-2 text-sm text-gray-900 dark:text-gray-100">{row.basis_explanation}</td>
-                                                                        <td class="px-4 py-2 text-sm text-gray-900 dark:text-gray-100">{format!("Rp {}", row.thr_basis_amount)}</td>
-                                                                        <td class="px-4 py-2 text-sm text-gray-900 dark:text-gray-100">{format!("Rp {}", row.annual_entitlement)}</td>
-                                                                        <td class="px-4 py-2 text-sm text-gray-900 dark:text-gray-100">{format!("Rp {}", row.accrued_to_date)}</td>
-                                                                        <td class="px-4 py-2 text-sm text-gray-900 dark:text-gray-100">{format!("Rp {}", row.remaining_top_up)}</td>
+                                                                        <td class="td-cell-compact">{row.resource_id}</td>
+                                                                        <td class="td-cell-compact">{row.month}</td>
+                                                                        <td class="td-cell-compact">{row.service_months}</td>
+                                                                        <td class="td-cell-compact">{row.basis}</td>
+                                                                        <td class="td-cell-compact">{row.basis_explanation}</td>
+                                                                        <td class="td-cell-compact">{format!("Rp {}", row.thr_basis_amount)}</td>
+                                                                        <td class="td-cell-compact">{format!("Rp {}", row.annual_entitlement)}</td>
+                                                                        <td class="td-cell-compact">{format!("Rp {}", row.accrued_to_date)}</td>
+                                                                        <td class="td-cell-compact">{format!("Rp {}", row.remaining_top_up)}</td>
                                                                     </tr>
                                                                 }
                                                             }
@@ -614,9 +616,8 @@ pub fn ThrManagement() -> impl IntoView {
                     }
                         .into_view()
                 }}
-            </main>
+            </div>
 
-            <Footer/>
         </div>
     }
 }

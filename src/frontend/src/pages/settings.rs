@@ -1,5 +1,5 @@
 use crate::auth::use_auth;
-use crate::components::{Footer, Header, SettingsSidebar};
+use crate::components::SettingsSidebar;
 use crate::pages::{DepartmentsContent, HolidaysContent, UsersContent};
 use leptos::*;
 use leptos_router::*;
@@ -20,8 +20,7 @@ pub fn SettingsPage() -> impl IntoView {
     }
 
     view! {
-        <div class="min-h-screen flex flex-col bg-gray-50 dark:bg-gray-900">
-            <Header/>
+        <div class="h-full flex">
 
             <div class="flex flex-1">
                 <SettingsSidebar/>
@@ -33,7 +32,6 @@ pub fn SettingsPage() -> impl IntoView {
                 </main>
             </div>
 
-            <Footer/>
         </div>
     }
 }

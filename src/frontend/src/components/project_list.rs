@@ -34,108 +34,108 @@ pub fn ProjectList(
     on_view_pnl: Callback<Uuid>,
 ) -> impl IntoView {
     view! {
-        <div class="bg-white dark:bg-gray-800 shadow rounded-lg overflow-hidden">
-            <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                <thead class="bg-gray-50 dark:bg-gray-700">
+        <div class="overflow-hidden overflow-x-auto">
+            <table class="min-w-full divide-y divide-huly-divider">
+                <thead class="bg-huly-surface-2">
                     <tr>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                        <th class="th-cell-compact">
                             "Name"
                         </th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                        <th class="th-cell-compact">
                             "Client"
                         </th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                        <th class="th-cell-compact">
                             "Status"
                         </th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                        <th class="th-cell-compact">
                             "Start Date"
                         </th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                        <th class="th-cell-compact">
                             "End Date"
                         </th>
-                        <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                        <th class="th-cell-compact text-right">
                             "Actions"
                         </th>
                     </tr>
                 </thead>
-                <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                <tbody class="bg-huly-surface divide-y divide-huly-divider">
                     {move || {
                         projects.get().into_iter().map(|project| {
                             let project_id = project.id;
                             let status_color = match project.status.as_str() {
-                                "planning" => "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200",
-                                "Active" => "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
-                                "completed" => "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
-                                "cancelled" => "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200",
-                                _ => "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200",
+                                "planning" => "badge-warning",
+                                "Active" => "badge-positive",
+                                "completed" => "badge-primary",
+                                "cancelled" => "badge-negative",
+                                _ => "badge-neutral",
                             };
                             view! {
-                                <tr class="hover:bg-gray-50 dark:hover:bg-gray-700">
-                                    <td class="px-6 py-4 whitespace-nowrap">
-                                        <div class="text-sm font-medium text-gray-900 dark:text-white">
+                                <tr class="table-row-hover">
+                                    <td class="td-cell-compact whitespace-nowrap">
+                                        <div class="text-sm font-medium text-huly-caption">
                                             {project.name.clone()}
                                         </div>
                                         {project.description.clone().map(|desc| {
                                             view! {
-                                                <div class="text-sm text-gray-500 dark:text-gray-400 truncate max-w-xs">
+                                                <div class="text-sm text-huly-muted truncate max-w-xs">
                                                     {desc}
                                                 </div>
                                             }
                                         })}
                                     </td>
-                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                                    <td class="td-cell-compact whitespace-nowrap text-sm text-huly-muted">
                                         {project.client.clone().unwrap_or_default()}
                                     </td>
-                                    <td class="px-6 py-4 whitespace-nowrap">
+                                    <td class="td-cell-compact whitespace-nowrap">
                                         <span class={format!("px-2 inline-flex text-xs leading-5 font-semibold rounded-full {}", status_color)}>
                                             {project.status.clone()}
                                         </span>
                                     </td>
-                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                                    <td class="td-cell-compact whitespace-nowrap text-sm text-huly-muted">
                                         {project.start_date.to_string()}
                                     </td>
-                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                                    <td class="td-cell-compact whitespace-nowrap text-sm text-huly-muted">
                                         {project.end_date.to_string()}
                                     </td>
-                                    <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                    <td class="td-cell-compact whitespace-nowrap text-right text-sm font-medium">
                                         <button
-                                            class="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 dark:hover:text-indigo-300 mr-4"
+                                            class="link mr-3"
                                             on:click=move |_| on_view_expenses.call(project_id)
                                         >
                                             "Expenses"
                                         </button>
                                         <button
-                                            class="text-emerald-600 hover:text-emerald-900 dark:text-emerald-400 dark:hover:text-emerald-300 mr-4"
+                                            class="text-positive-default hover:text-positive-default/80 mr-3"
                                             on:click=move |_| on_view_resource_costs.call(project_id)
                                         >
                                             "Costs"
                                         </button>
                                         <button
-                                            class="text-teal-600 hover:text-teal-900 dark:text-teal-400 dark:hover:text-teal-300 mr-4"
+                                            class="text-primary-400 hover:text-primary-400/80 mr-3"
                                             on:click=move |_| on_view_revenue.call(project_id)
                                         >
                                             "Revenue"
                                         </button>
                                         <button
-                                            class="text-rose-600 hover:text-rose-900 dark:text-rose-400 dark:hover:text-rose-300 mr-4"
+                                            class="link-danger mr-3"
                                             on:click=move |_| on_view_pnl.call(project_id)
                                         >
                                             "P&L"
                                         </button>
                                         <button
-                                            class="text-purple-600 hover:text-purple-900 dark:text-purple-400 dark:hover:text-purple-300 mr-4"
+                                            class="text-accent-orange hover:text-accent-orange/80 mr-3"
                                             on:click=move |_| on_view_budget.call(project_id)
                                         >
                                             "Budget"
                                         </button>
                                         <button
-                                            class="text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300 mr-4"
+                                            class="link mr-3"
                                             on:click=move |_| on_edit.call(project_id)
                                         >
                                             "Edit"
                                         </button>
                                         <button
-                                            class="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300"
+                                            class="link-danger"
                                             on:click=move |_| on_delete.call(project_id)
                                         >
                                             "Delete"

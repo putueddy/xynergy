@@ -48,15 +48,15 @@ pub fn HolidayForm(
     let is_edit = editing_holiday.is_some();
 
     view! {
-        <form class="space-y-4" on:submit=handle_submit>
+        <form class="space-y-3" on:submit=handle_submit>
             <div>
-                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                <label class="label">
                     "Holiday Name"
                 </label>
                 <input
                     type="text"
                     required
-                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                    class="input"
                     prop:value=name
                     on:input=move |ev| set_name.set(event_target_value(&ev))
                     placeholder="e.g., New Year's Day"
@@ -64,24 +64,24 @@ pub fn HolidayForm(
             </div>
 
             <div>
-                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                <label class="label">
                     "Date"
                 </label>
                 <input
                     type="date"
                     required
-                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                    class="input"
                     prop:value=date
                     on:input=move |ev| set_date.set(event_target_value(&ev))
                 />
             </div>
 
             <div>
-                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                <label class="label">
                     "Description"
                 </label>
                 <textarea
-                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                    class="input"
                     prop:value=description
                     on:input=move |ev| set_description.set(event_target_value(&ev))
                     placeholder="Optional description"
@@ -89,10 +89,10 @@ pub fn HolidayForm(
                 />
             </div>
 
-            <div class="flex justify-end space-x-3 pt-4">
+            <div class="flex justify-end gap-2 pt-3">
                 <button
                     type="button"
-                    class="btn-secondary"
+                    class="btn-secondary btn-press"
                     disabled=is_submitting
                     on:click=move |_| on_cancel.call(())
                 >
@@ -100,7 +100,7 @@ pub fn HolidayForm(
                 </button>
                 <button
                     type="submit"
-                    class="btn-primary"
+                    class="btn-primary btn-press"
                     disabled=is_submitting
                 >
                     {move || {

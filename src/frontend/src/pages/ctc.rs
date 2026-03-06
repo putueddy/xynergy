@@ -2,7 +2,6 @@ use crate::auth::{
     auth_token, authenticated_get, authenticated_post_json, clear_auth_storage, use_auth,
     validate_token, AuthContext,
 };
-use crate::components::{Footer, Header};
 use chrono::DateTime;
 use leptos::*;
 use leptos_router::*;
@@ -619,14 +618,13 @@ pub fn CtcManagement() -> impl IntoView {
     });
 
     view! {
-        <div class="min-h-screen flex flex-col bg-gray-50 dark:bg-gray-900">
-            <Header/>
+        <div class="h-full">
 
-            <main class="flex-grow max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 w-full">
+            <div class="page-container fade-in">
                 {move || {
                     if !auth_checked.get() {
                         return view! {
-                            <div class="rounded-md bg-blue-50 p-4 dark:bg-blue-900/20 text-blue-800 dark:text-blue-200">
+                            <div class="alert-info">
                                 "Checking access..."
                             </div>
                         }
@@ -635,7 +633,7 @@ pub fn CtcManagement() -> impl IntoView {
 
                     if !is_hr.get() {
                         return view! {
-                            <div class="rounded-md bg-red-50 p-4 dark:bg-red-900/20 text-red-800 dark:text-red-200">
+                            <div class="alert-error">
                                 "Access denied. CTC management is available to HR users only."
                             </div>
                         }
@@ -643,9 +641,9 @@ pub fn CtcManagement() -> impl IntoView {
                     }
 
                     view! {
-                <div class="space-y-6">
-                    <div class="flex items-center justify-between">
-                        <h1 class="text-3xl font-bold text-gray-900 dark:text-white">
+                <div class="space-y-4">
+                    <div class="page-header">
+                        <h1 class="text-xl font-semibold text-huly-caption">
                             "CTC Management - Add Employee"
                         </h1>
                     </div>
@@ -653,7 +651,7 @@ pub fn CtcManagement() -> impl IntoView {
                     {move || auth.user.get().map(|u| {
                         if u.role != "hr" {
                             view! {
-                                <div class="rounded-md bg-yellow-50 p-4 dark:bg-yellow-900/20 text-yellow-800 dark:text-yellow-200">
+                                <div class="alert-warning">
                                     "Only HR users can create CTC records."
                                 </div>
                             }
@@ -663,18 +661,18 @@ pub fn CtcManagement() -> impl IntoView {
                     })}
 
                     {move || error.get().map(|err| view! {
-                        <div class="rounded-md bg-red-50 p-4 dark:bg-red-900/20 text-red-800 dark:text-red-200">{err}</div>
+                        <div class="alert-error">{err}</div>
                     })}
 
                     {move || success.get().map(|msg| view! {
-                        <div class="rounded-md bg-green-50 p-4 dark:bg-green-900/20 text-green-800 dark:text-green-200">{msg}</div>
+                        <div class="alert-success">{msg}</div>
                     })}
 
-                    <div class="bg-white dark:bg-gray-800 shadow rounded-lg p-6 space-y-4">
+                    <div class="card p-4 space-y-4">
                         <div>
-                            <label class="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">"Employee ID"</label>
+                            <label class="label">"Employee ID"</label>
                             <select
-                                class="w-full border rounded px-3 py-2 bg-white dark:bg-gray-700"
+                                class="input"
                                 prop:value=selected_resource
                                 on:change=move |ev| {
                                     let selected = event_target_value(&ev);
@@ -763,13 +761,13 @@ pub fn CtcManagement() -> impl IntoView {
 
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
-                                <label class="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">"Name"</label>
-                                <input class="w-full border rounded px-3 py-2 bg-gray-100 dark:bg-gray-700" readonly=true
+                                <label class="label">"Name"</label>
+                                <input class="input" readonly=true
                                     value=move || selected_resource_view.get().map(|r| r.name).unwrap_or_default() />
                             </div>
                             <div>
-                                <label class="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">"Department"</label>
-                                <input class="w-full border rounded px-3 py-2 bg-gray-100 dark:bg-gray-700" readonly=true
+                                <label class="label">"Department"</label>
+                                <input class="input" readonly=true
                                     value=move || {
                                         if let Some(res) = selected_resource_view.get() {
                                             if let Some(dept_id) = res.department_id {
@@ -797,8 +795,8 @@ pub fn CtcManagement() -> impl IntoView {
                             <MoneyInput label="Transport Allowance" value=transport_allowance set_value=set_transport_allowance field_name="transport_allowance".to_string() field_errors=merged_field_errors />
                             <MoneyInput label="Meal Allowance" value=meal_allowance set_value=set_meal_allowance field_name="meal_allowance".to_string() field_errors=merged_field_errors />
                             <div>
-                                <label class="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">"Risk Tier"</label>
-                                <select class="w-full border rounded px-3 py-2 bg-white dark:bg-gray-700"
+                                <label class="label">"Risk Tier"</label>
+                                <select class="input"
                                     prop:value=risk_tier
                                     on:change=move |ev| set_risk_tier.set(event_target_value(&ev))>
                                     <option value="1">"1 - Low"</option>
@@ -808,9 +806,9 @@ pub fn CtcManagement() -> impl IntoView {
                                 </select>
                             </div>
                             <div>
-                                <label class="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">"Working Days"</label>
+                                <label class="label">"Working Days"</label>
                                 <input
-                                    class="w-full border rounded px-3 py-2 bg-white dark:bg-gray-700"
+                                    class="input"
                                     prop:value=working_days
                                     on:input=move |ev| set_working_days.set(event_target_value(&ev))
                                 />
@@ -819,7 +817,7 @@ pub fn CtcManagement() -> impl IntoView {
 
 
                         {move || allowance_warning.get().map(|msg| view! {
-                            <div class="mt-2 text-sm text-yellow-600 dark:text-yellow-400 flex items-center gap-1">
+                            <div class="mt-2 text-sm text-warning-default flex items-center gap-1">
                                 <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
                                     <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
                                 </svg>
@@ -833,7 +831,7 @@ pub fn CtcManagement() -> impl IntoView {
                                 view! { <></> }.into_view()
                             } else {
                                 view! {
-                                    <div class="mt-2 rounded-md bg-yellow-50 p-4 dark:bg-yellow-900/20 text-yellow-800 dark:text-yellow-200">
+                                    <div class="mt-2 alert-warning">
                                         <h3 class="text-sm font-medium">"Validation Warnings:"</h3>
                                         <ul class="list-disc pl-5 mt-1 text-sm">
                                             {warnings.into_iter().map(|w| view! { <li>{w}</li> }).collect_view()}
@@ -843,13 +841,13 @@ pub fn CtcManagement() -> impl IntoView {
                             }
                         }}
                         {move || is_editing.get().then(|| view! {
-                            <div class="space-y-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-                                <h3 class="text-lg font-medium text-gray-900 dark:text-white">"Update Information"</h3>
+                            <div class="space-y-4 pt-4 border-t border-huly-divider">
+                                <h3 class="section-header">"Update Information"</h3>
 
                                 <div>
-                                    <label class="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">"Change Reason (Required)"</label>
+                                    <label class="label">"Change Reason (Required)"</label>
                                     <textarea
-                                        class="w-full border rounded px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                                        class="input text-huly-caption"
                                         rows="2"
                                         placeholder="Explain why these changes are being made..."
                                         prop:value=change_reason
@@ -858,8 +856,8 @@ pub fn CtcManagement() -> impl IntoView {
                                 </div>
 
                                 <div>
-                                    <label class="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">"Effective Date Policy"</label>
-                                    <select class="w-full border rounded px-3 py-2 bg-white dark:bg-gray-700"
+                                    <label class="label">"Effective Date Policy"</label>
+                                    <select class="input"
                                         prop:value=effective_date_policy
                                         on:change=move |ev| set_effective_date_policy.set(event_target_value(&ev))>
                                         <option value="pro_rata">"Pro Rata Calculation (Immediate)"</option>
@@ -870,15 +868,15 @@ pub fn CtcManagement() -> impl IntoView {
                         })}
 
                         <div class="flex gap-3 items-center mt-4">
-                            <button class="btn-secondary" disabled=loading on:click=calculate_bpjs>
+                            <button class="btn-secondary btn-press" disabled=loading on:click=calculate_bpjs>
                                 "Calculate BPJS"
                             </button>
-                            <button class="btn-primary" disabled=loading on:click=save_ctc>
+                            <button class="btn-primary btn-press" disabled=loading on:click=save_ctc>
                                 "Save"
                             </button>
 
                             {move || is_editing.get().then(|| view! {
-                                <button class="ml-auto text-blue-600 dark:text-blue-400 font-medium hover:underline text-sm"
+                                <button class="ml-auto text-primary-400 font-medium hover:underline text-sm"
                                     on:click=move |_| {
                                         let should_show = !show_history.get();
                                         set_show_history.set(should_show);
@@ -906,28 +904,30 @@ pub fn CtcManagement() -> impl IntoView {
                     </div>
 
                     {move || preview.get().map(|p| view! {
-                        <div class="bg-white dark:bg-gray-800 shadow rounded-lg p-6 space-y-2">
-                            <h2 class="text-xl font-semibold text-gray-900 dark:text-white">"Calculation Preview"</h2>
-                            <p class="text-gray-900 dark:text-white">{format!("BPJS Kesehatan Employer: {}", p["bpjs"]["kesehatan"]["employer"].as_i64().unwrap_or(0))}</p>
-                            <p class="text-gray-900 dark:text-white">{format!("BPJS Kesehatan Employee: {}", p["bpjs"]["kesehatan"]["employee"].as_i64().unwrap_or(0))}</p>
-                            <p class="text-gray-900 dark:text-white">{format!("BPJS Ketenagakerjaan Employer: {}", p["bpjs"]["ketenagakerjaan"]["employer"].as_i64().unwrap_or(0))}</p>
-                            <p class="text-gray-900 dark:text-white">{format!("BPJS Ketenagakerjaan Employee: {}", p["bpjs"]["ketenagakerjaan"]["employee"].as_i64().unwrap_or(0))}</p>
-                            <p class="text-gray-900 dark:text-white">{format!("Total Monthly CTC: {}", p["total_monthly_ctc"].as_i64().unwrap_or(0))}</p>
-                            <p class="text-gray-900 dark:text-white">{format!("Daily Rate: {:.2}", p["daily_rate"].as_f64().unwrap_or(0.0))}</p>
-                            <p class="text-gray-900 dark:text-white">{format!("THR Monthly Accrual: {}", p["thr_monthly_accrual"].as_i64().unwrap_or(0))}</p>
+                        <div class="card p-4 space-y-2">
+                            <h2 class="section-header">"Calculation Preview"</h2>
+                            <p class="text-huly-caption">{format!("BPJS Kesehatan Employer: {}", p["bpjs"]["kesehatan"]["employer"].as_i64().unwrap_or(0))}</p>
+                            <p class="text-huly-caption">{format!("BPJS Kesehatan Employee: {}", p["bpjs"]["kesehatan"]["employee"].as_i64().unwrap_or(0))}</p>
+                            <p class="text-huly-caption">{format!("BPJS Ketenagakerjaan Employer: {}", p["bpjs"]["ketenagakerjaan"]["employer"].as_i64().unwrap_or(0))}</p>
+                            <p class="text-huly-caption">{format!("BPJS Ketenagakerjaan Employee: {}", p["bpjs"]["ketenagakerjaan"]["employee"].as_i64().unwrap_or(0))}</p>
+                            <p class="text-huly-caption">{format!("Total Monthly CTC: {}", p["total_monthly_ctc"].as_i64().unwrap_or(0))}</p>
+                            <p class="text-huly-caption">{format!("Daily Rate: {:.2}", p["daily_rate"].as_f64().unwrap_or(0.0))}</p>
+                            <p class="text-huly-caption">{format!("THR Monthly Accrual: {}", p["thr_monthly_accrual"].as_i64().unwrap_or(0))}</p>
                         </div>
                     })}
 
                     {move || show_history.get().then(|| view! {
-                        <div class="bg-white dark:bg-gray-800 shadow rounded-lg p-6 space-y-4">
-                            <h2 class="text-xl font-semibold text-gray-900 dark:text-white mb-4">"Revision History"</h2>
+                        <div class="panel space-y-4">
+                            <div class="toolbar">
+                                <h2 class="section-header">"Revision History"</h2>
+                            </div>
                             {move || history_loading.get().then(|| view! {
-                                <p class="text-sm text-gray-500 dark:text-gray-400">"Loading revision history..."</p>
+                                <p class="empty-state">"Loading revision history..."</p>
                             })}
                             {move || (!history_loading.get() && history.get().is_empty()).then(|| view! {
-                                <p class="text-sm text-gray-500 dark:text-gray-400">"No revision history yet."</p>
+                                <p class="empty-state">"No revision history yet."</p>
                             })}
-                            <div class="relative border-l border-gray-200 dark:border-gray-700 ml-3">
+                            <div class="relative border-l border-huly-divider ml-3">
                                 <For
                                     each=move || history.get()
                                     key=|h| h["revision_number"].as_i64().unwrap_or_default()
@@ -943,32 +943,32 @@ pub fn CtcManagement() -> impl IntoView {
                                             <div class="mb-8 ml-6">
                                                 <div class="flex justify-between items-start mb-2">
                                                     <div class="flex items-center gap-2">
-                                                        <span class="inline-block w-3 h-3 bg-blue-500 rounded-full border border-white dark:border-gray-900 shrink-0"></span>
-                                                        <span class="font-medium text-blue-600 dark:text-blue-400">
+                                                        <span class="inline-block w-3 h-3 bg-blue-500 rounded-full border border-huly-back shrink-0"></span>
+                                                        <span class="font-medium text-primary-400">
                                                             {format!(
                                                                 "v{} - {}",
                                                                 rev_num,
                                                                 date.get(0..10).unwrap_or(&date)
                                                             )}
                                                         </span>
-                                                        <span class="px-2 py-0.5 rounded text-xs bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200">
+                                                        <span class="px-2 py-0.5 rounded text-xs bg-huly-surface-2 text-huly-content">
                                                             {policy.replace("_", " ")}
                                                         </span>
                                                     </div>
                                                 </div>
-                                                <div class="text-gray-800 dark:text-gray-200 text-sm italic mb-2">
+                                                <div class="text-huly-content text-sm italic mb-2">
                                                     "Reason: "{reason}
                                                 </div>
-                                                <div class="bg-gray-50 dark:bg-gray-700 rounded-md p-3 text-sm overflow-x-auto">
+                                                <div class="bg-huly-surface-2 rounded-md p-3 text-sm overflow-x-auto">
                                                     <table class="w-full text-left">
                                                         <thead>
-                                                            <tr class="text-gray-500 dark:text-gray-400">
-                                                                <th class="pb-2 font-medium">"Field"</th>
-                                                                <th class="pb-2 font-medium break-all w-1/3">"Old"</th>
-                                                                <th class="pb-2 font-medium break-all w-1/3">"New"</th>
+                                                            <tr class="text-huly-muted">
+                                                                <th class="th-cell-compact">"Field"</th>
+                                                                <th class="th-cell-compact break-all w-1/3">"Old"</th>
+                                                                <th class="th-cell-compact break-all w-1/3">"New"</th>
                                                             </tr>
                                                         </thead>
-                                                        <tbody class="text-gray-900 dark:text-gray-100 font-mono text-xs">
+                                                        <tbody class="text-huly-caption font-mono text-xs">
                                                             <For
                                                                 each=move || diffs.clone()
                                                                 key=|d| d["field"].as_str().unwrap_or_default().to_string()
@@ -977,10 +977,10 @@ pub fn CtcManagement() -> impl IntoView {
                                                                     let old_val = d["old_value"].to_string();
                                                                     let new_val = d["new_value"].to_string();
                                                                     view! {
-                                                                        <tr class="border-t border-gray-200 dark:border-gray-600">
-                                                                            <td class="py-1">{field}</td>
-                                                                            <td class="py-1 text-red-500 line-through truncate">{old_val}</td>
-                                                                            <td class="py-1 text-green-500 truncate">{new_val}</td>
+                                                                        <tr class="border-t border-huly-divider">
+                                                                            <td class="td-cell-compact">{field}</td>
+                                                                            <td class="td-cell-compact text-red-500 line-through truncate">{old_val}</td>
+                                                                            <td class="td-cell-compact text-green-500 truncate">{new_val}</td>
                                                                         </tr>
                                                                     }
                                                                 }
@@ -999,9 +999,8 @@ pub fn CtcManagement() -> impl IntoView {
                     }
                         .into_view()
                 }}
-            </main>
+            </div>
 
-            <Footer/>
         </div>
     }
 }
@@ -1016,12 +1015,12 @@ fn MoneyInput(
 ) -> impl IntoView {
     view! {
         <div>
-            <label class="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">{label}</label>
+            <label class="label">{label}</label>
             <input
                 class={
                     let field_name_clone = field_name.clone();
                     move || {
-                        let mut classes = "w-full border rounded px-3 py-2 bg-white dark:bg-gray-700".to_string();
+                        let mut classes = "input".to_string();
                         if field_errors.get().contains_key(&field_name_clone) {
                             classes.push_str(" border-red-500 focus:ring-red-500 focus:border-red-500");
                         }
@@ -1035,7 +1034,7 @@ fn MoneyInput(
             {move || {
                 let errs = field_errors.get();
                 if let Some(err) = errs.get(&field_name) {
-                    view! { <p class="mt-1 text-xs text-red-600 dark:text-red-400">{err.clone()}</p> }.into_view()
+                    view! { <p class="mt-1 text-xs text-negative-default">{err.clone()}</p> }.into_view()
                 } else {
                     view! { <></> }.into_view()
                 }

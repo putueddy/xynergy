@@ -3,11 +3,11 @@ use crate::auth::{
     use_auth,
 };
 use crate::components::{
-    AllocationEditData, AllocationForm, AllocationFormData, Footer, Header, ProjectOption,
+    AllocationEditData, AllocationForm, AllocationFormData, ProjectOption,
     ResourceOption, TimelineChart,
 };
 use crate::timeline::{TimelineGroup, TimelineItem};
-use chrono::Datelike;
+use chrono::{Datelike, Weekday};
 use leptos::*;
 use leptos_router::*;
 use serde::Deserialize;
@@ -322,7 +322,7 @@ pub fn Allocations() -> impl IntoView {
                 .clone();
             let color_class = format!("{} {}", bg_class, text_class);
             let weekend_badge = if a.include_weekend {
-                " <span class='ml-2 inline-flex items-center rounded bg-white/80 px-1.5 py-0.5 text-[10px] font-semibold text-slate-900'>Weekend</span>"
+                " <span class='ml-2 inline-flex items-center rounded bg-huly-back/80 px-1.5 py-0.5 text-[10px] font-semibold text-slate-900'>Weekend</span>"
             } else {
                 ""
             };
@@ -467,6 +467,36 @@ pub fn Allocations() -> impl IntoView {
             }
         }
 
+        // Add weekend background items for the visible range (today ± 45 days for scrolling)
+        {
+            let today = chrono::Local::now().date_naive();
+            let range_start = today - chrono::Duration::days(45);
+            let range_end = today + chrono::Duration::days(45);
+            let mut current = range_start;
+            let mut weekend_idx = 0u32;
+            while current <= range_end {
+                let wd = current.weekday();
+                if wd == Weekday::Sat || wd == Weekday::Sun {
+                    let next_day = (current + chrono::Duration::days(1))
+                        .format("%Y-%m-%d")
+                        .to_string();
+                    items.push(TimelineItem {
+                        id: format!("weekend-{}", weekend_idx),
+                        group: None,
+                        content: String::new(),
+                        start: current.format("%Y-%m-%d").to_string(),
+                        end: Some(next_day),
+                        class_name: Some("holiday-bg".to_string()),
+                        style: None,
+                        editable: Some(false),
+                        item_type: Some("background".to_string()),
+                    });
+                    weekend_idx += 1;
+                }
+                current += chrono::Duration::days(1);
+            }
+        }
+
         set_timeline_groups.set(groups);
         set_timeline_items.set(items);
     });
@@ -546,6 +576,8 @@ pub fn Allocations() -> impl IntoView {
             "december",
         ];
         let mut rules = String::new();
+
+        // Holiday axis label highlighting
         for holiday in holidays.get() {
             if let Ok(date) = chrono::NaiveDate::parse_from_str(&holiday.date, "%Y-%m-%d") {
                 let month_idx = (date.month0() as usize).min(11);
@@ -557,6 +589,28 @@ pub fn Allocations() -> impl IntoView {
                 ));
             }
         }
+
+        // Weekend axis label highlighting (same style as holidays)
+        {
+            let today = chrono::Local::now().date_naive();
+            let range_start = today - chrono::Duration::days(45);
+            let range_end = today + chrono::Duration::days(45);
+            let mut current = range_start;
+            while current <= range_end {
+                let wd = current.weekday();
+                if wd == Weekday::Sat || wd == Weekday::Sun {
+                    let month_idx = (current.month0() as usize).min(11);
+                    let month_class = month_names[month_idx];
+                    let day_class = format!("vis-day{}", current.day());
+                    rules.push_str(&format!(
+                        ".vis-time-axis .vis-text.vis-minor.{}.vis-{} {{ background-color: rgba(156, 163, 175, 0.35) !important; }}\n",
+                        day_class, month_class
+                    ));
+                }
+                current += chrono::Duration::days(1);
+            }
+        }
+
         rules
     });
 
@@ -573,24 +627,23 @@ pub fn Allocations() -> impl IntoView {
     });
 
     view! {
-        <div class="min-h-screen flex flex-col bg-gray-50 dark:bg-gray-900">
-            <Header/>
+        <div class="h-full">
 
-            <main class="flex-grow max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 w-full">
-                <div class="space-y-6">
-                    <div class="flex items-center justify-between">
+            <div class="page-container fade-in">
+                <div class="space-y-4">
+                    <div class="page-header">
                         <div>
-                            <h1 class="text-3xl font-bold text-gray-900 dark:text-white">
+                            <h1 class="text-xl font-semibold text-huly-caption">
                                 "Resource Allocations"
                             </h1>
-                            <p class="text-gray-600 dark:text-gray-400 mt-1">
+                            <p class="text-huly-secondary mt-1">
                                 "Visual timeline of resource assignments to projects"
                             </p>
                         </div>
 
-                        <div class="flex items-center space-x-3">
+                        <div class="flex items-center gap-2">
                             <button
-                                class="btn-primary"
+                                class="btn-primary btn-press"
                                 on:click=move |_| set_show_form.set(true)
                             >
                                 "Add Allocation"
@@ -600,10 +653,10 @@ pub fn Allocations() -> impl IntoView {
 
                     {move || error.get().map(|err| {
                         view! {
-                            <div class="rounded-md bg-red-50 p-4 dark:bg-red-900/20">
+                            <div class="alert-error">
                                 <div class="flex">
                                     <div class="ml-3">
-                                        <h3 class="text-sm font-medium text-red-800 dark:text-red-200">
+                                        <h3 class="text-sm font-medium text-negative-default">
                                             {err}
                                         </h3>
                                     </div>
@@ -617,8 +670,8 @@ pub fn Allocations() -> impl IntoView {
                             let is_edit = editing_allocation.get().is_some();
                             let title = if is_edit { "Edit Allocation" } else { "Create Allocation" };
                             view! {
-                                <div class="bg-white dark:bg-gray-800 shadow rounded-lg p-6 relative">
-                                    <h2 class="text-xl font-semibold text-gray-900 dark:text-white mb-4">
+                                <div class="card relative">
+                                    <h2 class="text-xl font-semibold text-huly-caption mb-4">
                                         {title}
                                     </h2>
                                     <AllocationForm
@@ -632,10 +685,10 @@ pub fn Allocations() -> impl IntoView {
                                     {move || {
                                         if form_submitting.get() {
                                             view! {
-                                                <div class="absolute inset-0 flex items-center justify-center bg-white/70 dark:bg-gray-800/70 rounded-lg">
+                                                <div class="absolute inset-0 flex items-center justify-center bg-huly-back/70 rounded-lg">
                                                     <div class="text-center">
                                                         <div class="spinner mx-auto mb-2"></div>
-                                                        <p class="text-sm text-gray-600 dark:text-gray-400">"Saving..."</p>
+                                                        <p class="text-sm text-huly-secondary">"Saving..."</p>
                                                     </div>
                                                 </div>
                                             }.into_view()
@@ -650,8 +703,9 @@ pub fn Allocations() -> impl IntoView {
                         }
                     }}
 
-                    <div class="space-y-6">
-                        <div class="bg-white dark:bg-gray-800 shadow rounded-lg overflow-hidden">
+                    <div class="space-y-4">
+                        <div class="panel">
+                            <div class="toolbar"></div>
                             <div class="h-[500px] relative">
                                 <style>{move || holiday_axis_css.get()}</style>
                                 <TimelineChart
@@ -697,10 +751,11 @@ pub fn Allocations() -> impl IntoView {
                                 {move || {
                                     if loading.get() {
                                         view! {
-                                            <div class="absolute inset-0 flex items-center justify-center bg-white/70 dark:bg-gray-800/70">
-                                                <div class="text-center">
-                                                    <div class="spinner mx-auto mb-4"></div>
-                                                    <p class="text-gray-600 dark:text-gray-400">"Loading allocations..."</p>
+                                            <div class="absolute inset-0 flex items-center justify-center bg-huly-back/70">
+                                                <div class="space-y-3 w-full max-w-md px-4">
+                                                    <div class="skeleton-row"><div class="skeleton-text w-28"></div><div class="skeleton-text w-20"></div><div class="skeleton-text w-24"></div></div>
+                                                    <div class="skeleton-row"><div class="skeleton-text w-24"></div><div class="skeleton-text w-16"></div><div class="skeleton-text w-20"></div></div>
+                                                    <div class="skeleton-row"><div class="skeleton-text w-32"></div><div class="skeleton-text w-12"></div><div class="skeleton-text w-28"></div></div>
                                                 </div>
                                             </div>
                                         }.into_view()
@@ -714,9 +769,12 @@ pub fn Allocations() -> impl IntoView {
                         {move || {
                             if allocations.get().is_empty() && !loading.get() {
                                 view! {
-                                    <div class="text-center py-6 bg-white dark:bg-gray-800 rounded-lg shadow">
-                                        <p class="text-gray-600 dark:text-gray-400">"No allocations found."</p>
-                                        <p class="text-sm text-gray-500 dark:text-gray-500 mt-2">"Click 'Add Allocation' to create one."</p>
+                                    <div class="empty-state py-12 panel">
+                                        <svg class="w-12 h-12 text-huly-ghost mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1">
+                                            <path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
+                                        </svg>
+                                        <p class="text-huly-secondary text-sm">"No allocations found."</p>
+                                        <p class="text-huly-muted text-xs mt-1">"Click 'Add Allocation' to create one."</p>
                                     </div>
                                 }.into_view()
                             } else {
@@ -729,46 +787,48 @@ pub fn Allocations() -> impl IntoView {
                                 view! { <div></div> }.into_view()
                             } else {
                                 view! {
-                                    <div class="bg-white dark:bg-gray-800 shadow rounded-lg p-6">
-                                        <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-                                            "Allocation Details"
-                                        </h2>
+                                    <div class="panel">
+                                        <div class="toolbar">
+                                            <h2 class="text-sm font-semibold text-huly-caption">
+                                                "Allocation Details"
+                                            </h2>
+                                        </div>
                                         <div class="overflow-x-auto">
-                                            <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                                                <thead class="bg-gray-50 dark:bg-gray-700">
+                                            <table class="min-w-full divide-y divide-huly-divider">
+                                                <thead class="bg-huly-surface-2">
                                                     <tr>
-                                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">"Resource"</th>
-                                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">"Project"</th>
-                                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">"Start Date"</th>
-                                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">"End Date"</th>
-                                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">"Allocation"</th>
-                                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">"Actions"</th>
+                                                        <th class="th-cell-compact">"Resource"</th>
+                                                        <th class="th-cell-compact">"Project"</th>
+                                                        <th class="th-cell-compact">"Start Date"</th>
+                                                        <th class="th-cell-compact">"End Date"</th>
+                                                        <th class="th-cell-compact">"Allocation"</th>
+                                                        <th class="th-cell-compact">"Actions"</th>
                                                     </tr>
                                                 </thead>
-                                                <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                                                <tbody class="bg-huly-surface divide-y divide-huly-divider">
                                                     {move || allocations.get().into_iter().map(|allocation| {
                                                         let allocation_id = allocation.id.to_string();
                                                         let alloc_for_edit = allocation.clone();
                                                         view! {
-                                                            <tr class="hover:bg-gray-50 dark:hover:bg-gray-700">
-                                                                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">
+                                                            <tr class="table-row-hover">
+                                                                <td class="td-cell-compact whitespace-nowrap font-medium text-huly-caption">
                                                                     {allocation.resource_name.clone()}
                                                                 </td>
-                                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                                                                <td class="td-cell-compact whitespace-nowrap text-huly-muted">
                                                                     {allocation.project_name.clone()}
                                                                 </td>
-                                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                                                                <td class="td-cell-compact whitespace-nowrap text-huly-muted">
                                                                     {allocation.start_date.clone()}
                                                                 </td>
-                                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                                                                <td class="td-cell-compact whitespace-nowrap text-huly-muted">
                                                                     {allocation.end_date.clone()}</td>
-                                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                                                                <td class="td-cell-compact whitespace-nowrap text-huly-muted">
                                                                     {format!("{:.0}%", allocation.allocation_percentage)}
                                                                 </td>
-                                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                                                                    <div class="flex items-center space-x-2">
+                                                                <td class="td-cell-compact whitespace-nowrap text-huly-muted">
+                                                                    <div class="flex items-center gap-2">
                                                                         <button
-                                                                            class="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+                                                                            class="link"
                                                                             on:click={
                                                                                 let alloc = alloc_for_edit.clone();
                                                                                 move |_| {
@@ -783,7 +843,7 @@ pub fn Allocations() -> impl IntoView {
                                                                             let is_deleting = deleting_id.get() == Some(allocation_id.clone());
                                                                             view! {
                                                                                 <button
-                                                                                    class="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                                                    class="link-danger disabled:opacity-50 disabled:cursor-not-allowed"
                                                                                     disabled=is_deleting
                                                                                     on:click={
                                                                                         let id = allocation_id.clone();
@@ -826,9 +886,8 @@ pub fn Allocations() -> impl IntoView {
                         }}
                     </div>
                 </div>
-            </main>
+            </div>
 
-            <Footer/>
         </div>
     }
 }

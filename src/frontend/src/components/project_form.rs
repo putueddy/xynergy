@@ -208,15 +208,15 @@ pub fn ProjectForm(
     };
 
     view! {
-        <form class="space-y-4" on:submit=handle_submit>
+        <form class="space-y-3" on:submit=handle_submit>
             <div>
-                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                <label class="label">
                     "Project Name"
                 </label>
                 <input
                     type="text"
                     required
-                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                    class="input"
                     placeholder="Project name"
                     prop:value=name
                     on:input=move |ev| set_name.set(event_target_value(&ev))
@@ -224,11 +224,11 @@ pub fn ProjectForm(
             </div>
 
             <div>
-                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                <label class="label">
                     "Description"
                 </label>
                 <textarea
-                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                    class="input"
                     placeholder="Project description"
                     rows="3"
                     prop:value=description
@@ -237,25 +237,25 @@ pub fn ProjectForm(
             </div>
 
             <div>
-                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                <label class="label">
                     "Client"
                 </label>
                 <input
                     type="text"
-                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                    class="input"
                     placeholder="Client name"
                     prop:value=client
                     on:input=move |ev| set_client.set(event_target_value(&ev))
                 />
             </div>
 
-            <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-4">
-                <h3 class="text-sm font-semibold text-gray-900 dark:text-white">
+            <div class="rounded-lg border border-huly-divider p-4 space-y-4">
+                <h3 class="text-sm font-semibold text-huly-caption">
                     "Budget Categories (IDR)"
                 </h3>
 
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    <label class="label">
                         "Total Budget"
                     </label>
                     <input
@@ -263,7 +263,7 @@ pub fn ProjectForm(
                         required
                         min="1"
                         step="1"
-                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                        class="input"
                         placeholder="Total budget in IDR"
                         prop:value=total_budget_idr
                         on:input=move |ev| set_total_budget_idr.set(event_target_value(&ev))
@@ -272,14 +272,14 @@ pub fn ProjectForm(
 
                 <div class="grid grid-cols-2 gap-4">
                     <div>
-                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                        <label class="label">
                             "HR Budget"
                         </label>
                         <input
                             type="number"
                             min="0"
                             step="1"
-                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                            class="input"
                             placeholder="0"
                             prop:value=budget_hr_idr
                             on:input=move |ev| set_budget_hr_idr.set(event_target_value(&ev))
@@ -287,14 +287,14 @@ pub fn ProjectForm(
                     </div>
 
                     <div>
-                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                        <label class="label">
                             "Software Budget"
                         </label>
                         <input
                             type="number"
                             min="0"
                             step="1"
-                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                            class="input"
                             placeholder="0"
                             prop:value=budget_software_idr
                             on:input=move |ev| set_budget_software_idr.set(event_target_value(&ev))
@@ -302,14 +302,14 @@ pub fn ProjectForm(
                     </div>
 
                     <div>
-                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                        <label class="label">
                             "Hardware Budget"
                         </label>
                         <input
                             type="number"
                             min="0"
                             step="1"
-                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                            class="input"
                             placeholder="0"
                             prop:value=budget_hardware_idr
                             on:input=move |ev| set_budget_hardware_idr.set(event_target_value(&ev))
@@ -317,14 +317,14 @@ pub fn ProjectForm(
                     </div>
 
                     <div>
-                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                        <label class="label">
                             "Overhead Budget"
                         </label>
                         <input
                             type="number"
                             min="0"
                             step="1"
-                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                            class="input"
                             placeholder="0"
                             prop:value=budget_overhead_idr
                             on:input=move |ev| set_budget_overhead_idr.set(event_target_value(&ev))
@@ -332,7 +332,7 @@ pub fn ProjectForm(
                     </div>
                 </div>
 
-                <div class="rounded-md bg-gray-50 dark:bg-gray-800/60 p-3 text-sm text-gray-700 dark:text-gray-300 space-y-1">
+                <div class="rounded-md bg-huly-surface-2 p-3 text-sm text-huly-content space-y-1">
                     {move || {
                         let (hr_pct, sw_pct, hw_pct, oh_pct, is_valid) = budget_percentages();
                         view! {
@@ -341,7 +341,7 @@ pub fn ProjectForm(
                                 <p>{format!("Software: {:.1}%", sw_pct)}</p>
                                 <p>{format!("Hardware: {:.1}%", hw_pct)}</p>
                                 <p>{format!("Overhead: {:.1}%", oh_pct)}</p>
-                                <p class=if is_valid { "text-green-600 dark:text-green-400" } else { "text-gray-500 dark:text-gray-400" }>
+                                <p class=if is_valid { "text-positive-default" } else { "text-huly-muted" }>
                                     {if is_valid { "Category sum matches total budget" } else { "Category sum does not match total budget" }}
                                 </p>
                             </>
@@ -353,7 +353,7 @@ pub fn ProjectForm(
                     let (total, sum) = budget_totals();
                     if total > 0 && sum != total {
                         view! {
-                            <p class="text-sm text-amber-600 dark:text-amber-400">
+                            <p class="text-sm text-warning-default">
                                 {format!("⚠ Category sum ({}) does not equal total budget ({})", sum, total)}
                             </p>
                         }
@@ -365,33 +365,33 @@ pub fn ProjectForm(
 
                 {move || validation_error.get().map(|err| {
                     view! {
-                        <p class="text-sm text-red-600 dark:text-red-400">{err}</p>
+                        <p class="text-sm text-negative-default">{err}</p>
                     }
                 })}
             </div>
 
             <div class="grid grid-cols-2 gap-4">
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    <label class="label">
                         "Start Date"
                     </label>
                     <input
                         type="date"
                         required
-                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                        class="input"
                         prop:value=start_date
                         on:input=move |ev| set_start_date.set(event_target_value(&ev))
                     />
                 </div>
 
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    <label class="label">
                         "End Date"
                     </label>
                     <input
                         type="date"
                         required
-                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                        class="input"
                         prop:value=end_date
                         on:input=move |ev| set_end_date.set(event_target_value(&ev))
                     />
@@ -399,12 +399,12 @@ pub fn ProjectForm(
             </div>
 
             <div>
-                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                <label class="label">
                     "Status"
                 </label>
                 <select
                     required
-                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                    class="input"
                     prop:value=status
                     on:change=move |ev| set_status.set(event_target_value(&ev))
                 >
@@ -415,17 +415,17 @@ pub fn ProjectForm(
                 </select>
             </div>
 
-            <div class="flex justify-end space-x-3 pt-4">
+            <div class="flex justify-end gap-2 pt-3">
                 <button
                     type="button"
-                    class="btn-secondary"
+                    class="btn-secondary btn-press"
                     on:click=move |_| on_cancel.call(())
                 >
                     "Cancel"
                 </button>
                 <button
                     type="submit"
-                    class="btn-primary"
+                    class="btn-primary btn-press"
                 >
                     "Save"
                 </button>

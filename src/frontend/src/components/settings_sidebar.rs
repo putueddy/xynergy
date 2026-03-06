@@ -10,9 +10,9 @@ pub fn SettingsSidebar() -> impl IntoView {
     let pathname = Signal::derive(move || location.pathname.get());
 
     view! {
-        <aside class="w-64 bg-white dark:bg-gray-800 shadow-sm min-h-screen">
-            <div class="p-6">
-                <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-6">
+        <aside class="w-56 bg-huly-surface border-r border-huly-divider min-h-screen">
+            <div class="p-4">
+                <h2 class="text-sm font-semibold text-huly-muted uppercase tracking-wider mb-4">
                     "Settings"
                 </h2>
 
@@ -57,11 +57,11 @@ fn SidebarLink(
         <a
             href={href}
             class={move || {
-                let base_classes = "flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors";
+                let base_classes = "flex items-center px-3 py-2 text-sm font-medium rounded-md transition-colors";
                 if is_active.get() {
-                    format!("{} bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-300", base_classes)
+                    format!("{} bg-primary-600/10 text-primary-400", base_classes)
                 } else {
-                    format!("{} text-gray-700 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-700", base_classes)
+                    format!("{} text-huly-content hover:bg-huly-surface-hover", base_classes)
                 }
             }}
         >

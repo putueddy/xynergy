@@ -1,5 +1,5 @@
 use crate::timeline::{
-    create_holiday_background_items, create_timeline_options, groups_to_js_array,
+    create_timeline_options, groups_to_js_array,
     items_to_js_array, Timeline, TimelineGroup, TimelineItem,
 };
 use js_sys::{Function, Reflect};
@@ -48,15 +48,6 @@ pub fn TimelineChart(
 
                 let js_groups = groups_to_js_array(&groups_data);
                 let js_items = items_to_js_array(&items_data);
-
-                // Add holiday background items
-                let holiday_items = create_holiday_background_items(&holidays);
-                for i in 0..holiday_items.length() {
-                    let item = holiday_items.get(i);
-                    if !item.is_undefined() && !item.is_null() {
-                        js_items.push(&item);
-                    }
-                }
 
                 let options =
                     create_timeline_options(&start_date, &end_date, true, true, &holidays);
@@ -182,7 +173,7 @@ pub fn TimelineChart(
                 {move || {
                     if groups.get().is_empty() {
                         view! {
-                            <div class="flex items-center justify-center h-full text-gray-500 dark:text-gray-400">
+                            <div class="flex items-center justify-center h-full text-huly-muted">
                                 "No resources to display"
                             </div>
                         }.into_view()

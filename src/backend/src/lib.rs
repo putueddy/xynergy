@@ -34,7 +34,7 @@ pub fn init_logging() {
 /// Serve the index.html file with Leptos
 async fn serve_index() -> Html<String> {
     let html = r#"<!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -42,12 +42,14 @@ async fn serve_index() -> Html<String> {
     <link rel="stylesheet" href="/output.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
     <!-- Vis-timeline CSS -->
     <link rel="stylesheet" href="https://unpkg.com/vis-timeline@7.7.2/styles/vis-timeline-graph2d.min.css">
     <style>
         body {
-            font-family: 'Inter', system-ui, sans-serif;
+            font-family: 'IBM Plex Sans', system-ui, sans-serif;
+            background: #0f0f18;
+            color: rgba(255,255,255,0.8);
         }
         #loading {
             position: fixed;
@@ -55,7 +57,7 @@ async fn serve_index() -> Html<String> {
             left: 0;
             width: 100%;
             height: 100%;
-            background: #f9fafb;
+            background: #0f0f18;
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -65,8 +67,8 @@ async fn serve_index() -> Html<String> {
         .spinner {
             width: 40px;
             height: 40px;
-            border: 4px solid #e5e7eb;
-            border-top: 4px solid #3b82f6;
+            border: 4px solid rgba(255,255,255,0.09);
+            border-top: 4px solid #205DC2;
             border-radius: 50%;
             animation: spin 1s linear infinite;
             margin-bottom: 16px;
@@ -76,12 +78,12 @@ async fn serve_index() -> Html<String> {
             100% { transform: rotate(360deg); }
         }
         #loading-text {
-            color: #6b7280;
+            color: rgba(255,255,255,0.4);
             font-size: 14px;
         }
         #error-message {
             display: none;
-            color: #dc2626;
+            color: #ef4444;
             font-size: 14px;
             text-align: center;
             max-width: 400px;
@@ -91,7 +93,7 @@ async fn serve_index() -> Html<String> {
         .vis-timeline {
             border: 1px solid #e5e7eb;
             border-radius: 8px;
-            font-family: 'Inter', system-ui, sans-serif;
+            font-family: 'IBM Plex Sans', system-ui, sans-serif;
         }
         .vis-item {
             border-color: #3b82f6;
@@ -208,12 +210,12 @@ async fn serve_index() -> Html<String> {
         const errorMessage = document.getElementById('error-message');
         
         // Import the WASM module
-        import('/pkg/xynergy_frontend.js?v=20260303-auth-fix')
+        import('/pkg/xynergy_frontend.js?v=20260306-phase1')
             .then(module => {
                 console.log('WASM module loaded:', module);
                 
                 // Initialize the WASM module
-                return module.default('/pkg/xynergy_frontend_bg.wasm?v=20260303-auth-fix');
+                return module.default('/pkg/xynergy_frontend_bg.wasm?v=20260306-phase1');
             })
             .then(() => {
                 console.log('WASM initialized, starting Leptos...');

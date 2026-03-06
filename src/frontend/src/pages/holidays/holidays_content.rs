@@ -72,20 +72,20 @@ pub fn HolidaysContent() -> impl IntoView {
     };
 
     view! {
-        <div class="space-y-6">
-            <div class="flex items-center justify-between">
+        <div class="space-y-4">
+            <div class="page-header">
                 <div>
-                    <h1 class="text-3xl font-bold text-gray-900 dark:text-white">
+                    <h1 class="text-xl font-semibold text-huly-caption">
                         "Holiday Management"
                     </h1>
-                    <p class="text-gray-600 dark:text-gray-400 mt-1">
+                    <p class="text-huly-secondary mt-1">
                         "Manage company holidays and days off"
                     </p>
                 </div>
 
-                <div class="flex items-center space-x-3">
+                <div class="flex items-center gap-2">
                     <button
-                        class="btn-primary"
+                        class="btn-primary btn-press"
                         on:click=move |_| {
                             set_editing_holiday.set(None);
                             set_show_form.set(true);
@@ -98,10 +98,10 @@ pub fn HolidaysContent() -> impl IntoView {
 
             {move || error.get().map(|err| {
                 view! {
-                    <div class="rounded-md bg-red-50 p-4 mb-6 dark:bg-red-900/20">
+                    <div class="alert-error mb-6">
                         <div class="flex">
                             <div class="ml-3">
-                                <h3 class="text-sm font-medium text-red-800 dark:text-red-200">
+                                <h3 class="text-sm font-medium text-negative-default">
                                     {err}
                                 </h3>
                             </div>
@@ -120,8 +120,8 @@ pub fn HolidaysContent() -> impl IntoView {
                         description: h.description.unwrap_or_default(),
                     });
                     view! {
-                        <div class="bg-white dark:bg-gray-800 shadow rounded-lg p-6 mb-6 relative">
-                            <h2 class="text-xl font-semibold text-gray-900 dark:text-white mb-4">
+                        <div class="card mb-4 relative">
+                            <h2 class="text-xl font-semibold text-huly-caption mb-4">
                                 {title}
                             </h2>
                             <HolidayForm
@@ -133,10 +133,10 @@ pub fn HolidaysContent() -> impl IntoView {
                             {move || {
                                 if form_submitting.get() {
                                     view! {
-                                        <div class="absolute inset-0 flex items-center justify-center bg-white/70 dark:bg-gray-800/70 rounded-lg">
+                                        <div class="absolute inset-0 flex items-center justify-center bg-huly-back/70 rounded-lg">
                                             <div class="text-center">
                                                 <div class="spinner mx-auto mb-2"></div>
-                                                <p class="text-sm text-gray-600 dark:text-gray-400">"Saving..."</p>
+                                                <p class="text-sm text-huly-secondary">"Saving..."</p>
                                             </div>
                                         </div>
                                     }.into_view()
@@ -154,48 +154,58 @@ pub fn HolidaysContent() -> impl IntoView {
             {move || {
                 if loading.get() {
                     view! {
-                        <div class="text-center py-12 bg-white dark:bg-gray-800 rounded-lg shadow">
-                            <div class="spinner mx-auto mb-4"></div>
-                            <p class="text-gray-600 dark:text-gray-400">"Loading holidays..."</p>
+                        <div class="space-y-3">
+                            <div class="toolbar"><div class="skeleton-text w-32 h-3"></div></div>
+                            <div class="panel overflow-hidden">
+                                <div class="skeleton-row"><div class="skeleton-text w-28"></div><div class="skeleton-text w-24"></div><div class="skeleton-text w-20"></div></div>
+                                <div class="skeleton-row"><div class="skeleton-text w-24"></div><div class="skeleton-text w-20"></div><div class="skeleton-text w-16"></div></div>
+                                <div class="skeleton-row"><div class="skeleton-text w-32"></div><div class="skeleton-text w-16"></div><div class="skeleton-text w-24"></div></div>
+                            </div>
                         </div>
                     }.into_view()
                 } else if holidays.get().is_empty() {
                     view! {
-                        <div class="text-center py-12 bg-white dark:bg-gray-800 rounded-lg shadow">
-                            <p class="text-gray-600 dark:text-gray-400">"No holidays found."</p>
-                            <p class="text-sm text-gray-500 dark:text-gray-500 mt-2">"Click 'Add Holiday' to create one."</p>
+                        <div class="empty-state py-12">
+                            <svg class="w-12 h-12 text-huly-ghost mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5m-9-6h.008v.008H12v-.008zM12 15h.008v.008H12V15zm0 2.25h.008v.008H12v-.008zM9.75 15h.008v.008H9.75V15zm0 2.25h.008v.008H9.75v-.008zM7.5 15h.008v.008H7.5V15zm0 2.25h.008v.008H7.5v-.008zm6.75-4.5h.008v.008h-.008v-.008zm0 2.25h.008v.008h-.008V15zm0 2.25h.008v.008h-.008v-.008zm2.25-4.5h.008v.008H16.5v-.008zm0 2.25h.008v.008H16.5V15z" />
+                            </svg>
+                            <p class="text-huly-secondary text-sm">"No holidays found."</p>
+                            <p class="text-huly-muted text-xs mt-1">"Click 'Add Holiday' to create one."</p>
                         </div>
                     }.into_view()
                 } else {
                     view! {
-                        <div class="bg-white dark:bg-gray-800 shadow rounded-lg overflow-hidden">
-                            <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                                <thead class="bg-gray-50 dark:bg-gray-700">
+                        <div class="panel">
+                            <div class="toolbar">
+                                <h2 class="text-sm font-semibold text-huly-caption">"Holiday Management"</h2>
+                            </div>
+                            <table class="min-w-full divide-y divide-huly-divider">
+                                <thead class="bg-huly-surface-2">
                                     <tr>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">"Name"</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">"Date"</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">"Description"</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">"Actions"</th>
+                                        <th class="th-cell-compact">"Name"</th>
+                                        <th class="th-cell-compact">"Date"</th>
+                                        <th class="th-cell-compact">"Description"</th>
+                                        <th class="th-cell-compact">"Actions"</th>
                                     </tr>
                                 </thead>
-                                <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                                <tbody class="bg-huly-surface divide-y divide-huly-divider">
                                     {move || holidays.get().into_iter().map(|holiday| {
                                         let holiday_id = holiday.id.to_string();
                                         view! {
-                                            <tr class="hover:bg-gray-50 dark:hover:bg-gray-700">
-                                                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">
+                                            <tr class="table-row-hover">
+                                                <td class="td-cell-compact whitespace-nowrap font-medium text-huly-caption">
                                                     {holiday.name.clone()}
                                                 </td>
-                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                                                <td class="td-cell-compact whitespace-nowrap text-huly-muted">
                                                     {holiday.date.clone()}
                                                 </td>
-                                                <td class="px-6 py-4 text-sm text-gray-500 dark:text-gray-400">
+                                                <td class="td-cell-compact text-huly-muted">
                                                     {holiday.description.clone().unwrap_or_else(|| "-".to_string())}
                                                 </td>
-                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                                                    <div class="flex items-center space-x-2">
+                                                <td class="td-cell-compact whitespace-nowrap text-huly-muted">
+                                                    <div class="flex items-center gap-2">
                                                         <button
-                                                            class="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+                                                            class="link"
                                                             on:click={
                                                                 let h = holiday.clone();
                                                                 move |_| {
@@ -210,7 +220,7 @@ pub fn HolidaysContent() -> impl IntoView {
                                                             let is_deleting = deleting_id.get() == Some(holiday_id.clone());
                                                             view! {
                                                                 <button
-                                                                    class="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                                    class="link-danger disabled:opacity-50 disabled:cursor-not-allowed"
                                                                     disabled=is_deleting
                                                                     on:click={
                                                                         let id = holiday_id.clone();

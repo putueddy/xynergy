@@ -1,7 +1,6 @@
 use crate::auth::{
     auth_token, authenticated_get, clear_auth_storage, use_auth, validate_token, AuthContext,
 };
-use crate::components::{Footer, Header};
 use leptos::*;
 use leptos_router::*;
 use serde_json::Value;
@@ -301,11 +300,11 @@ async fn fetch_compliance_report(
 
 fn get_color_class(pct: f64) -> &'static str {
     if pct >= 90.0 {
-        "text-green-600 dark:text-green-400"
+        "text-positive-default"
     } else if pct >= 70.0 {
-        "text-yellow-600 dark:text-yellow-400"
+        "text-warning-default"
     } else {
-        "text-red-600 dark:text-red-400"
+        "text-negative-default"
     }
 }
 
@@ -480,14 +479,13 @@ pub fn CtcCompleteness() -> impl IntoView {
     };
 
     view! {
-        <div class="min-h-screen flex flex-col bg-gray-50 dark:bg-gray-900">
-            <Header/>
+        <div class="h-full">
 
-            <main class="flex-grow max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 w-full">
+            <div class="page-container fade-in">
                 {move || {
                     if !auth_checked.get() {
                         return view! {
-                            <div class="rounded-md bg-blue-50 p-4 dark:bg-blue-900/20 text-blue-800 dark:text-blue-200">
+                            <div class="alert-info">
                                 "Checking access..."
                             </div>
                         }.into_view();
@@ -495,36 +493,36 @@ pub fn CtcCompleteness() -> impl IntoView {
 
                     if !is_authorized.get() {
                         return view! {
-                            <div class="rounded-md bg-red-50 p-4 dark:bg-red-900/20 text-red-800 dark:text-red-200">
+                            <div class="alert-error">
                                 "Access denied."
                             </div>
                         }.into_view();
                     }
 
                     view! {
-                        <div class="space-y-8">
-                            <div class="flex items-center justify-between">
-                                <h1 class="text-3xl font-bold text-gray-900 dark:text-white">
+                        <div class="space-y-4">
+                            <div class="page-header">
+                                <h1 class="text-xl font-semibold text-huly-caption">
                                     "CTC Completeness & Compliance"
                                 </h1>
                             </div>
 
                             {move || error.get().map(|err| view! {
-                                <div class="rounded-md bg-red-50 p-4 dark:bg-red-900/20 text-red-800 dark:text-red-200">{err}</div>
+                                <div class="alert-error">{err}</div>
                             })}
 
                             {move || success.get().map(|msg| view! {
-                                <div class="rounded-md bg-green-50 p-4 dark:bg-green-900/20 text-green-800 dark:text-green-200">{msg}</div>
+                                <div class="alert-success">{msg}</div>
                             })}
 
                             // TASK 5: CTC Completeness Dashboard UI
-                            <div class="bg-white dark:bg-gray-800 shadow rounded-lg p-6 space-y-4">
-                                <h2 class="text-xl font-semibold text-gray-900 dark:text-white">"Completeness Dashboard"</h2>
-
-                                <div class="flex items-center gap-3">
-                                    <label class="text-sm font-medium text-gray-700 dark:text-gray-300">"Filter by Department:"</label>
+                            <div class="panel space-y-4">
+                                <div class="toolbar">
+                                    <h2 class="section-header">"Completeness Dashboard"</h2>
+                                    <div class="flex items-center gap-3">
+                                    <label class="text-sm font-medium text-huly-content">"Filter by Department:"</label>
                                     <select
-                                        class="border rounded px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                                        class="input"
                                         prop:value=dept_filter
                                         on:change=move |ev| {
                                             let selected = event_target_value(&ev);
@@ -556,28 +554,29 @@ pub fn CtcCompleteness() -> impl IntoView {
                                             }
                                         />
                                     </select>
+                                    </div>
                                 </div>
 
-                                <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
-                                    <div class="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                                        <div class="text-sm text-gray-500 dark:text-gray-400">"Total Employees"</div>
-                                        <div class="text-2xl font-bold text-gray-900 dark:text-white">{move || total_employees_summary.get()}</div>
+                                <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+                                    <div class="stat-card card-hover">
+                                        <div class="stat-label">"Total Employees"</div>
+                                        <div class="stat-value">{move || total_employees_summary.get()}</div>
                                     </div>
-                                    <div class="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                                        <div class="text-sm text-gray-500 dark:text-gray-400">"With CTC"</div>
-                                        <div class="text-2xl font-bold text-gray-900 dark:text-white">{move || with_ctc_summary.get()}</div>
+                                    <div class="stat-card card-hover">
+                                        <div class="stat-label">"With CTC"</div>
+                                        <div class="stat-value">{move || with_ctc_summary.get()}</div>
                                     </div>
-                                    <div class="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors"
+                                    <div class="stat-card cursor-pointer hover:bg-huly-surface-hover transition-colors"
                                          on:click=fetch_missing>
-                                        <div class="text-sm text-gray-500 dark:text-gray-400">"Missing CTC"</div>
-                                        <div class="text-2xl font-bold text-red-600 dark:text-red-400">{move || missing_ctc_summary.get()}</div>
+                                        <div class="stat-label">"Missing CTC"</div>
+                                        <div class="stat-value text-negative-default">{move || missing_ctc_summary.get()}</div>
                                         <div class="text-xs text-blue-500 mt-1">"Click to view list"</div>
                                     </div>
-                                    <div class="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                                        <div class="text-sm text-gray-500 dark:text-gray-400">"Completeness %"</div>
+                                    <div class="stat-card card-hover">
+                                        <div class="stat-label">"Completeness %"</div>
                                         <div class=move || {
                                             let pct = completion_pct_summary.get();
-                                            format!("text-2xl font-bold {}", get_color_class(pct))
+                                            format!("stat-value {}", get_color_class(pct))
                                         }>
                                             {move || format!("{:.1}%", completion_pct_summary.get())}
                                         </div>
@@ -585,19 +584,19 @@ pub fn CtcCompleteness() -> impl IntoView {
                                 </div>
 
                                 {move || show_missing.get().then(|| view! {
-                                    <div class="mt-4 p-4 border border-red-200 dark:border-red-800 rounded-lg bg-red-50 dark:bg-red-900/10">
-                                        <h3 class="text-lg font-medium text-red-800 dark:text-red-200 mb-2">"Employees Missing CTC"</h3>
+                                    <div class="panel mt-4 border border-negative-default/20 bg-negative-default/5">
+                                        <h3 class="section-header text-negative-default mb-2">"Employees Missing CTC"</h3>
                                         <div class="overflow-x-auto">
-                                            <table class="min-w-full divide-y divide-red-200 dark:divide-red-800/50">
+                                            <table class="min-w-full divide-y divide-negative-default/20">
                                                 <thead>
                                                     <tr>
-                                                        <th class="px-4 py-2 text-left text-xs font-medium text-red-800 dark:text-red-200">"ID"</th>
-                                                        <th class="px-4 py-2 text-left text-xs font-medium text-red-800 dark:text-red-200">"Name"</th>
-                                                        <th class="px-4 py-2 text-left text-xs font-medium text-red-800 dark:text-red-200">"Department"</th>
-                                                        <th class="px-4 py-2 text-left text-xs font-medium text-red-800 dark:text-red-200">"Action"</th>
+                                                        <th class="th-cell-compact text-negative-default">"ID"</th>
+                                                        <th class="th-cell-compact text-negative-default">"Name"</th>
+                                                        <th class="th-cell-compact text-negative-default">"Department"</th>
+                                                        <th class="th-cell-compact text-negative-default">"Action"</th>
                                                     </tr>
                                                 </thead>
-                                                <tbody class="divide-y divide-red-200 dark:divide-red-800/50">
+                                                <tbody class="divide-y divide-negative-default/20">
                                                     <For
                                                         each=move || missing_employees.get()
                                                         key=|e| e.id.clone()
@@ -605,11 +604,11 @@ pub fn CtcCompleteness() -> impl IntoView {
                                                             let emp_id = e.id.clone();
                                                             view! {
                                                                 <tr>
-                                                                    <td class="px-4 py-2 text-sm text-red-900 dark:text-red-100">{emp_id.clone()}</td>
-                                                                    <td class="px-4 py-2 text-sm text-red-900 dark:text-red-100">{e.name.clone()}</td>
-                                                                    <td class="px-4 py-2 text-sm text-red-900 dark:text-red-100">{e.department.clone()}</td>
-                                                                    <td class="px-4 py-2 text-sm">
-                                                                        <a href=format!("/ctc?resource_id={}", emp_id) class="text-blue-600 dark:text-blue-400 hover:underline">
+                                                                    <td class="td-cell-compact text-negative-default">{emp_id.clone()}</td>
+                                                                    <td class="td-cell-compact text-negative-default">{e.name.clone()}</td>
+                                                                    <td class="td-cell-compact text-negative-default">{e.department.clone()}</td>
+                                                                    <td class="td-cell-compact">
+                                                                        <a href=format!("/ctc?resource_id={}", emp_id) class="text-primary-400 hover:underline">
                                                                             "Add CTC"
                                                                         </a>
                                                                     </td>
@@ -624,17 +623,17 @@ pub fn CtcCompleteness() -> impl IntoView {
                                 })}
 
                                 <div class="mt-6 overflow-x-auto">
-                                    <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                                        <thead class="bg-gray-50 dark:bg-gray-700">
+                                    <table class="min-w-full divide-y divide-huly-divider">
+                                        <thead class="bg-huly-surface-2">
                                             <tr>
-                                                <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">"Department"</th>
-                                                <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">"Employees"</th>
-                                                <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">"CTC Complete"</th>
-                                                <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">"Missing"</th>
-                                                <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">"% Complete"</th>
+                                                <th class="th-cell-compact">"Department"</th>
+                                                <th class="th-cell-compact text-right">"Employees"</th>
+                                                <th class="th-cell-compact text-right">"CTC Complete"</th>
+                                                <th class="th-cell-compact text-right">"Missing"</th>
+                                                <th class="th-cell-compact text-right">"% Complete"</th>
                                             </tr>
                                         </thead>
-                                        <tbody class="divide-y divide-gray-200 dark:divide-gray-700 bg-white dark:bg-gray-800">
+                                        <tbody class="divide-y divide-huly-divider bg-huly-surface">
                                             <For
                                                 each=move || departments.get()
                                                 key=|d| d.department_id.clone()
@@ -642,11 +641,11 @@ pub fn CtcCompleteness() -> impl IntoView {
                                                     let pct_color = get_color_class(d.completion_pct);
                                                     view! {
                                                         <tr>
-                                                            <td class="px-4 py-2 text-sm text-gray-900 dark:text-gray-100">{d.department.clone()}</td>
-                                                            <td class="px-4 py-2 text-sm text-gray-900 dark:text-gray-100 text-right font-mono">{d.total_employees}</td>
-                                                            <td class="px-4 py-2 text-sm text-gray-900 dark:text-gray-100 text-right font-mono">{d.with_ctc}</td>
-                                                            <td class="px-4 py-2 text-sm text-gray-900 dark:text-gray-100 text-right font-mono">{d.missing_ctc}</td>
-                                                            <td class=format!("px-4 py-2 text-sm text-right font-mono font-medium {}", pct_color)>
+                                                            <td class="td-cell-compact">{d.department.clone()}</td>
+                                                            <td class="td-cell-compact text-right font-mono">{d.total_employees}</td>
+                                                            <td class="td-cell-compact text-right font-mono">{d.with_ctc}</td>
+                                                            <td class="td-cell-compact text-right font-mono">{d.missing_ctc}</td>
+                                                            <td class=format!("td-cell-compact text-right font-mono font-medium {}", pct_color)>
                                                                 {format!("{:.1}%", d.completion_pct)}
                                                             </td>
                                                         </tr>
@@ -660,22 +659,24 @@ pub fn CtcCompleteness() -> impl IntoView {
 
                             // TASK 6: BPJS Compliance Report UI
                             {move || is_hr_or_finance.get().then(|| view! {
-                                <div class="bg-white dark:bg-gray-800 shadow rounded-lg p-6 space-y-4">
-                                    <h2 class="text-xl font-semibold text-gray-900 dark:text-white">"BPJS Compliance Report"</h2>
+                                <div class="panel space-y-4">
+                                    <div class="toolbar">
+                                        <h2 class="section-header">"BPJS Compliance Report"</h2>
+                                    </div>
 
                                     <div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
                                         <div>
-                                            <label class="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">"Start Date"</label>
+                                            <label class="label">"Start Date"</label>
                                             <input type="date"
-                                                class="w-full border rounded px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                                                class="input text-huly-caption"
                                                 prop:value=start_date
                                                 on:input=move |ev| set_start_date.set(event_target_value(&ev))
                                             />
                                         </div>
                                         <div>
-                                            <label class="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">"End Date"</label>
+                                            <label class="label">"End Date"</label>
                                             <input type="date"
-                                                class="w-full border rounded px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                                                class="input text-huly-caption"
                                                 prop:value=end_date
                                                 on:input=move |ev| set_end_date.set(event_target_value(&ev))
                                             />
@@ -689,21 +690,21 @@ pub fn CtcCompleteness() -> impl IntoView {
 
                                     {move || (!compliance_results.get().is_empty()).then(|| view! {
                                         <div class="mt-6 space-y-4">
-                                            <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
-                                                <div class="p-3 bg-blue-50 dark:bg-blue-900/20 rounded border border-blue-100 dark:border-blue-800 text-center">
-                                                    <div class="text-xs text-blue-600 dark:text-blue-400 uppercase tracking-wider">"Total Validated"</div>
-                                                    <div class="text-xl font-bold text-blue-900 dark:text-blue-100">{move || total_validated.get()}</div>
+                                            <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+                                                <div class="p-3 bg-primary-600/10 rounded border border-primary-600/20 text-center">
+                                                    <div class="text-xs text-primary-400 uppercase tracking-wider">"Total Validated"</div>
+                                                    <div class="text-xl font-bold text-huly-caption">{move || total_validated.get()}</div>
                                                 </div>
-                                                <div class="p-3 bg-green-50 dark:bg-green-900/20 rounded border border-green-100 dark:border-green-800 text-center">
-                                                    <div class="text-xs text-green-600 dark:text-green-400 uppercase tracking-wider">"Passed"</div>
-                                                    <div class="text-xl font-bold text-green-900 dark:text-green-100">{move || passed.get()}</div>
+                                                <div class="p-3 bg-positive-default/10 rounded border border-positive-default/20 text-center">
+                                                    <div class="text-xs text-positive-default uppercase tracking-wider">"Passed"</div>
+                                                    <div class="text-xl font-bold text-huly-caption">{move || passed.get()}</div>
                                                 </div>
-                                                <div class="p-3 bg-red-50 dark:bg-red-900/20 rounded border border-red-100 dark:border-red-800 text-center">
-                                                    <div class="text-xs text-red-600 dark:text-red-400 uppercase tracking-wider">"Discrepancies"</div>
-                                                    <div class="text-xl font-bold text-red-900 dark:text-red-100">{move || discrepancies.get()}</div>
+                                                <div class="p-3 bg-negative-default/10 rounded border border-negative-default/20 text-center">
+                                                    <div class="text-xs text-negative-default uppercase tracking-wider">"Discrepancies"</div>
+                                                    <div class="text-xl font-bold text-huly-caption">{move || discrepancies.get()}</div>
                                                 </div>
-                                                <div class="p-3 bg-gray-50 dark:bg-gray-700 rounded border border-gray-200 dark:border-gray-600 text-center">
-                                                    <div class="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider">"Compliance Rate"</div>
+                                                <div class="p-3 bg-huly-surface-2 rounded border border-huly-divider text-center">
+                                                    <div class="text-xs text-huly-muted uppercase tracking-wider">"Compliance Rate"</div>
                                                     <div class=move || {
                                                         let rate = compliance_rate.get();
                                                         format!("text-xl font-bold {}", get_color_class(rate))
@@ -714,46 +715,46 @@ pub fn CtcCompleteness() -> impl IntoView {
                                             </div>
 
                                             <div class="overflow-x-auto">
-                                                <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                                                    <thead class="bg-gray-50 dark:bg-gray-700">
+                                                <table class="min-w-full divide-y divide-huly-divider">
+                                                    <thead class="bg-huly-surface-2">
                                                         <tr>
-                                                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">"Employee"</th>
-                                                            <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">"Stored BPJS Kes"</th>
-                                                            <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">"Expected BPJS Kes"</th>
-                                                            <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">"Stored BPJS KT"</th>
-                                                            <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">"Expected BPJS KT"</th>
-                                                            <th class="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">"Risk Tier"</th>
-                                                            <th class="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">"Status"</th>
-                                                            <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">"Variance"</th>
+                                                            <th class="th-cell-compact">"Employee"</th>
+                                                            <th class="th-cell-compact text-right">"Stored BPJS Kes"</th>
+                                                            <th class="th-cell-compact text-right">"Expected BPJS Kes"</th>
+                                                            <th class="th-cell-compact text-right">"Stored BPJS KT"</th>
+                                                            <th class="th-cell-compact text-right">"Expected BPJS KT"</th>
+                                                            <th class="th-cell-compact text-center">"Risk Tier"</th>
+                                                            <th class="th-cell-compact text-center">"Status"</th>
+                                                            <th class="th-cell-compact text-right">"Variance"</th>
                                                         </tr>
                                                     </thead>
-                                                    <tbody class="divide-y divide-gray-200 dark:divide-gray-700 bg-white dark:bg-gray-800">
+                                                    <tbody class="divide-y divide-huly-divider bg-huly-surface">
                                                         <For
                                                             each=move || compliance_results.get()
                                                             key=|r| r.resource_id.clone()
                                                             children=move |r| {
                                                                 let status_badge = if r.status == "PASS" {
-                                                                    "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300 border-green-200"
+                                                                    "badge-positive"
                                                                 } else {
-                                                                    "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300 border-red-200"
+                                                                    "badge-negative"
                                                                 };
                                                                 view! {
                                                                     <tr>
-                                                                        <td class="px-4 py-2 text-sm text-gray-900 dark:text-gray-100">
+                                                                        <td class="td-cell-compact">
                                                                             <div class="font-medium">{r.name.clone()}</div>
-                                                                            <div class="text-xs text-gray-500">{r.resource_id.clone()}</div>
+                                                                            <div class="text-xs text-huly-muted">{r.resource_id.clone()}</div>
                                                                         </td>
-                                                                        <td class="px-4 py-2 text-sm text-gray-900 dark:text-gray-100 text-right font-mono">{r.stored_bpjs_kes}</td>
-                                                                        <td class="px-4 py-2 text-sm text-gray-900 dark:text-gray-100 text-right font-mono">{r.expected_bpjs_kes}</td>
-                                                                        <td class="px-4 py-2 text-sm text-gray-900 dark:text-gray-100 text-right font-mono">{r.stored_bpjs_kt}</td>
-                                                                        <td class="px-4 py-2 text-sm text-gray-900 dark:text-gray-100 text-right font-mono">{r.expected_bpjs_kt}</td>
-                                                                        <td class="px-4 py-2 text-sm text-gray-900 dark:text-gray-100 text-center">{r.risk_tier}</td>
-                                                                        <td class="px-4 py-2 text-sm text-center">
+                                                                        <td class="td-cell-compact text-right font-mono">{r.stored_bpjs_kes}</td>
+                                                                        <td class="td-cell-compact text-right font-mono">{r.expected_bpjs_kes}</td>
+                                                                        <td class="td-cell-compact text-right font-mono">{r.stored_bpjs_kt}</td>
+                                                                        <td class="td-cell-compact text-right font-mono">{r.expected_bpjs_kt}</td>
+                                                                        <td class="td-cell-compact text-center">{r.risk_tier}</td>
+                                                                        <td class="td-cell-compact text-center">
                                                                             <span class=format!("px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full border {}", status_badge)>
                                                                                 {r.status.clone()}
                                                                             </span>
                                                                         </td>
-                                                                        <td class="px-4 py-2 text-sm text-gray-900 dark:text-gray-100 text-right font-mono">{r.variance_amount}</td>
+                                                                        <td class="td-cell-compact text-right font-mono">{r.variance_amount}</td>
                                                                     </tr>
                                                                 }
                                                             }
@@ -768,8 +769,7 @@ pub fn CtcCompleteness() -> impl IntoView {
                         </div>
                     }.into_view()
                 }}
-            </main>
-            <Footer/>
+            </div>
         </div>
     }
 }

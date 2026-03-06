@@ -42,6 +42,7 @@ development_status:
   1-3-row-level-security: done
   1-4-audit-logging-system: done
   epic-1-retrospective: optional
+
   epic-2: in-progress
   2-1-employee-ctc-record-creation: done
   2-0-ctc-encryption-foundation: done
@@ -49,6 +50,7 @@ development_status:
   2-3-thr-management: done
   2-4-ctc-validation-and-compliance: done
   epic-2-retrospective: optional
+
   epic-3: in-progress
   3-1-team-view-with-blended-rates: done
   3-2-resource-assignment-interface: done
@@ -56,6 +58,7 @@ development_status:
   3-4-overallocation-warnings: done
   3-5-department-budget-utilization: done
   epic-3-retrospective: optional
+
   epic-4: in-progress
   4-1-project-budget-setup: done
   4-2-non-resource-cost-entry: done
@@ -64,12 +67,14 @@ development_status:
   4-5-pl-dashboard: done
   4-6-profitability-forecasting: done
   epic-4-retrospective: optional
+
   epic-5: backlog
   5-1-cash-flow-entry: backlog
   5-2-cash-flow-dashboard: backlog
   5-3-ctc-validation-reports: backlog
   5-4-compliance-audit-reports: backlog
   epic-5-retrospective: optional
+
   epic-6: backlog
   6-1-role-based-dashboard: backlog
   6-2-real-time-dashboard-updates: backlog

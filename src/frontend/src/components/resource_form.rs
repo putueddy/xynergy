@@ -67,15 +67,15 @@ pub fn ResourceForm(
     };
 
     view! {
-        <form class="space-y-4" on:submit=handle_submit>
+        <form class="space-y-3" on:submit=handle_submit>
             <div>
-                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                <label class="label">
                     "Name"
                 </label>
                 <input
                     type="text"
                     required
-                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                    class="input"
                     placeholder="Resource name"
                     prop:value=name
                     on:input=move |ev| set_name.set(event_target_value(&ev))
@@ -83,12 +83,12 @@ pub fn ResourceForm(
             </div>
 
             <div>
-                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                <label class="label">
                     "Type"
                 </label>
                 <select
                     required
-                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                    class="input"
                     prop:value=resource_type
                     on:change=move |ev| set_resource_type.set(event_target_value(&ev))
                 >
@@ -101,11 +101,11 @@ pub fn ResourceForm(
             </div>
 
             <div>
-                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                <label class="label">
                     "Department"
                 </label>
                 <select
-                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                    class="input"
                     prop:value=department_id
                     on:change=move |ev| set_department_id.set(event_target_value(&ev))
                 >
@@ -117,19 +117,19 @@ pub fn ResourceForm(
             </div>
 
             <div>
-                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                <label class="label">
                     "Employment Start Date"
                 </label>
                 <input
                     type="date"
-                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                    class="input"
                     prop:value=employment_start_date
                     on:input=move |ev| set_employment_start_date.set(event_target_value(&ev))
                 />
             </div>
 
             <div>
-                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                <label class="label">
                     "Capacity (hours/day)"
                 </label>
                 <input
@@ -137,24 +137,24 @@ pub fn ResourceForm(
                     min="0"
                     max="24"
                     step="0.5"
-                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                    class="input"
                     placeholder="8"
                     prop:value=capacity
                     on:input=move |ev| set_capacity.set(event_target_value(&ev))
                 />
             </div>
 
-            <div class="flex justify-end space-x-3 pt-4">
+            <div class="flex justify-end gap-2 pt-3">
                 <button
                     type="button"
-                    class="btn-secondary"
+                    class="btn-secondary btn-press"
                     on:click=move |_| on_cancel.call(())
                 >
                     "Cancel"
                 </button>
                 <button
                     type="submit"
-                    class="btn-primary"
+                    class="btn-primary btn-press"
                 >
                     "Save"
                 </button>

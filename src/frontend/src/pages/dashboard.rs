@@ -1,5 +1,5 @@
 use crate::auth::{authenticated_get, logout_user, use_auth};
-use crate::components::{Footer, Header};
+
 use chrono::NaiveDate;
 use leptos::*;
 use leptos_router::*;
@@ -113,148 +113,145 @@ pub fn Dashboard() -> impl IntoView {
     });
 
     view! {
-        <div class="min-h-screen flex flex-col bg-gray-50 dark:bg-gray-900">
-            <Header/>
+        <div class="h-full">
+            <div class="page-container fade-in">
+                // Page header — compact welcome bar
+                <div class="page-header">
+                    <div>
+                        <h1 class="text-xl font-semibold text-huly-caption">
+                            {move || user.get().map(|u| format!("Welcome, {}!", u.first_name)).unwrap_or_else(|| "Welcome!".to_string())}
+                        </h1>
+                        <p class="text-xs text-huly-muted mt-0.5">
+                            {move || user.get().map(|u| format!("{} · {}", u.role, u.email)).unwrap_or_default()}
+                        </p>
+                    </div>
+                    <button
+                        on:click=handle_logout
+                        class="btn-ghost text-xs"
+                    >
+                        "Sign out"
+                    </button>
+                </div>
 
-            <main class="flex-grow max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-                <div class="space-y-8">
-                    <div class="bg-white dark:bg-gray-800 shadow rounded-lg p-6">
-                        <div class="flex items-center justify-between">
-                            <div>
-                                <h1 class="text-3xl font-bold text-gray-900 dark:text-white">
-                                    {move || user.get().map(|u| format!("Welcome, {}!", u.first_name)).unwrap_or_else(|| "Welcome!".to_string())}
-                                </h1>
-                                <p class="mt-2 text-gray-600 dark:text-gray-300">
-                                    {move || user.get().map(|u| format!("Role: {}", u.role)).unwrap_or_default()}
-                                </p>
-                                <p class="text-sm text-gray-500 dark:text-gray-400">
-                                    {move || user.get().map(|u| u.email).unwrap_or_default()}
-                                </p>
-                            </div>
-                            <button
-                                on:click=handle_logout
-                                class="btn-secondary"
-                            >
-                                "Logout"
-                            </button>
+                // Error alert
+                {move || dashboard_error.get().map(|err| {
+                    view! {
+                        <div class="alert-error mb-3">
+                            <span class="text-sm">{err}</span>
+                        </div>
+                    }
+                })}
+
+                // Stat cards — compact horizontal row
+                <div class="stat-grid mb-4">
+                    <div class="stat-card card-hover">
+                        <div class="icon-box bg-primary-600/15 text-primary-400">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/>
+                            </svg>
+                        </div>
+                        <div>
+                            <p class="stat-label">"Resources"</p>
+                            <p class="stat-value">{move || resources_count.get().to_string()}</p>
                         </div>
                     </div>
 
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                        <div class="card">
-                            <div class="flex items-center">
-                                <div class="flex-shrink-0">
-                                    <svg class="h-6 w-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/>
-                                    </svg>
-                                </div>
-                                <div class="ml-4">
-                                    <h3 class="text-lg font-medium text-gray-900 dark:text-white">"Resources"</h3>
-                                    <p class="text-2xl font-semibold text-gray-900 dark:text-white">
-                                        {move || resources_count.get().to_string()}
-                                    </p>
-                                </div>
-                            </div>
+                    <div class="stat-card card-hover">
+                        <div class="icon-box bg-positive-default/15 text-positive-default">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/>
+                            </svg>
                         </div>
-
-                        <div class="card">
-                            <div class="flex items-center">
-                                <div class="flex-shrink-0">
-                                    <svg class="h-6 w-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/>
-                                    </svg>
-                                </div>
-                                <div class="ml-4">
-                                    <h3 class="text-lg font-medium text-gray-900 dark:text-white">"Active Projects"</h3>
-                                    <p class="text-2xl font-semibold text-gray-900 dark:text-white">
-                                        {move || active_projects_count.get().to_string()}
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="card">
-                            <div class="flex items-center">
-                                <div class="flex-shrink-0">
-                                    <svg class="h-6 w-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
-                                    </svg>
-                                </div>
-                                <div class="ml-4">
-                                    <h3 class="text-lg font-medium text-gray-900 dark:text-white">"Allocations"</h3>
-                                    <p class="text-2xl font-semibold text-gray-900 dark:text-white">
-                                        {move || allocations_count.get().to_string()}
-                                    </p>
-                                </div>
-                            </div>
+                        <div>
+                            <p class="stat-label">"Active Projects"</p>
+                            <p class="stat-value">{move || active_projects_count.get().to_string()}</p>
                         </div>
                     </div>
 
-                    {move || dashboard_error.get().map(|err| {
-                        view! {
-                            <div class="rounded-md bg-red-50 p-4 dark:bg-red-900/20">
-                                <div class="flex">
-                                    <div class="ml-3">
-                                        <h3 class="text-sm font-medium text-red-800 dark:text-red-200">
-                                            {err}
-                                        </h3>
-                                    </div>
-                                </div>
-                            </div>
-                        }
-                    })}
+                    <div class="stat-card card-hover">
+                        <div class="icon-box bg-[#8b5cf6]/15 text-[#a78bfa]">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                            </svg>
+                        </div>
+                        <div>
+                            <p class="stat-label">"Allocations"</p>
+                            <p class="stat-value">{move || allocations_count.get().to_string()}</p>
+                        </div>
+                    </div>
+                </div>
 
-                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                        <div class="bg-white dark:bg-gray-800 shadow rounded-lg p-6">
-                            <div class="flex items-center justify-between mb-4">
-                                <h3 class="text-lg font-medium text-gray-900 dark:text-white">"Upcoming Deadlines"</h3>
-                                {move || {
-                                    if loading.get() {
-                                        view! { <span class="text-sm text-gray-500">"Loading..."</span> }.into_view()
-                                    } else {
-                                        view! { <span></span> }.into_view()
-                                    }
-                                }}
-                            </div>
+                // Bottom section — deadlines + activity
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                    // Upcoming Deadlines
+                    <div class="panel">
+                        <div class="toolbar">
+                            <h3 class="text-xs font-semibold text-huly-secondary uppercase tracking-wider">"Upcoming Deadlines"</h3>
+                            {move || {
+                                if loading.get() {
+                                    view! { <span class="skeleton-text w-16 h-2 ml-auto"></span> }.into_view()
+                                } else {
+                                    view! { <span></span> }.into_view()
+                                }
+                            }}
+                        </div>
+                        <div class="p-3">
                             {move || {
                                 let items = upcoming_deadlines.get();
                                 if items.is_empty() {
-                                    view! { <p class="text-sm text-gray-500 dark:text-gray-400">"No upcoming deadlines."</p> }.into_view()
+                                    view! {
+                                        <div class="empty-state py-6">
+                                            <svg class="w-8 h-8 text-huly-ghost mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1">
+                                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                            </svg>
+                                            <p class="text-huly-muted text-xs">"No upcoming deadlines."</p>
+                                        </div>
+                                    }.into_view()
                                 } else {
                                     view! {
-                                        <ul class="space-y-3">
+                                        <div>
                                             {items.into_iter().map(|p| {
                                                 view! {
-                                                    <li class="flex items-center justify-between">
-                                                        <span class="text-sm font-medium text-gray-900 dark:text-white">{p.name}</span>
-                                                        <span class="text-sm text-gray-500 dark:text-gray-400">{p.end_date}</span>
-                                                    </li>
+                                                    <div class="activity-item">
+                                                        <span class="text-sm font-medium text-huly-caption flex-1">{p.name}</span>
+                                                        <span class="text-xs text-huly-muted whitespace-nowrap">{p.end_date}</span>
+                                                    </div>
                                                 }
                                             }).collect_view()}
-                                        </ul>
+                                        </div>
                                     }.into_view()
                                 }
                             }}
                         </div>
+                    </div>
 
-                        <div class="bg-white dark:bg-gray-800 shadow rounded-lg p-6">
-                            <div class="flex items-center justify-between mb-4">
-                                <h3 class="text-lg font-medium text-gray-900 dark:text-white">"Recent Activity"</h3>
-                                {move || {
-                                    if loading.get() {
-                                        view! { <span class="text-sm text-gray-500">"Loading..."</span> }.into_view()
-                                    } else {
-                                        view! { <span></span> }.into_view()
-                                    }
-                                }}
-                            </div>
+                    // Recent Activity
+                    <div class="panel">
+                        <div class="toolbar">
+                            <h3 class="text-xs font-semibold text-huly-secondary uppercase tracking-wider">"Recent Activity"</h3>
+                            {move || {
+                                if loading.get() {
+                                    view! { <span class="skeleton-text w-16 h-2 ml-auto"></span> }.into_view()
+                                } else {
+                                    view! { <span></span> }.into_view()
+                                }
+                            }}
+                        </div>
+                        <div class="p-3">
                             {move || {
                                 let items = recent_activity.get();
                                 if items.is_empty() {
-                                    view! { <p class="text-sm text-gray-500 dark:text-gray-400">"No recent activity."</p> }.into_view()
+                                    view! {
+                                        <div class="empty-state py-6">
+                                            <svg class="w-8 h-8 text-huly-ghost mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1">
+                                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                            </svg>
+                                            <p class="text-huly-muted text-xs">"No recent activity."</p>
+                                        </div>
+                                    }.into_view()
                                 } else {
                                     view! {
-                                        <ul class="space-y-3">
+                                        <div>
                                             {items.into_iter().map(|entry| {
                                                 let user_label = entry.user_name.unwrap_or_else(|| "System".to_string());
                                                 let date_label = entry
@@ -265,24 +262,22 @@ pub fn Dashboard() -> impl IntoView {
                                                     .to_string();
                                                 let action_label = format!("{} {}", entry.action, entry.entity_type);
                                                 view! {
-                                                    <li class="flex items-center justify-between">
-                                                        <span class="text-sm text-gray-700 dark:text-gray-300">
-                                                            {format!("{} {}", user_label, action_label)}
+                                                    <div class="activity-item">
+                                                        <span class="text-sm text-huly-content flex-1">
+                                                            {format!("{} · {}", user_label, action_label)}
                                                         </span>
-                                                        <span class="text-xs text-gray-500 dark:text-gray-400">{date_label}</span>
-                                                    </li>
+                                                        <span class="text-xs text-huly-muted whitespace-nowrap">{date_label}</span>
+                                                    </div>
                                                 }
                                             }).collect_view()}
-                                        </ul>
+                                        </div>
                                     }.into_view()
                                 }
                             }}
                         </div>
                     </div>
                 </div>
-            </main>
-
-            <Footer/>
+            </div>
         </div>
     }
 }

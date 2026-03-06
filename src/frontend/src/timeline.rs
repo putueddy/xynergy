@@ -182,31 +182,6 @@ pub fn groups_to_js_array(groups: &[TimelineGroup]) -> Array {
     array
 }
 
-/// Create background items for holidays
-pub fn create_holiday_background_items(holidays: &[String]) -> Array {
-    let array = Array::new();
-    for (index, holiday_date) in holidays.iter().enumerate() {
-        let obj = Object::new();
-        Reflect::set(&obj, &"id".into(), &format!("holiday-{}", index).into()).unwrap();
-        Reflect::set(
-            &obj,
-            &"start".into(),
-            &format!("{}T00:00:00", holiday_date).into(),
-        )
-        .unwrap();
-        Reflect::set(
-            &obj,
-            &"end".into(),
-            &format!("{}T23:59:59", holiday_date).into(),
-        )
-        .unwrap();
-        Reflect::set(&obj, &"type".into(), &"background".into()).unwrap();
-        Reflect::set(&obj, &"className".into(), &"holiday-background".into()).unwrap();
-        // No group assignment - background spans all groups
-        array.push(&obj);
-    }
-    array
-}
 
 /// Create timeline options
 pub fn create_timeline_options(

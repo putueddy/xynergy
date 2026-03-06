@@ -1,4 +1,4 @@
-use crate::components::{Footer, Header, PrimaryButton, SecondaryButton};
+use crate::components::{PrimaryButton, SecondaryButton};
 use leptos::*;
 
 /// Home page component
@@ -7,25 +7,25 @@ pub fn Home() -> impl IntoView {
     let (count, set_count) = create_signal(0);
 
     view! {
-        <div class="min-h-screen flex flex-col">
-            <Header/>
+        <div class="h-full">
 
-            <main class="flex-grow max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+
+            <div class="page-container fade-in">
                 <div class="text-center">
-                    <h2 class="text-4xl font-bold text-gray-900 dark:text-white mb-4">
+                    <h2 class="text-2xl font-semibold text-huly-caption mb-3">
                         "Welcome to Xynergy"
                     </h2>
 
-                    <p class="text-xl text-gray-600 dark:text-gray-300 mb-8">
+                    <p class="text-base text-huly-secondary mb-6">
                         "Resource Management and Project Planning Platform"
                     </p>
 
-                    <div class="card max-w-md mx-auto">
-                        <h3 class="text-lg font-semibold mb-4">
+                    <div class="panel p-4 max-w-md mx-auto">
+                        <h3 class="text-base font-semibold mb-3">
                             "Counter Example"
                         </h3>
 
-                        <p class="text-3xl font-bold text-blue-600 mb-4">
+                        <p class="text-2xl font-semibold text-blue-600 mb-3">
                             {move || count.get()}
                         </p>
 
@@ -42,7 +42,7 @@ pub fn Home() -> impl IntoView {
                         </div>
                     </div>
 
-                    <div class="mt-12 grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div class="mt-8 grid grid-cols-1 md:grid-cols-3 gap-3">
                         <FeatureCard
                             title="Resource Planning"
                             description="Efficiently allocate and manage resources across projects"
@@ -59,9 +59,9 @@ pub fn Home() -> impl IntoView {
                         />
                     </div>
                 </div>
-            </main>
+            </div>
 
-            <Footer/>
+
         </div>
     }
 }
@@ -70,13 +70,11 @@ pub fn Home() -> impl IntoView {
 #[component]
 fn FeatureCard(#[prop(into)] title: String, #[prop(into)] description: String) -> impl IntoView {
     view! {
-        <div class="card">
-            <h3 class="text-xl font-semibold text-gray-900 dark:text-white mb-2">
-                {title}
-            </h3>
-            <p class="text-gray-600 dark:text-gray-300">
-                {description}
-            </p>
+        <div class="stat-card text-left">
+            <div>
+                <h3 class="stat-label mb-1">{title}</h3>
+                <p class="text-sm text-huly-secondary">{description}</p>
+            </div>
         </div>
     }
 }

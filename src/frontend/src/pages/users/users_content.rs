@@ -140,30 +140,30 @@ pub fn UsersContent() -> impl IntoView {
     // Helper function to get role badge class
     let get_role_badge_class = |role: &str| -> &str {
         match role {
-            "admin" => "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200",
-            "project_manager" => "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
-            _ => "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
+            "admin" => "badge-negative",
+            "project_manager" => "badge-primary",
+            _ => "badge-positive",
         }
     };
 
     view! {
-        <div class="space-y-6">
-            <div class="flex items-center justify-between">
+        <div class="space-y-4">
+            <div class="page-header">
                 <div>
-                    <h1 class="text-3xl font-bold text-gray-900 dark:text-white">
+                    <h1 class="text-xl font-semibold text-huly-caption">
                         "User Management"
                     </h1>
-                    <p class="text-gray-600 dark:text-gray-400 mt-1">
+                    <p class="text-huly-secondary mt-1">
                         "Manage system users and their roles"
                     </p>
                 </div>
 
-                <div class="flex items-center space-x-3">
+                <div class="flex items-center gap-2">
                     {move || {
                         if is_admin() {
                             view! {
                                 <button
-                                    class="btn-primary"
+                                    class="btn-primary btn-press"
                                     on:click=move |_| set_show_form.set(true)
                                 >
                                     "Add User"
@@ -178,10 +178,10 @@ pub fn UsersContent() -> impl IntoView {
 
             {move || error.get().map(|err| {
                 view! {
-                    <div class="rounded-md bg-red-50 p-4 dark:bg-red-900/20">
+                    <div class="alert-error">
                         <div class="flex">
                             <div class="ml-3">
-                                <h3 class="text-sm font-medium text-red-800 dark:text-red-200">
+                                <h3 class="text-sm font-medium text-negative-default">
                                     {err}
                                 </h3>
                             </div>
@@ -195,8 +195,8 @@ pub fn UsersContent() -> impl IntoView {
                     let is_edit = editing_user.get().is_some();
                     let title = if is_edit { "Edit User" } else { "Create User" };
                     view! {
-                        <div class="bg-white dark:bg-gray-800 shadow rounded-lg p-6 relative">
-                            <h2 class="text-xl font-semibold text-gray-900 dark:text-white mb-4">
+                        <div class="card relative">
+                            <h2 class="text-xl font-semibold text-huly-caption mb-4">
                                 {title}
                             </h2>
                             {move || {
@@ -214,10 +214,10 @@ pub fn UsersContent() -> impl IntoView {
                             {move || {
                                 if form_submitting.get() {
                                     view! {
-                                        <div class="absolute inset-0 flex items-center justify-center bg-white/70 dark:bg-gray-800/70 rounded-lg">
+                                        <div class="absolute inset-0 flex items-center justify-center bg-huly-back/70 rounded-lg">
                                             <div class="text-center">
                                                 <div class="spinner mx-auto mb-2"></div>
-                                                <p class="text-sm text-gray-600 dark:text-gray-400">"Saving..."</p>
+                                                <p class="text-sm text-huly-secondary">"Saving..."</p>
                                             </div>
                                         </div>
                                     }.into_view()
@@ -232,27 +232,31 @@ pub fn UsersContent() -> impl IntoView {
                 }
             }}
 
-            <div class="bg-white dark:bg-gray-800 shadow rounded-lg overflow-hidden">
+            <div class="panel">
+                <div class="toolbar">
+                    <h2 class="text-sm font-semibold text-huly-caption">"User Management"</h2>
+                </div>
                 <div class="overflow-x-auto">
-                    <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                        <thead class="bg-gray-50 dark:bg-gray-700">
+                    <table class="min-w-full divide-y divide-huly-divider">
+                        <thead class="bg-huly-surface-2">
                             <tr>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">"Name"</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">"Email"</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">"Role"</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">"Department"</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">"Actions"</th>
+                                <th class="th-cell-compact">"Name"</th>
+                                <th class="th-cell-compact">"Email"</th>
+                                <th class="th-cell-compact">"Role"</th>
+                                <th class="th-cell-compact">"Department"</th>
+                                <th class="th-cell-compact">"Actions"</th>
                             </tr>
                         </thead>
-                        <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                        <tbody class="bg-huly-surface divide-y divide-huly-divider">
                             {move || {
                                 if loading.get() {
                                     view! {
                                         <tr>
-                                            <td colspan="5" class="px-6 py-4 text-center text-gray-500 dark:text-gray-400">
-                                                <div class="flex items-center justify-center">
-                                                    <div class="spinner mr-2"></div>
-                                                    "Loading users..."
+                                            <td colspan="5" class="td-cell-compact">
+                                                <div class="space-y-2 py-2">
+                                                    <div class="skeleton-row"><div class="skeleton-text w-28"></div><div class="skeleton-text w-32"></div><div class="skeleton-text w-16"></div><div class="skeleton-text w-20"></div><div class="skeleton-text w-12"></div></div>
+                                                    <div class="skeleton-row"><div class="skeleton-text w-24"></div><div class="skeleton-text w-28"></div><div class="skeleton-text w-20"></div><div class="skeleton-text w-16"></div><div class="skeleton-text w-16"></div></div>
+                                                    <div class="skeleton-row"><div class="skeleton-text w-32"></div><div class="skeleton-text w-24"></div><div class="skeleton-text w-12"></div><div class="skeleton-text w-24"></div><div class="skeleton-text w-12"></div></div>
                                                 </div>
                                             </td>
                                         </tr>
@@ -260,8 +264,14 @@ pub fn UsersContent() -> impl IntoView {
                                 } else if users.get().is_empty() {
                                     view! {
                                         <tr>
-                                            <td colspan="5" class="px-6 py-4 text-center text-gray-500 dark:text-gray-400">
-                                                "No users found."
+                                            <td colspan="5" class="td-cell-compact">
+                                                <div class="empty-state py-8">
+                                                    <svg class="w-10 h-10 text-huly-ghost mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" d="M19 7.5v3m0 0v3m0-3h3m-3 0h-3m-2.25-4.125a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zM4 19.235v-.11a6.375 6.375 0 0112.75 0v.109A12.318 12.318 0 0110.374 21c-2.331 0-4.512-.645-6.374-1.766z" />
+                                                    </svg>
+                                                    <p class="text-huly-secondary text-sm">"No users found."</p>
+                                                    <p class="text-huly-muted text-xs mt-1">"Click 'Add User' to create one."</p>
+                                                </div>
                                             </td>
                                         </tr>
                                     }.into_view()
@@ -275,8 +285,8 @@ pub fn UsersContent() -> impl IntoView {
                                         let role_display = user.role.replace("_", " ");
 
                                         view! {
-                                            <tr class="hover:bg-gray-50 dark:hover:bg-gray-700">
-                                                <td class="px-6 py-4 whitespace-nowrap">
+                                            <tr class="table-row-hover">
+                                                <td class="td-cell-compact whitespace-nowrap">
                                                     <div class="flex items-center">
                                                         <div class="flex-shrink-0 h-10 w-10 rounded-full bg-blue-500 flex items-center justify-center text-white font-semibold">
                                                             {format!("{}{}",
@@ -285,31 +295,31 @@ pub fn UsersContent() -> impl IntoView {
                                                             )}
                                                         </div>
                                                         <div class="ml-4">
-                                                            <div class="text-sm font-medium text-gray-900 dark:text-white">
+                                                            <div class="text-sm font-medium text-huly-caption">
                                                                 {format!("{} {}", user.first_name, user.last_name)}
                                                             </div>
                                                         </div>
                                                     </div>
                                                 </td>
-                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                                                <td class="td-cell-compact whitespace-nowrap text-huly-muted">
                                                     {user.email.clone()}
                                                 </td>
-                                                <td class="px-6 py-4 whitespace-nowrap">
+                                                <td class="td-cell-compact whitespace-nowrap">
                                                     <span class={format!("px-2 inline-flex text-xs leading-5 font-semibold rounded-full {}", role_class)}>
                                                         {role_display}
                                                     </span>
                                                 </td>
-                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                                                <td class="td-cell-compact whitespace-nowrap text-huly-muted">
                                                     {dept_name}
                                                 </td>
-                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                                                <td class="td-cell-compact whitespace-nowrap text-huly-muted">
                                                     <div class="flex flex-col space-y-2">
                                                         {if is_admin() {
                                                             view! {
                                                                 <>
                                                                     <div class="flex items-center space-x-2">
                                                                         <button
-                                                                            class="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+                                                                            class="link"
                                                                             on:click={
                                                                                 let user = user_for_edit.clone();
                                                                                 move |_| {
@@ -321,7 +331,7 @@ pub fn UsersContent() -> impl IntoView {
                                                                             "Edit"
                                                                         </button>
                                                                         <button
-                                                                            class="text-amber-600 hover:text-amber-800 dark:text-amber-400 dark:hover:text-amber-300"
+                                                                            class="text-warning-default hover:text-warning-default/80"
                                                                             on:click={
                                                                                 let uid = user_id.clone();
                                                                                 move |_| {
@@ -336,7 +346,7 @@ pub fn UsersContent() -> impl IntoView {
                                                                             let is_deleting = deleting_id.get() == Some(user_id.clone());
                                                                             view! {
                                                                                 <button
-                                                                                    class="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                                                    class="link-danger disabled:opacity-50 disabled:cursor-not-allowed"
                                                                                     disabled=is_deleting
                                                                                     on:click={
                                                                                         let id = user_id.clone();
@@ -372,7 +382,7 @@ pub fn UsersContent() -> impl IntoView {
                                                                                 <div class="flex items-center space-x-2 mt-1">
                                                                                     <input
                                                                                         type="password"
-                                                                                        class="w-32 px-2 py-1 text-xs rounded border border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                                                                                        class="w-32 px-2 py-1 text-xs rounded border input"
                                                                                         placeholder="New password"
                                                                                         prop:value=new_password
                                                                                         on:input=move |ev| set_new_password.set(event_target_value(&ev))
@@ -398,7 +408,7 @@ pub fn UsersContent() -> impl IntoView {
                                                                                         "Save"
                                                                                     </button>
                                                                                     <button
-                                                                                        class="text-xs px-2 py-1 text-gray-500 hover:text-gray-700"
+                                                                                        class="text-xs px-2 py-1 text-huly-muted hover:text-huly-content"
                                                                                         on:click=move |_| set_resetting_id.set(None)
                                                                                     >
                                                                                         "Cancel"
@@ -413,7 +423,7 @@ pub fn UsersContent() -> impl IntoView {
                                                             }.into_view()
                                                         } else {
                                                             view! {
-                                                                <span class="text-gray-400 dark:text-gray-500 italic">"No access"</span>
+                                                                <span class="text-huly-ghost italic">"No access"</span>
                                                             }.into_view()
                                                         }}
                                                     </div>
