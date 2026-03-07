@@ -4,6 +4,7 @@ use axum::{
     routing::get,
     Json, Router,
 };
+use chrono::{Datelike, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::{PgPool, Postgres, QueryBuilder};
 use uuid::Uuid;
@@ -220,8 +221,115 @@ async fn list_project_cash_flow_entries(
     Ok(Json(entries))
 }
 
+#[derive(Debug, Deserialize)]
+pub struct CashFlowDashboardQuery {
+    pub start_date: Option<NaiveDate>,
+    pub end_date: Option<NaiveDate>,
+    pub project_id: Option<Uuid>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CashFlowDashboardResponse {
+    pub start_date: NaiveDate,
+    pub end_date: NaiveDate,
+    pub project_id: Option<Uuid>,
+    pub total_cash_in_idr: i64,
+    pub total_cash_out_idr: i64,
+    pub net_cash_flow_idr: i64,
+    pub ending_cumulative_position_idr: i64,
+    pub months: Vec<CashFlowDashboardMonthResponse>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CashFlowDashboardMonthResponse {
+    pub year: i32,
+    pub month: u32,
+    pub month_label: String,
+    pub cash_in_idr: i64,
+    pub cash_out_idr: i64,
+    pub net_cash_flow_idr: i64,
+    pub cumulative_position_idr: i64,
+    pub entries: Vec<CashFlowDashboardEntryResponse>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CashFlowDashboardEntryResponse {
+    pub id: Uuid,
+    pub entry_type: String,
+    pub category: String,
+    pub amount_idr: i64,
+    pub entry_date: NaiveDate,
+    pub description: String,
+    pub project_id: Option<Uuid>,
+}
+
+async fn get_dashboard(
+    State(pool): State<PgPool>,
+    headers: HeaderMap,
+    Query(query): Query<CashFlowDashboardQuery>,
+) -> Result<Json<CashFlowDashboardResponse>> {
+    let _user_id =
+        enforce_finance_access(&pool, &headers, "get_cash_flow_dashboard", "cash_flow_dashboard")
+            .await?;
+
+    let now = Utc::now().date_naive();
+    let start_date = query
+        .start_date
+        .unwrap_or_else(|| NaiveDate::from_ymd_opt(now.year(), 1, 1).unwrap_or(now));
+    let end_date = query
+        .end_date
+        .unwrap_or_else(|| NaiveDate::from_ymd_opt(now.year(), 12, 31).unwrap_or(now));
+
+    let filters = cash_flow_service::CashFlowDashboardFilters {
+        start_date,
+        end_date,
+        project_id: query.project_id,
+    };
+
+    let result = cash_flow_service::get_cash_flow_dashboard(&pool, filters).await?;
+
+    let months = result
+        .months
+        .into_iter()
+        .map(|m| CashFlowDashboardMonthResponse {
+            year: m.year,
+            month: m.month,
+            month_label: m.month_label,
+            cash_in_idr: m.cash_in_idr,
+            cash_out_idr: m.cash_out_idr,
+            net_cash_flow_idr: m.net_cash_flow_idr,
+            cumulative_position_idr: m.cumulative_position_idr,
+            entries: m
+                .entries
+                .into_iter()
+                .map(|e| CashFlowDashboardEntryResponse {
+                    id: e.id,
+                    entry_type: e.entry_type,
+                    category: e.category,
+                    amount_idr: e.amount_idr,
+                    entry_date: e.entry_date,
+                    description: e.description,
+                    project_id: e.project_id,
+                })
+                .collect(),
+        })
+        .collect();
+
+    Ok(Json(CashFlowDashboardResponse {
+        start_date: result.start_date,
+        end_date: result.end_date,
+        project_id: result.project_id,
+        total_cash_in_idr: result.total_cash_in_idr,
+        total_cash_out_idr: result.total_cash_out_idr,
+        net_cash_flow_idr: result.net_cash_flow_idr,
+        ending_cumulative_position_idr: result.ending_cumulative_position_idr,
+        months,
+    }))
+}
+
 pub fn cash_flow_routes() -> Router<PgPool> {
     Router::new()
         .route("/cash-flow/entries", get(list_cash_flow_entries).post(create_cash_flow_entry))
+        .route("/cash-flow/dashboard", get(get_dashboard))
         .route("/projects/:id/cash-flow/entries", get(list_project_cash_flow_entries))
 }
