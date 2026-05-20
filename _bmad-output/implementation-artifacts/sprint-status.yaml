@@ -71,7 +71,7 @@ development_status:
   epic-5: in-progress
   5-1-cash-flow-entry: done
   5-2-cash-flow-dashboard: done
-  5-3-ctc-validation-reports: backlog
+  5-3-ctc-validation-reports: ready-for-dev
   5-4-compliance-audit-reports: backlog
   epic-5-retrospective: optional
 
