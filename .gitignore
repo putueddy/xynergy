@@ -21,3 +21,26 @@ db_data/
 *.png
 nohup.out
 .sisyphus/
+
+.agents/
+.claude/
+.opencode/
+
+# Playwright artifacts
+test-results/
+playwright-report/
+playwright/.cache/
+tests/e2e/.artifacts/
+tests/e2e/tests/
+
+# OS / IDE
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+#automation
+_bmad-output/automation-runs/
+_bmad-output/pending-decisions/
+_bmad-output/bmad-automation-handoff.md
+bmad-automate.sh*
