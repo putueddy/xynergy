@@ -102,7 +102,11 @@ async fn create_cash_flow_via_api(
     (status, body)
 }
 
-async fn create_cash_flow_status_only(app: &axum::Router, token: &str, payload: &Value) -> StatusCode {
+async fn create_cash_flow_status_only(
+    app: &axum::Router,
+    token: &str,
+    payload: &Value,
+) -> StatusCode {
     let req = Request::builder()
         .method("POST")
         .uri("/api/v1/cash-flow/entries")
@@ -157,10 +161,7 @@ async fn list_project_cash_flow_via_api(
 ) -> (StatusCode, Value) {
     let req = Request::builder()
         .method("GET")
-        .uri(format!(
-            "/api/v1/projects/{}/cash-flow/entries",
-            project_id
-        ))
+        .uri(format!("/api/v1/projects/{}/cash-flow/entries", project_id))
         .header("Authorization", format!("Bearer {}", token))
         .body(Body::empty())
         .expect("request should be built");
@@ -204,7 +205,10 @@ async fn finance_can_create_cash_in_entry(pool: PgPool) {
     assert_eq!(body["entry_type"].as_str().unwrap(), "cash_in");
     assert_eq!(body["category"].as_str().unwrap(), "client_payment");
     assert_eq!(body["amount_idr"].as_i64().unwrap(), 5_000_000);
-    assert_eq!(body["description"].as_str().unwrap(), "Payment from client ABC");
+    assert_eq!(
+        body["description"].as_str().unwrap(),
+        "Payment from client ABC"
+    );
     assert!(body["project_id"].is_null());
 }
 
@@ -673,12 +677,14 @@ async fn entry_with_project_id_appears_in_project_cash_flow(pool: PgPool) {
     assert_eq!(unlinked_status, StatusCode::OK);
 
     // Verify project-linked endpoint only returns linked entries
-    let (list_status, list_body) =
-        list_project_cash_flow_via_api(&app, &token, project_id).await;
+    let (list_status, list_body) = list_project_cash_flow_via_api(&app, &token, project_id).await;
     assert_eq!(list_status, StatusCode::OK);
     let entries = list_body.as_array().unwrap();
     assert_eq!(entries.len(), 1, "Only the linked entry should appear");
-    assert_eq!(entries[0]["description"].as_str().unwrap(), "Linked client payment");
+    assert_eq!(
+        entries[0]["description"].as_str().unwrap(),
+        "Linked client payment"
+    );
 }
 
 #[sqlx::test(migrations = "../../migrations")]
@@ -691,8 +697,7 @@ async fn project_cash_flow_for_nonexistent_project_returns_404(pool: PgPool) {
     let token = get_auth_token(&app, &email).await;
 
     let fake_project_id = Uuid::new_v4();
-    let (status, body) =
-        list_project_cash_flow_via_api(&app, &token, fake_project_id).await;
+    let (status, body) = list_project_cash_flow_via_api(&app, &token, fake_project_id).await;
 
     assert_eq!(status, StatusCode::NOT_FOUND);
     assert_eq!(body["error"]["code"].as_str().unwrap(), "NOT_FOUND");
@@ -769,8 +774,19 @@ async fn list_entries_filter_by_entry_type(pool: PgPool) {
     let (status, body) = list_cash_flow_via_api(&app, &token, "entry_type=cash_in").await;
     assert_eq!(status, StatusCode::OK);
     let entries = body.as_array().unwrap();
+    assert_eq!(
+        entries.len(),
+        1,
+        "Only the seeded cash_in entry should match"
+    );
+    assert_eq!(
+        entries[0]["description"].as_str().unwrap(),
+        "Interest income"
+    );
     assert!(
-        entries.iter().all(|e| e["entry_type"].as_str().unwrap() == "cash_in"),
+        entries
+            .iter()
+            .all(|e| e["entry_type"].as_str().unwrap() == "cash_in"),
         "All filtered entries should be cash_in"
     );
 }
@@ -929,8 +945,7 @@ async fn status_code_404_on_not_found(pool: PgPool) {
     let token = get_auth_token(&app, &email).await;
 
     let fake_project_id = Uuid::new_v4();
-    let (status, _) =
-        list_project_cash_flow_via_api(&app, &token, fake_project_id).await;
+    let (status, _) = list_project_cash_flow_via_api(&app, &token, fake_project_id).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
@@ -976,12 +991,8 @@ async fn list_entries_filter_by_date_range(pool: PgPool) {
     assert_eq!(s3, StatusCode::OK);
 
     // Filter by date range (February only)
-    let (status, body) = list_cash_flow_via_api(
-        &app,
-        &token,
-        "start_date=2026-02-01&end_date=2026-02-28",
-    )
-    .await;
+    let (status, body) =
+        list_cash_flow_via_api(&app, &token, "start_date=2026-02-01&end_date=2026-02-28").await;
     assert_eq!(status, StatusCode::OK);
     let entries = body.as_array().unwrap();
     assert_eq!(entries.len(), 1, "Only the February entry should match");
@@ -1000,8 +1011,7 @@ async fn list_entries_invalid_entry_type_filter_returns_400(pool: PgPool) {
     let _user_id = create_test_user_with_role(&pool, &email, "finance").await;
     let token = get_auth_token(&app, &email).await;
 
-    let (status, body) =
-        list_cash_flow_via_api(&app, &token, "entry_type=invalid_type").await;
+    let (status, body) = list_cash_flow_via_api(&app, &token, "entry_type=invalid_type").await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(body["error"]["code"].as_str().unwrap(), "VALIDATION_ERROR");
 }

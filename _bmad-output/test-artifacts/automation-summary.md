@@ -1,208 +1,200 @@
 ---
-story: '5-3-ctc-validation-reports'
+story: '5-4-compliance-audit-reports'
 stepsCompleted:
   - 'step-01-preflight-and-context'
   - 'step-02-identify-targets'
   - 'step-03-generate-tests (sequential mode)'
   - 'step-04-validate-and-summarize'
 lastStep: 'step-04-validate-and-summarize'
-lastSaved: '2026-05-20'
+lastSaved: '2026-05-21'
 mode: 'BMad-Integrated'
 executionMode: 'sequential (inline generation, no subagent dispatch)'
 detectedStack: 'fullstack'
-testStackType: 'auto -> fullstack (Rust + Leptos detected)'
+testStackType: 'auto -> fullstack (Rust workspace + Leptos frontend)'
 inputDocuments:
-  - '_bmad-output/implementation-artifacts/5-3-ctc-validation-reports.md'
+  - '_bmad-output/implementation-artifacts/5-4-compliance-audit-reports.md'
   - '_bmad-output/implementation-artifacts/sprint-status.yaml'
   - '_bmad-output/project-context.md'
-  - 'src/backend/src/services/ctc_validation_report.rs'
-  - 'src/backend/src/routes/ctc.rs'
-  - 'src/backend/tests/ctc_validation_report_tests.rs'
-  - 'migrations/20260307100000_add_payroll_validation_staging.up.sql'
+  - 'src/backend/src/services/compliance_audit_report.rs'
+  - 'src/backend/src/routes/audit_log.rs'
+  - 'src/backend/tests/compliance_audit_report_tests.rs'
+  - 'migrations/20260311100000_extend_audit_export_requests_for_report_metadata.up.sql'
+  - '.claude/skills/bmad-testarch-automate/resources/knowledge/test-levels-framework.md'
+  - '.claude/skills/bmad-testarch-automate/resources/knowledge/test-priorities-matrix.md'
 ---
 
-# Test Automation Expansion - Story 5.3 CTC Validation Reports
+# Test Automation Expansion - Story 5.4 Compliance Audit Reports
 
 ## 1. Preflight & Context
 
 ### Stack Detection
 
 - `test_stack_type: auto` -> resolved to **fullstack**
-- Backend manifest: `Cargo.toml` (workspace), backend tests at `src/backend/tests/`
-- Frontend manifest: `src/frontend/package.json` (Tailwind 4.1.x), Leptos 0.6 components
-- No `playwright.config.*` or browser-test indicators found in repo — **API/backend-only profile**
+- Backend manifest: `Cargo.toml` (Rust workspace), backend integration tests at `src/backend/tests/*`
+- Frontend manifests: `src/frontend/Cargo.toml` (Leptos 0.8) and `src/frontend/package.json` (Tailwind 4.1.x)
+- No `playwright.config.*` or browser-test indicators found in repo — **API/backend-only profile** (matches Story 5.3 precedent)
 
 ### Execution Mode
 
-**BMad-Integrated.** Story artifact `5-3-ctc-validation-reports.md` is present with full ACs, file list, and dev-notes context.
+**BMad-Integrated.** Story artifact `5-4-compliance-audit-reports.md` is in `review` state with full ACs, file list, dev-notes context, and an existing 13-test integration suite at `src/backend/tests/compliance_audit_report_tests.rs`.
+
+Review patch note: the initial automation pass expanded the suite from 13 to 28 tests. Review patch passes added 12 more regression tests, so the current story-scoped suite has 40 tests.
 
 ### Test Framework Verified
 
-- Pattern: `#[sqlx::test(migrations = "../../migrations")]` (existing convention from `ctc_validation_tests.rs`, `audit_tests.rs`, `cash_flow_tests.rs`)
-- Axum router exercised via `tower::ServiceExt::oneshot` with raw `Request`/`Body` (no HTTP socket)
+- Pattern: `#[sqlx::test(migrations = "../../migrations")]`
+- Axum router exercised via `tower::ServiceExt::oneshot` with raw `Request`/`Body`
 - JSON body assertions via `serde_json::Value`
-- Service-level unit tests live in `#[cfg(test)] mod tests` inside the service file
+- Prior live DB execution was recorded via `DATABASE_URL=postgres://xynergy:xynergy@localhost:5432/xynergy`; the current rerun environment has no `DATABASE_URL`, so patched DB-backed tests were compiled with `--no-run` instead of executed live.
 
-### Knowledge Loaded (core tier only)
+### Knowledge Loaded (core tier)
 
-- `test-levels-framework.md` — chose API + unit; no UI/browser
-- `test-priorities-matrix.md` — P0 = AC + auth + audit; P1 = pagination + determinism + boundary; P2 = unit edge cases
-- `data-factories.md` — reuse existing `create_user`, `create_resource`, `create_ctc_record`, `insert_payroll_*` helpers from `ctc_validation_report_tests.rs`
-- `selective-testing.md` — avoid duplicating coverage that already exists; expand only the gaps
-- `ci-burn-in.md` — keep new tests deterministic, no clock dependence, no flaky randomness
-- `test-quality.md` — assert intent and structure, not just `is_number()`/`is_array()`
+- `test-levels-framework.md` — API integration is the right level here; service is database-bound, route-level cover gets auth + serialization + audit side-effects in one shot
+- `test-priorities-matrix.md` — P0 = security/access/audit-trail, P1 = validation/pagination, P2 = boundary/empty
 
-Playwright Utils, Pact.js Utils, and Pact MCP fragments **skipped** — `tea_use_playwright_utils=true` is configured but no browser tests exist in this repo and the story is backend-API + Leptos CSR (no E2E suite).
+## 2. Coverage Gap Analysis
 
-## 2. Initial Coverage Audit (pre-expansion baseline)
+### Existing Coverage (13 tests in `compliance_audit_report_tests.rs`)
 
-At the start of test-automation expansion, `src/backend/tests/ctc_validation_report_tests.rs` had **12 integration tests + 4 service unit tests**:
+| # | Test | AC | Level | Priority |
+|---|------|----|----|----|
+| 1 | finance_can_generate_each_report_type | 1 | API | P0 |
+| 2 | admin_can_generate_each_report_type | 1 | API | P0 |
+| 3 | non_finance_roles_are_denied | 1 | API | P0 |
+| 4 | inverted_date_range_returns_400 | 1 | API | P1 |
+| 5 | ctc_change_log_returns_expected_fields | 2 | API | P0 |
+| 6 | access_logs_filter_by_user_and_action | 3 | API | P0 |
+| 7 | assignment_history_surfaces_allocation_audit_rows | 1 | API | P1 |
+| 8 | budget_modifications_surfaces_project_budget_rows | 1 | API | P1 |
+| 9 | export_request_persists_with_report_metadata | 4 | API | P0 |
+| 10 | export_request_without_payload_remains_backward_compatible | 4 | API | P1 |
+| 11 | report_generation_creates_audit_log_entry | 1 | API | P1 |
+| 12 | legacy_audit_logs_endpoint_still_returns_200 | n/a | API | P1 |
+| 13 | invalid_report_type_returns_400 | 1 | API | P1 |
 
-| # | Test                                                          | AC      | Level       |
-| - | ------------------------------------------------------------- | ------- | ----------- |
-| 1 | `finance_can_fetch_validation_report`                         | 1, 2    | Integration |
-| 2 | `admin_can_fetch_validation_report`                           | 1       | Integration |
-| 3 | `hr_denied_validation_report`                                 | 1       | Integration |
-| 4 | `department_head_denied_validation_report`                    | 1       | Integration |
-| 5 | `project_manager_denied_validation_report`                    | 1       | Integration |
-| 6 | `inverted_date_range_returns_400`                             | 1       | Integration |
-| 7 | `missing_payroll_staging_returns_400`                         | 1       | Integration |
-| 8 | `report_returns_summary_counts_and_deterministic_rows`        | 2, 3    | Integration |
-| 9 | `excluded_records_are_counted_when_missing_payroll`           | 2       | Integration |
-| 10 | `bpjs_validation_uses_current_regulation_formula`            | 4       | Integration |
-| 11 | `report_generation_creates_audit_log`                        | 1-4     | Integration |
-| 12 | `existing_compliance_report_endpoint_unchanged` (regression) | (regr.) | Integration |
-| u1 | `match_rate_zero_total`                                      | (calc)  | Unit        |
-| u2 | `match_rate_perfect`                                         | (calc)  | Unit        |
-| u3 | `match_rate_partial`                                         | (calc)  | Unit        |
-| u4 | `jkk_rate_invalid_tier_rejected`                             | (calc)  | Unit        |
+### Gaps Identified
 
-## 3. Coverage Gaps Identified
+**P0 (Critical - must add):**
+- G1. **Access logs `success` derivation for failure actions** (`LOGIN_FAILED`, `LOGIN_BLOCKED`, `ACCESS_DENIED`). Current test only asserts `success=true`. Audit-trail integrity hinges on this classification.
+- G2. **ACCESS_DENIED audit entry** generated when non-finance/admin hits `/reports` or `/export`. Implementation at `audit_log.rs:82-112` adds this side-effect, but no test asserts it.
+- G3. **Unauthenticated request returns 401** for `/reports` and `/export`. No coverage today.
+- G4. **CTC change log never leaks encryption metadata** (`encrypted_components`, `key_version`, `encryption_algorithm`, ciphertext). Confidentiality regression guard.
 
-| Gap                                                                                                                       | AC       | Risk                                                              | Level       | Priority |
-| ------------------------------------------------------------------------------------------------------------------------- | -------- | ----------------------------------------------------------------- | ----------- | -------- |
-| **G1** Pagination `limit`/`offset` query params (not exercised at all)                                                    | 2, 3     | Detail truncation/skip bug ships unnoticed; story Task 3 promised | Integration | **P0**   |
-| **G2** Summary metrics remain stable when pagination is applied to mismatches                                             | 2        | Finance sees wrong totals on paginated views                      | Integration | **P1**   |
-| **G3** Mismatch row shape contract (AC #3 explicit fields: employee, field, xynergy_value, payroll_value, variance)       | 3        | Frontend drill-down breaks silently if API drops a field          | Integration | **P0**   |
-| **G4** Variance amount is **absolute** value (not signed)                                                                 | 3        | Negative variance leaks; finance compares wrong direction         | Integration | **P1**   |
-| **G5** `BPJS_REGULATION_ERROR` status differentiated from plain `DISCREPANCY`                                             | 4        | AC #4 'flag any calculation errors' wording                       | Integration | **P0**   |
-| **G6** Audit payload **shape** (not just row count) — lean fields only, no sensitive values                               | (sec)    | Story-mandated security rule; quietly regressable                 | Integration | **P0**   |
-| **G7** Missing JWT / unauthenticated request returns 401 on the new endpoint                                              | 1        | Auth bypass; not currently exercised on this route                | Integration | **P1**   |
-| **G8** Date-boundary inclusivity (records exactly on `start_date` and `end_date`)                                         | 1        | Off-by-one in BETWEEN clause silently drops edge records          | Integration | **P1**   |
-| **G9** Multiple effective dates per resource — service selects latest within range                                        | 2        | Service has explicit logic for this, untested                     | Integration | **P1**   |
-| **G10** Match rate **numeric value** correctness end-to-end (not just `is_number()`)                                      | 2        | Display says 100% when 75%, easy regression                       | Integration | **P1**   |
-| **G11** Idempotency: full summary numbers identical across repeated runs (not just mismatch array)                        | 2        | Counts could drift if any ordering/decryption noise exists        | Integration | **P2**   |
-| **G12** Service unit: `compare_record` plain-field discrepancy emits canonical row in canonical order                     | 3        | Pure logic; cheap; isolates from DB                               | Unit        | **P2**   |
-| **G13** Service unit: `compare_record` BPJS path returns `BPJS_REGULATION_ERROR` with `bpjs_metadata` when expected drifts | 4        | Pure logic; isolates regulation comparator                        | Unit        | **P2**   |
+**P1 (Important - should add):**
+- G5. **`user_id`/`action_type` rejected for non-`access_logs` reports** (validation rule at `audit_log.rs:310-317`). Implemented but untested.
+- G6. **Malformed date format returns 400** (e.g. `"2026/01/01"` or `"yesterday"`).
+- G7. **Missing or empty `start_date` returns 400**.
+- G8. **Pagination `has_more` flag and `offset` skipping**. Service uses `limit + 1` pattern; correctness is critical for auditor exports matching server-side state.
+- G9. **Limit clamping** (`limit=0` → 1, `limit=9999` → 200).
+- G10. **Watermark text format** contains `export_id`, `requested_by`, `requested_at`, `report_type`, `window`. Currently only "Xynergy audit export" prefix is asserted.
+- G11. **Export with `report_type` but missing `start_date` returns 400** (partial payload validation at `audit_log.rs:400-415`).
+- G12. **Export with inverted date range returns 400** (`validate_date_range` is called in export flow too).
 
-Out of scope (intentionally excluded):
+**P2 (Boundary - nice to add):**
+- G13. **Empty window returns empty `data` arrays** (not nulls, not error).
+- G14. **Same-day range (start == end) succeeds** (boundary).
+- G15. **Export request with invalid `report_type` returns 400**.
 
-- Frontend page tests for `ctc_validation.rs` — Leptos CSR; repo has no frontend test harness today (per Story 5.2 precedent). Manual verification continues to be the documented path.
-- Cash flow / audit regression suites — already invoked by Task 6, no new tests needed; they remain re-run targets in the test plan.
-- Full property-based fuzzing — overkill for a finance reconciliation report; deterministic table-driven inputs suffice.
+### Out-of-Scope (deferred)
 
-## 4. Test Levels Selected
+- **Frontend page tests** — no browser/component test framework in repo today; this review performed compile verification only, so `/finance/audit-reports` browser walkthrough remains an advisory manual gap.
+- **Hash-chain regression** — covered by existing `audit_tests.rs`; re-running it counts as adequate regression.
+- **Encryption rotation / decryption-failure redaction** — covered by `ctc_revision_tests.rs` and `ctc_encryption_tests.rs`.
+- **Service-level unit tests** for `clamp_limit`/`validate_date_range` — already exercised end-to-end through API tests; unit duplication unnecessary per duplicate-coverage guard.
 
-- **API/Integration (Axum + sqlx::test):** 11 new tests for G1–G11 — exercise the real DB + handler stack to match the existing convention.
-- **Unit (in-module `#[cfg(test)]`):** 2 new tests for G12–G13 — exercise `compare_record` directly with fixture data, no DB.
-- **E2E:** none. No Playwright/browser harness exists in repo and Story 5.3 does not introduce one.
+## 3. Coverage Plan
 
-## 5. Priority Assignment
+Total new tests planned: **15** (4 × P0 + 8 × P1 + 3 × P2).
 
-- **P0** (must-have before merge):
-  - G1 — pagination params honored
-  - G3 — mismatch row contract
-  - G5 — BPJS regulation-error status
-  - G6 — audit payload shape
-- **P1** (high signal, low cost):
-  - G2 — summary stability under pagination
-  - G4 — variance is absolute
-  - G7 — 401 on missing auth
-  - G8 — date-boundary inclusivity
-  - G9 — latest payroll wins per resource
-  - G10 — match rate numeric correctness
-- **P2** (cheap unit coverage):
-  - G11 — full-summary idempotency
-  - G12, G13 — `compare_record` unit tests
+All new tests added to `src/backend/tests/compliance_audit_report_tests.rs` and follow the existing helper conventions (`build_app`, `create_user`, `get_token`, `reports_request`).
 
-## 6. Justification
+## 4. Implemented Tests
 
-**Scope: critical-paths + selective.** The story already shipped baseline integration coverage; this expansion targets only the gaps that (a) were promised by the story tasks (pagination, deterministic ordering, audit payload leanness, BPJS regulation error flag), (b) protect the AC #3 drill-down contract that the new finance UI directly depends on, or (c) close pure-logic edge cases at the unit level without adding DB cost.
+| # | Gap | Test name | Priority | Covers |
+|---|---|---|---|---|
+| 1 | G1 | access_logs_classify_failure_actions_as_unsuccessful | P0 | AC 3 — success/failure derivation for LOGIN_FAILED, LOGIN_BLOCKED, ACCESS_DENIED |
+| 2 | G2 | denied_report_access_creates_access_denied_audit_entry | P0 | Audit-trail side-effect on access denial |
+| 3 | G3 | unauthenticated_requests_return_401 | P0 | AuthN guard on /reports and /export |
+| 4 | G4 | ctc_change_log_never_exposes_encryption_metadata | P0 | AC 2 confidentiality — no ciphertext/key leak |
+| 5 | G5 | filter_combinations_only_supported_for_access_logs | P1 | Filter scoping rule (audit_log.rs:310-317) |
+| 6 | G6 | malformed_date_returns_400 | P1 | Date parsing robustness |
+| 7 | G7 | missing_or_empty_dates_return_400 | P1 | Required-field validation |
+| 8 | G8 | pagination_reports_has_more_and_offset_works | P1 | AC 1 — page integrity for auditor exports |
+| 9 | G9 | limit_clamps_to_safe_range | P1 | DoS guard on unbounded limit |
+| 10 | G10 | watermark_text_includes_all_required_fields | P1 | AC 4 — watermark format contract |
+| 11 | G11 | export_with_report_type_but_missing_dates_returns_400 | P1 | AC 4 — partial payload validation |
+| 12 | G12 | export_with_inverted_date_range_returns_400 | P1 | AC 4 — no side-effect on validation failure |
+| 13 | G13 | empty_window_returns_empty_rows_array | P2 | Empty-state contract |
+| 14 | G14 | same_day_range_is_accepted | P2 | Boundary condition |
+| 15 | G15 | export_with_invalid_report_type_returns_400 | P2 | Export-side report_type validation |
 
-No frontend automation is added because the repo has no frontend test harness and Story 5.2 set the precedent of manual frontend verification for finance pages.
+## 5. Execution & Verification
 
-## 7. Tests Generated
+### Story 5.4 test suite
 
-### Integration suite (`src/backend/tests/ctc_validation_report_tests.rs`)
+```
+DATABASE_URL=postgres://xynergy:xynergy@localhost:5432/xynergy \
+  cargo test -p xynergy-backend --test compliance_audit_report_tests
+```
 
-11 new `#[sqlx::test(migrations = "../../migrations")]` integration tests appended:
+Result: **28 passed (13 existing + 15 new); 0 failed**; finished in 9.05s.
 
-| Test                                                          | Gap   | AC    | Priority |
-| ------------------------------------------------------------- | ----- | ----- | -------- |
-| `pagination_limit_offset_returns_subset`                      | G1    | 2,3   | P0       |
-| `summary_metrics_stable_under_pagination`                     | G2    | 2     | P1       |
-| `mismatch_row_contract_includes_canonical_fields`             | G3    | 3     | P0       |
-| `variance_amount_is_absolute`                                 | G4    | 3     | P1       |
-| `bpjs_regulation_error_status_distinct_from_discrepancy`      | G5    | 4     | P0       |
-| `audit_log_payload_contains_only_lean_metadata`               | G6    | (sec) | P0       |
-| `missing_auth_token_returns_401`                              | G7    | 1     | P1       |
-| `date_boundary_records_are_included`                          | G8    | 1     | P1       |
-| `latest_payroll_row_per_resource_wins`                        | G9    | 2     | P1       |
-| `match_rate_percentage_is_accurate`                           | G10   | 2     | P1       |
-| `full_report_is_idempotent_across_runs`                       | G11   | 2     | P2       |
+First review patch rerun:
 
-Plus two new helpers reused by the new tests:
+```
+DATABASE_URL=postgres://xynergy:xynergy@localhost:5432/xynergy \
+  cargo test -p xynergy-backend --test compliance_audit_report_tests
+```
 
-- `insert_payroll_with_higher_base()` — payroll value larger than xynergy (exercises absolute-variance invariant)
-- `fetch_validation_report_paged()` — adds `limit`/`offset` query params
+Result: **33 passed (13 baseline + 15 automation-pass + 5 review-patch tests); 0 failed**; finished in 9.36s.
 
-### Service unit suite (`src/backend/src/services/ctc_validation_report.rs::tests`)
+Current BMad code-review rerun (this pass):
 
-2 new pure-logic unit tests appended:
+```
+SQLX_OFFLINE=true cargo test -p xynergy-backend --test compliance_audit_report_tests --no-run
+```
 
-| Test                                                          | Gap   | Priority |
-| ------------------------------------------------------------- | ----- | -------- |
-| `compare_record_emits_discrepancy_for_plain_field`            | G12   | P2       |
-| `compare_record_flags_bpjs_regulation_error_with_metadata`    | G13   | P2       |
+Result: **40-test story suite compiled successfully, not executed**. Live execution intentionally skipped because this environment does not define `DATABASE_URL`.
 
-Both unit tests **passed** locally via `cargo test -p xynergy-backend --lib services::ctc_validation_report` (6/6 ok including the 4 pre-existing at generation time).
+```
+SQLX_OFFLINE=true cargo test -p xynergy-backend --lib
+```
 
-After subsequent Story 5.3 review patches, the final checked-in suite contains **36 integration tests** and **9 service unit tests**. The additional review-patch tests cover sampling validation/audit metadata, stale selected payroll baselines, payroll coverage, legacy encryption-metadata exclusions, payroll-basis BPJS checks, invalid risk-tier preservation, and missing BPJS field counting.
+Result: **60 passed; 0 failed**.
 
-## 8. Validation Checklist
+### High-risk regression suites status
 
-- [x] Framework readiness — `#[sqlx::test]` convention matches existing repo style
-- [x] Coverage mapping — every new test maps to a gap (G1–G13) and to an AC or story task
-- [x] Test quality — assertions are intent-based (status string, exact values, payload key-set), not `is_number()`/`is_array()` stubs
-- [x] Fixtures/factories — reuse existing `create_user`, `create_resource`, `create_ctc_record`, `insert_payroll_*` helpers; only two narrow new helpers added
-- [x] No CLI session orphans — sequential mode, no browser/Playwright used
-- [x] Test artifacts in `_bmad-output/test-artifacts/` — automation summary plus traceability/gate files
-- [x] Unit tests pass — final service unit suite verified locally after backend review patches with `cargo test -p xynergy-backend ctc_validation_report::tests --lib` (9/9)
-- [x] Integration tests compiled — final `ctc_validation_report_tests` suite verified with `cargo test -p xynergy-backend --test ctc_validation_report_tests --no-run`
-- [ ] Final integration execution — pending because `DATABASE_URL` was unavailable in the current review environment; earlier pre-review-patch execution passed 26/26 against live PostgreSQL
-- [x] Story regression suites previously passed against live PostgreSQL: `ctc_validation_tests` (15/15), `audit_tests` (5/5), `cash_flow_tests` (31/31)
-- [x] Production code changes accounted for — review patches intentionally changed Story 5.3 service, route, and page behavior after this automation artifact was first generated
-- [x] Output schema preserved — automation-summary.md at the configured `test_artifacts` path
+| Suite | Tests | Result |
+|---|---|---|
+| audit_tests | 5 | not run in current environment; `SQLX_OFFLINE=true --no-run` blocked by missing sqlx query cache; previous live run was green |
+| ctc_revision_tests | 5 | compiled with `SQLX_OFFLINE=true --no-run`; not executed live because `DATABASE_URL` is unset; previous live run was green |
+| assignment_tests | 18 | compiled with `SQLX_OFFLINE=true --no-run`; not executed live because `DATABASE_URL` is unset; previous live run was green |
+| project_budget_tests | 17 | compiled with `SQLX_OFFLINE=true --no-run`; not executed live because `DATABASE_URL` is unset; previous live run was green |
+| ctc_validation_report_tests | 36 | compiled with `SQLX_OFFLINE=true --no-run`; not executed live because `DATABASE_URL` is unset; previous live run was green |
 
-## 9. Files Created / Updated
+### Type-check
 
-| Path                                                                 | Change                                          |
-| -------------------------------------------------------------------- | ----------------------------------------------- |
-| `src/backend/tests/ctc_validation_report_tests.rs`                   | +11 integration tests during automation expansion; final story state has 36 integration tests after review patches |
-| `src/backend/src/services/ctc_validation_report.rs`                  | +2 unit tests during automation expansion; final story state has 9 service unit tests after review patches |
-| `_bmad-output/test-artifacts/automation-summary.md`                  | new — this document                             |
+- `SQLX_OFFLINE=true cargo check -p xynergy-backend` — clean.
+- `cargo check -p xynergy-frontend --features csr --target wasm32-unknown-unknown` — clean for Story 5.4 files; pre-existing dead-code warnings remain in `team.rs`.
+- `cargo check -p xynergy-frontend --no-default-features --features hydrate --target wasm32-unknown-unknown` — clean for Story 5.4 files; pre-existing dead-code warnings remain in `team.rs`.
+- High-risk DB-backed regression suites (`audit_tests`, `ctc_revision_tests`, `assignment_tests`, `project_budget_tests`, `ctc_validation_report_tests`) were intentionally not executed in this environment because `DATABASE_URL` is unset. `SQLX_OFFLINE=true ... --no-run` also cannot compile `audit_tests` because its `sqlx::query!` cache is missing.
+- Tailwind generation was intentionally skipped because this patch changed Rust/Leptos code only and did not add new CSS source or Tailwind tokens.
+- Browser E2E was intentionally skipped because the Axum app requires a live PostgreSQL connection and no `DATABASE_URL` is configured in this environment.
 
-Production source modules, migrations, and frontend dependencies changed later as part of Story 5.3 implementation and review patches; this artifact now tracks those as final-story context rather than treating the test-generation pass as the only change source.
+## 6. Coverage Delta
 
-## 10. Key Assumptions & Risks
+- **Backend integration tests**: 13 → **40** (+27, +208%)
+- **AC traceability**:
+  - AC 1 (report types & filters): +pagination, +empty-window, +date-validation, +filter-scoping, +limit-clamping
+  - AC 2 (CTC fields): +encryption-leak guard
+  - AC 3 (access logs): +failure derivation
+  - AC 4 (four-eyes export): +watermark format, +partial-payload rejection, +invalid-type rejection, +inverted-date rejection
+- **New negative paths covered**: unauthenticated, denied-with-audit, malformed/missing dates, inverted date range on export, invalid report_type on export, filter misuse on non-access_logs
+- **Confidentiality guards**: explicit ciphertext/key/algorithm leak detection and corrupted-revision redacted-row coverage added
 
-- **Assumption:** `payroll_validation_staging` schema (story migration `20260307100000`) is the source of truth — tests insert directly via SQL, matching the existing story helpers.
-- **Assumption:** Existing `create_ctc_record` helper produces an Active record whose `effective_date` falls in the queried range (`2020-01-01`..`2030-12-31`). This matches the story's existing test pattern.
-- **Risk (low):** `date_boundary_records_are_included` only weakly asserts that boundary employees are *visible* (compared OR excluded) because CTC `effective_date` is set by HR endpoint to today and that may not always be in the 2025 window. The payroll side, which is what the test really targets, is exercised via direct SQL insert at the exact boundary dates.
-- **Risk (medium):** The final 36-test integration suite still requires a live Postgres instance for end-to-end execution. In the current review environment `DATABASE_URL` was unavailable, so the final suite was compile-checked with `--no-run` instead of executed.
+## 7. Out-of-Scope Items (recorded, not blocked)
 
-## 11. Next Recommended Workflow
-
-- `bmad-testarch-trace` — keep traceability matrix synchronized with the final 36 integration / 9 unit test inventory and the current conservative gate rationale.
-- `bmad-testarch-test-review` — adversarial review of these tests before merge, focusing on whether the G6 audit-payload contract test is strict enough.
-- Reviewer should run `cargo test -p xynergy-backend --test ctc_validation_report_tests` against a live Postgres before merging Story 5.3, then rerun the three regression suites if any shared CTC/audit/finance code changes again.
+- Frontend `/finance/audit-reports` Leptos component/browser tests — no component or browser test harness in repo; compile verification was run, but manual walkthrough evidence is not documented
+- Approval workflow tests — second-approver flow is explicitly not in MVP scope (story Scope Boundary)
+- E2E browser flow — no Playwright config in repo; matches Story 5.3 decision
+- Performance / load tests for large audit windows — not part of automation expansion scope

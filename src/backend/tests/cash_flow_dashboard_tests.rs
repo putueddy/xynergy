@@ -102,11 +102,7 @@ async fn insert_cash_flow_entry(
     .expect("cash flow entry inserted");
 }
 
-async fn get_dashboard(
-    app: &axum::Router,
-    token: &str,
-    query: &str,
-) -> (StatusCode, Value) {
+async fn get_dashboard(app: &axum::Router, token: &str, query: &str) -> (StatusCode, Value) {
     let uri = if query.is_empty() {
         "/api/v1/cash-flow/dashboard".to_string()
     } else {
@@ -144,7 +140,8 @@ async fn finance_can_fetch_dashboard(pool: PgPool) {
     let _user_id = create_test_user_with_role(&pool, &email, "finance").await;
     let token = get_auth_token(&app, &email).await;
 
-    let (status, body) = get_dashboard(&app, &token, "start_date=2026-01-01&end_date=2026-12-31").await;
+    let (status, body) =
+        get_dashboard(&app, &token, "start_date=2026-01-01&end_date=2026-12-31").await;
 
     assert_eq!(status, StatusCode::OK);
     assert!(body["months"].is_array());
@@ -160,7 +157,8 @@ async fn admin_can_fetch_dashboard(pool: PgPool) {
     let _user_id = create_test_user_with_role(&pool, &email, "admin").await;
     let token = get_auth_token(&app, &email).await;
 
-    let (status, body) = get_dashboard(&app, &token, "start_date=2026-01-01&end_date=2026-06-30").await;
+    let (status, body) =
+        get_dashboard(&app, &token, "start_date=2026-01-01&end_date=2026-06-30").await;
 
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["months"].as_array().unwrap().len(), 6);
@@ -222,12 +220,8 @@ async fn invalid_date_range_returns_400(pool: PgPool) {
     let _user_id = create_test_user_with_role(&pool, &email, "finance").await;
     let token = get_auth_token(&app, &email).await;
 
-    let (status, body) = get_dashboard(
-        &app,
-        &token,
-        "start_date=2026-12-01&end_date=2026-01-01",
-    )
-    .await;
+    let (status, body) =
+        get_dashboard(&app, &token, "start_date=2026-12-01&end_date=2026-01-01").await;
 
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(body["error"]["code"].as_str().unwrap(), "VALIDATION_ERROR");
@@ -246,7 +240,10 @@ async fn nonexistent_project_id_returns_404(pool: PgPool) {
     let (status, body) = get_dashboard(
         &app,
         &token,
-        &format!("start_date=2026-01-01&end_date=2026-12-31&project_id={}", fake_id),
+        &format!(
+            "start_date=2026-01-01&end_date=2026-12-31&project_id={}",
+            fake_id
+        ),
     )
     .await;
 
@@ -265,15 +262,31 @@ async fn monthly_aggregation_returns_dense_month_buckets(pool: PgPool) {
     let user_id = create_test_user_with_role(&pool, &email, "finance").await;
     let token = get_auth_token(&app, &email).await;
 
-    insert_cash_flow_entry(&pool, user_id, "cash_in", "client_payment", 10_000_000, "2026-01-15", "Jan payment", None).await;
-    insert_cash_flow_entry(&pool, user_id, "cash_out", "payroll", 3_000_000, "2026-03-10", "Mar payroll", None).await;
-
-    let (status, body) = get_dashboard(
-        &app,
-        &token,
-        "start_date=2026-01-01&end_date=2026-06-30",
+    insert_cash_flow_entry(
+        &pool,
+        user_id,
+        "cash_in",
+        "client_payment",
+        10_000_000,
+        "2026-01-15",
+        "Jan payment",
+        None,
     )
     .await;
+    insert_cash_flow_entry(
+        &pool,
+        user_id,
+        "cash_out",
+        "payroll",
+        3_000_000,
+        "2026-03-10",
+        "Mar payroll",
+        None,
+    )
+    .await;
+
+    let (status, body) =
+        get_dashboard(&app, &token, "start_date=2026-01-01&end_date=2026-06-30").await;
 
     assert_eq!(status, StatusCode::OK);
     let months = body["months"].as_array().unwrap();
@@ -323,12 +336,8 @@ async fn partial_date_ranges_normalize_to_full_month_boundaries(pool: PgPool) {
     )
     .await;
 
-    let (status, body) = get_dashboard(
-        &app,
-        &token,
-        "start_date=2026-01-15&end_date=2026-03-14",
-    )
-    .await;
+    let (status, body) =
+        get_dashboard(&app, &token, "start_date=2026-01-15&end_date=2026-03-14").await;
 
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["start_date"].as_str().unwrap(), "2026-01-01");
@@ -349,16 +358,42 @@ async fn net_cash_flow_equals_cash_in_minus_cash_out(pool: PgPool) {
     let user_id = create_test_user_with_role(&pool, &email, "finance").await;
     let token = get_auth_token(&app, &email).await;
 
-    insert_cash_flow_entry(&pool, user_id, "cash_in", "client_payment", 20_000_000, "2026-02-10", "Feb in", None).await;
-    insert_cash_flow_entry(&pool, user_id, "cash_out", "vendor_payment", 8_000_000, "2026-02-15", "Feb out", None).await;
-    insert_cash_flow_entry(&pool, user_id, "cash_out", "expense", 2_000_000, "2026-02-20", "Feb expense", None).await;
-
-    let (status, body) = get_dashboard(
-        &app,
-        &token,
-        "start_date=2026-02-01&end_date=2026-02-28",
+    insert_cash_flow_entry(
+        &pool,
+        user_id,
+        "cash_in",
+        "client_payment",
+        20_000_000,
+        "2026-02-10",
+        "Feb in",
+        None,
     )
     .await;
+    insert_cash_flow_entry(
+        &pool,
+        user_id,
+        "cash_out",
+        "vendor_payment",
+        8_000_000,
+        "2026-02-15",
+        "Feb out",
+        None,
+    )
+    .await;
+    insert_cash_flow_entry(
+        &pool,
+        user_id,
+        "cash_out",
+        "expense",
+        2_000_000,
+        "2026-02-20",
+        "Feb expense",
+        None,
+    )
+    .await;
+
+    let (status, body) =
+        get_dashboard(&app, &token, "start_date=2026-02-01&end_date=2026-02-28").await;
 
     assert_eq!(status, StatusCode::OK);
 
@@ -383,28 +418,66 @@ async fn cumulative_position_rolls_forward_month_to_month(pool: PgPool) {
     let user_id = create_test_user_with_role(&pool, &email, "finance").await;
     let token = get_auth_token(&app, &email).await;
 
-    insert_cash_flow_entry(&pool, user_id, "cash_in", "client_payment", 10_000_000, "2026-01-15", "Jan in", None).await;
-    insert_cash_flow_entry(&pool, user_id, "cash_out", "payroll", 4_000_000, "2026-02-15", "Feb out", None).await;
-    insert_cash_flow_entry(&pool, user_id, "cash_in", "interest", 1_000_000, "2026-03-15", "Mar in", None).await;
-
-    let (status, body) = get_dashboard(
-        &app,
-        &token,
-        "start_date=2026-01-01&end_date=2026-03-31",
+    insert_cash_flow_entry(
+        &pool,
+        user_id,
+        "cash_in",
+        "client_payment",
+        10_000_000,
+        "2026-01-15",
+        "Jan in",
+        None,
     )
     .await;
+    insert_cash_flow_entry(
+        &pool,
+        user_id,
+        "cash_out",
+        "payroll",
+        4_000_000,
+        "2026-02-15",
+        "Feb out",
+        None,
+    )
+    .await;
+    insert_cash_flow_entry(
+        &pool,
+        user_id,
+        "cash_in",
+        "interest",
+        1_000_000,
+        "2026-03-15",
+        "Mar in",
+        None,
+    )
+    .await;
+
+    let (status, body) =
+        get_dashboard(&app, &token, "start_date=2026-01-01&end_date=2026-03-31").await;
 
     assert_eq!(status, StatusCode::OK);
     let months = body["months"].as_array().unwrap();
 
     // Jan: cum = +10M
-    assert_eq!(months[0]["cumulative_position_idr"].as_i64().unwrap(), 10_000_000);
+    assert_eq!(
+        months[0]["cumulative_position_idr"].as_i64().unwrap(),
+        10_000_000
+    );
     // Feb: cum = 10M - 4M = 6M
-    assert_eq!(months[1]["cumulative_position_idr"].as_i64().unwrap(), 6_000_000);
+    assert_eq!(
+        months[1]["cumulative_position_idr"].as_i64().unwrap(),
+        6_000_000
+    );
     // Mar: cum = 6M + 1M = 7M
-    assert_eq!(months[2]["cumulative_position_idr"].as_i64().unwrap(), 7_000_000);
+    assert_eq!(
+        months[2]["cumulative_position_idr"].as_i64().unwrap(),
+        7_000_000
+    );
 
-    assert_eq!(body["ending_cumulative_position_idr"].as_i64().unwrap(), 7_000_000);
+    assert_eq!(
+        body["ending_cumulative_position_idr"].as_i64().unwrap(),
+        7_000_000
+    );
 }
 
 #[sqlx::test(migrations = "../../migrations")]
@@ -416,12 +489,8 @@ async fn months_with_no_entries_return_zeros(pool: PgPool) {
     let _user_id = create_test_user_with_role(&pool, &email, "finance").await;
     let token = get_auth_token(&app, &email).await;
 
-    let (status, body) = get_dashboard(
-        &app,
-        &token,
-        "start_date=2026-07-01&end_date=2026-09-30",
-    )
-    .await;
+    let (status, body) =
+        get_dashboard(&app, &token, "start_date=2026-07-01&end_date=2026-09-30").await;
 
     assert_eq!(status, StatusCode::OK);
     let months = body["months"].as_array().unwrap();
@@ -454,13 +523,36 @@ async fn project_filter_limits_summary_and_drilldown(pool: PgPool) {
     let project_id = create_test_project(&pool, "Dashboard Filter Test", pm_id).await;
     let token = get_auth_token(&app, &finance_email).await;
 
-    insert_cash_flow_entry(&pool, finance_id, "cash_in", "client_payment", 5_000_000, "2026-04-10", "Project payment", Some(project_id)).await;
-    insert_cash_flow_entry(&pool, finance_id, "cash_in", "other_income", 3_000_000, "2026-04-15", "Unlinked income", None).await;
+    insert_cash_flow_entry(
+        &pool,
+        finance_id,
+        "cash_in",
+        "client_payment",
+        5_000_000,
+        "2026-04-10",
+        "Project payment",
+        Some(project_id),
+    )
+    .await;
+    insert_cash_flow_entry(
+        &pool,
+        finance_id,
+        "cash_in",
+        "other_income",
+        3_000_000,
+        "2026-04-15",
+        "Unlinked income",
+        None,
+    )
+    .await;
 
     let (status, body) = get_dashboard(
         &app,
         &token,
-        &format!("start_date=2026-04-01&end_date=2026-04-30&project_id={}", project_id),
+        &format!(
+            "start_date=2026-04-01&end_date=2026-04-30&project_id={}",
+            project_id
+        ),
     )
     .await;
 
@@ -475,7 +567,10 @@ async fn project_filter_limits_summary_and_drilldown(pool: PgPool) {
 
     let entries = april["entries"].as_array().unwrap();
     assert_eq!(entries.len(), 1, "Only the project-linked entry");
-    assert_eq!(entries[0]["description"].as_str().unwrap(), "Project payment");
+    assert_eq!(
+        entries[0]["description"].as_str().unwrap(),
+        "Project payment"
+    );
 }
 
 // ── Default Date Range Tests ───────────────────────────────────────────────
@@ -509,16 +604,42 @@ async fn drilldown_entries_included_per_month(pool: PgPool) {
     let user_id = create_test_user_with_role(&pool, &email, "finance").await;
     let token = get_auth_token(&app, &email).await;
 
-    insert_cash_flow_entry(&pool, user_id, "cash_in", "client_payment", 7_000_000, "2026-05-05", "May payment A", None).await;
-    insert_cash_flow_entry(&pool, user_id, "cash_out", "tax", 1_500_000, "2026-05-20", "May tax", None).await;
-    insert_cash_flow_entry(&pool, user_id, "cash_in", "interest", 200_000, "2026-06-01", "Jun interest", None).await;
-
-    let (status, body) = get_dashboard(
-        &app,
-        &token,
-        "start_date=2026-05-01&end_date=2026-06-30",
+    insert_cash_flow_entry(
+        &pool,
+        user_id,
+        "cash_in",
+        "client_payment",
+        7_000_000,
+        "2026-05-05",
+        "May payment A",
+        None,
     )
     .await;
+    insert_cash_flow_entry(
+        &pool,
+        user_id,
+        "cash_out",
+        "tax",
+        1_500_000,
+        "2026-05-20",
+        "May tax",
+        None,
+    )
+    .await;
+    insert_cash_flow_entry(
+        &pool,
+        user_id,
+        "cash_in",
+        "interest",
+        200_000,
+        "2026-06-01",
+        "Jun interest",
+        None,
+    )
+    .await;
+
+    let (status, body) =
+        get_dashboard(&app, &token, "start_date=2026-05-01&end_date=2026-06-30").await;
 
     assert_eq!(status, StatusCode::OK);
     let months = body["months"].as_array().unwrap();
@@ -528,5 +649,8 @@ async fn drilldown_entries_included_per_month(pool: PgPool) {
 
     let jun_entries = months[1]["entries"].as_array().unwrap();
     assert_eq!(jun_entries.len(), 1);
-    assert_eq!(jun_entries[0]["description"].as_str().unwrap(), "Jun interest");
+    assert_eq!(
+        jun_entries[0]["description"].as_str().unwrap(),
+        "Jun interest"
+    );
 }

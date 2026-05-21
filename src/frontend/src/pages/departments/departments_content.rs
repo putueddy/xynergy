@@ -405,10 +405,9 @@ async fn delete_department(dept_id: String) -> Result<(), String> {
         .parse::<Uuid>()
         .map_err(|_| "Invalid department ID")?;
 
-    let response =
-        authenticated_delete(&format!("/api/v1/departments/{}", id))
-            .await
-            .map_err(|e| format!("Failed to delete department: {}", e))?;
+    let response = authenticated_delete(&format!("/api/v1/departments/{}", id))
+        .await
+        .map_err(|e| format!("Failed to delete department: {}", e))?;
 
     if response.status().is_success() {
         Ok(())

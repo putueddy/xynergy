@@ -1,0 +1,119 @@
+{
+  "schema_version": "0.1.0",
+  "snapshot_at": "2026-05-21T00:00:00Z",
+  "repo": "xynergy",
+  "story": {
+    "id": "5.4",
+    "key": "5-4-compliance-audit-reports",
+    "title": "Compliance Audit Reports"
+  },
+  "ac_to_tests": [
+    {
+      "ac": 1,
+      "title": "Generate CTC Change Log / Assignment History / Budget Modifications / Access Logs",
+      "priority": "P0",
+      "coverage": "BACKEND_FULL_FRONTEND_COMPILE_ONLY",
+      "tests": [
+        "finance_can_generate_each_report_type",
+        "admin_can_generate_each_report_type",
+        "non_finance_roles_are_denied",
+        "inverted_date_range_returns_400",
+        "assignment_history_surfaces_allocation_audit_rows",
+        "assignment_history_uses_event_payload_resource_and_project_ids",
+        "assignment_history_uses_top_level_event_payload_ids",
+        "budget_modifications_surfaces_project_budget_rows",
+        "report_generation_creates_audit_log_entry",
+        "invalid_report_type_returns_400",
+        "denied_report_access_creates_access_denied_audit_entry",
+        "unauthenticated_requests_return_401",
+        "invalid_subject_token_creates_access_denied_audit_entry",
+        "filter_combinations_only_supported_for_access_logs",
+        "malformed_date_returns_400",
+        "missing_or_empty_dates_return_400",
+        "pagination_reports_has_more_and_offset_works",
+        "limit_clamps_to_safe_range",
+        "empty_window_returns_empty_rows_array",
+        "same_day_range_is_accepted",
+        "same_day_range_uses_jakarta_business_day_boundaries"
+      ]
+    },
+    {
+      "ac": 2,
+      "title": "CTC Change Log fields: Employee, Changed By, Change Date, Field, Old/New Value, Reason",
+      "priority": "P0",
+      "coverage": "FULL",
+      "tests": [
+        "ctc_change_log_returns_expected_fields",
+        "ctc_change_log_never_exposes_encryption_metadata",
+        "ctc_decryption_failure_surfaces_redacted_report_row",
+        "ctc_daily_rate_decryption_failure_surfaces_redacted_report_row"
+      ]
+    },
+    {
+      "ac": 3,
+      "title": "Access Logs: filter by user/action; expose Timestamp, User, Action, Resource, Success/Failure",
+      "priority": "P0",
+      "coverage": "FULL",
+      "tests": [
+        "access_logs_filter_by_user_and_action",
+        "access_logs_classify_failure_actions_as_unsuccessful"
+      ]
+    },
+    {
+      "ac": 4,
+      "title": "Export click initiates four-eyes approval; watermark carries user id + timestamp",
+      "priority": "P0",
+      "coverage": "FULL_REQUEST_LEG",
+      "tests": [
+        "export_request_persists_with_report_metadata",
+        "export_rejects_pagination_parameters",
+        "export_request_without_payload_remains_backward_compatible",
+        "export_request_creates_audit_log_entry",
+        "watermark_text_includes_all_required_fields",
+        "access_log_export_watermark_includes_filters",
+        "export_with_report_type_but_missing_dates_returns_400",
+        "export_with_inverted_date_range_returns_400",
+        "export_with_invalid_report_type_returns_400",
+        "export_rejects_non_access_log_user_action_filters",
+        "export_rejects_partial_filter_metadata_without_report_type",
+        "export_rejects_unknown_json_fields"
+      ]
+    }
+  ],
+  "non_ac_regression": {
+    "story_scoped": ["legacy_audit_logs_endpoint_still_returns_200"],
+    "rerun_suites": {
+      "audit_tests": 5,
+      "ctc_revision_tests": 5,
+      "assignment_tests": 18,
+      "project_budget_tests": 17,
+      "ctc_validation_report_tests": 36
+    }
+  },
+  "totals": {
+    "story_scoped_tests": 40,
+    "regression_tests": 81,
+    "total_tests_considered": 121
+  },
+  "verification": {
+    "current_environment": "DATABASE_URL unset; DB-backed story suite compiled with --no-run but was not executed live in this rerun",
+    "compiled_commands": [
+      "SQLX_OFFLINE=true cargo test -p xynergy-backend --test compliance_audit_report_tests --no-run",
+      "SQLX_OFFLINE=true cargo test -p xynergy-backend --test ctc_revision_tests --test assignment_tests --test project_budget_tests --test ctc_validation_report_tests --no-run",
+      "SQLX_OFFLINE=true cargo check -p xynergy-backend",
+      "cargo check -p xynergy-frontend --features csr --target wasm32-unknown-unknown",
+      "cargo check -p xynergy-frontend --no-default-features --features hydrate --target wasm32-unknown-unknown"
+    ],
+    "blocked_commands": [
+      "SQLX_OFFLINE=true cargo test -p xynergy-backend --test audit_tests --no-run (missing sqlx offline query cache)"
+    ],
+    "executed_commands": [
+      "SQLX_OFFLINE=true cargo test -p xynergy-backend --lib"
+    ],
+    "advisory_gaps": [
+      "Frontend /finance/audit-reports has no committed automated E2E/component tests and browser E2E was skipped because no DATABASE_URL is configured",
+      "Approve + render leg of four-eyes export workflow is explicitly out of MVP scope"
+    ]
+  },
+  "gate_status": "PASS_WITH_ADVISORY"
+}

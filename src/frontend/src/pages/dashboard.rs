@@ -308,15 +308,13 @@ fn parse_date(value: &str) -> Option<NaiveDate> {
 }
 
 async fn fetch_resources_count() -> Result<usize, String> {
-    let response = authenticated_get("/api/v1/resources")
-        .await
-        .map_err(|e| {
-            if e == "SESSION_EXPIRED" {
-                e
-            } else {
-                format!("Failed to fetch resources: {}", e)
-            }
-        })?;
+    let response = authenticated_get("/api/v1/resources").await.map_err(|e| {
+        if e == "SESSION_EXPIRED" {
+            e
+        } else {
+            format!("Failed to fetch resources: {}", e)
+        }
+    })?;
 
     if response.status().is_success() {
         let items: Vec<serde_json::Value> = response
@@ -355,15 +353,13 @@ async fn fetch_allocations_count() -> Result<usize, String> {
 }
 
 async fn fetch_projects() -> Result<Vec<ProjectSummary>, String> {
-    let response = authenticated_get("/api/v1/projects")
-        .await
-        .map_err(|e| {
-            if e == "SESSION_EXPIRED" {
-                e
-            } else {
-                format!("Failed to fetch projects: {}", e)
-            }
-        })?;
+    let response = authenticated_get("/api/v1/projects").await.map_err(|e| {
+        if e == "SESSION_EXPIRED" {
+            e
+        } else {
+            format!("Failed to fetch projects: {}", e)
+        }
+    })?;
 
     if response.status().is_success() {
         response

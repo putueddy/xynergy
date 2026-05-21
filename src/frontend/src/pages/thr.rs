@@ -673,12 +673,9 @@ async fn fetch_resources() -> Result<Vec<ResourceOption>, String> {
 }
 
 async fn fetch_thr_config(resource_id: &str) -> Result<ThrConfig, String> {
-    let response = authenticated_get(&format!(
-        "/api/v1/thr/config/{}",
-        resource_id
-    ))
-    .await
-    .map_err(|e| format!("Failed to fetch THR config: {}", e))?;
+    let response = authenticated_get(&format!("/api/v1/thr/config/{}", resource_id))
+        .await
+        .map_err(|e| format!("Failed to fetch THR config: {}", e))?;
 
     if !response.status().is_success() {
         return Err(format!("Failed to fetch THR config: {}", response.status()));
@@ -710,12 +707,10 @@ async fn fetch_thr_config(resource_id: &str) -> Result<ThrConfig, String> {
 }
 
 async fn configure_thr(resource_id: String, payload: Value) -> Result<(), String> {
-    let response = authenticated_post_json(
-        &format!("/api/v1/thr/configure/{}", resource_id),
-        &payload,
-    )
-    .await
-    .map_err(|e| format!("Failed to configure THR: {}", e))?;
+    let response =
+        authenticated_post_json(&format!("/api/v1/thr/configure/{}", resource_id), &payload)
+            .await
+            .map_err(|e| format!("Failed to configure THR: {}", e))?;
 
     if response.status().is_success() {
         Ok(())
@@ -733,10 +728,9 @@ async fn run_thr_monthly_accrual(period: &str) -> Result<(i64, i64), String> {
         "accrual_period": period,
     });
 
-    let response =
-        authenticated_post_json("/api/v1/thr/accrual/run", &payload)
-            .await
-            .map_err(|e| format!("Failed to run THR accrual: {}", e))?;
+    let response = authenticated_post_json("/api/v1/thr/accrual/run", &payload)
+        .await
+        .map_err(|e| format!("Failed to run THR accrual: {}", e))?;
 
     if !response.status().is_success() {
         let text = response
@@ -764,12 +758,9 @@ async fn run_thr_monthly_accrual(period: &str) -> Result<(i64, i64), String> {
 }
 
 async fn fetch_thr_accrual_history(resource_id: &str) -> Result<Vec<ThrAccrualHistoryRow>, String> {
-    let response = authenticated_get(&format!(
-        "/api/v1/thr/accrual/{}",
-        resource_id
-    ))
-    .await
-    .map_err(|e| format!("Failed to fetch THR accrual history: {}", e))?;
+    let response = authenticated_get(&format!("/api/v1/thr/accrual/{}", resource_id))
+        .await
+        .map_err(|e| format!("Failed to fetch THR accrual history: {}", e))?;
 
     if !response.status().is_success() {
         return Err(format!(
@@ -820,12 +811,9 @@ async fn fetch_thr_accrual_history(resource_id: &str) -> Result<Vec<ThrAccrualHi
 }
 
 async fn fetch_thr_report(month: &str) -> Result<Vec<ThrReportRow>, String> {
-    let response = authenticated_get(&format!(
-        "/api/v1/thr/report?month={}",
-        month
-    ))
-    .await
-    .map_err(|e| format!("Failed to fetch THR payout report: {}", e))?;
+    let response = authenticated_get(&format!("/api/v1/thr/report?month={}", month))
+        .await
+        .map_err(|e| format!("Failed to fetch THR payout report: {}", e))?;
 
     if !response.status().is_success() {
         let text = response

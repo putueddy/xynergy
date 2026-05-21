@@ -1,0 +1,91 @@
+{
+  "schema_version": "0.1.0",
+  "snapshot_at": "2026-05-21T00:00:00Z",
+  "repo": "xynergy",
+  "collection_mode": "contract_static_plus_local_compile",
+  "collection_status": "COLLECTED",
+  "inventory_basis": "acceptance_criteria",
+  "gate_basis": "priority_thresholds",
+  "target": {
+    "type": "story",
+    "id": "5.4",
+    "label": "Compliance Audit Reports"
+  },
+  "decision_mode": "automated",
+  "evaluator": "Putu",
+  "confidence": "high",
+  "gate_status": "PASS_WITH_ADVISORY",
+  "gate_criteria": {
+    "p0_coverage_required": "100%",
+    "p0_coverage_actual": "100%",
+    "p0_status": "MET",
+    "p1_coverage_target": "90%",
+    "p1_coverage_minimum": "80%",
+    "p1_coverage_actual": "n/a",
+    "p1_status": "N/A",
+    "overall_coverage_minimum": "80%",
+    "overall_coverage_actual": "100%",
+    "overall_status": "MET",
+    "live_db_execution_status": "not_run_current_environment",
+    "regression_suites_status": "not_run_current_environment"
+  },
+  "coverage": {
+    "inventory": { "covered": 4, "total": 4, "pct": 100 },
+    "priority_breakdown": {
+      "P0": { "total": 4, "covered": 4, "pct": 100 },
+      "P1": { "total": 0, "covered": 0, "pct": null },
+      "P2": { "total": 0, "covered": 0, "pct": null },
+      "P3": { "total": 0, "covered": 0, "pct": null }
+    },
+    "by_level": {
+      "e2e":       { "tests": 0,  "criteria_covered": 0 },
+      "api":       { "tests": 40, "criteria_covered": 4 },
+      "component": { "tests": 0,  "criteria_covered": 0 },
+      "unit":      { "tests": 0,  "criteria_covered": 0 },
+      "other":     { "tests": 0,  "criteria_covered": 0 }
+    }
+  },
+  "tests": {
+    "files": 1,
+    "cases": 40,
+    "skipped_cases": 0,
+    "fixme_cases": 0,
+    "pending_cases": 0
+  },
+  "risk_summary": {
+    "critical_open": 0,
+    "high_open": 0,
+    "medium_open": 2,
+    "low_open": 2
+  },
+  "heuristics": {
+    "endpoint_gaps": 0,
+    "auth_negative_path_status": "present",
+    "error_path_status": "present",
+    "pagination_status": "present",
+    "confidentiality_guard_status": "present",
+    "watermark_contract_status": "present",
+    "ui_journey_status": "missing_compile_only",
+    "ui_state_status": "missing_compile_only"
+  },
+  "blockers": [],
+  "advisory_gaps": [
+    "Frontend /finance/audit-reports has no committed automated E2E/component tests; frontend compile passed but browser E2E was not run in this environment",
+    "Current rerun has no DATABASE_URL, so patched DB-backed integration/regression suites were compiled where possible but not executed live",
+    "Approve + render leg of four-eyes export workflow is explicitly out of MVP scope (Story Scope Boundary); tested follow-up needed"
+  ],
+  "oracle": {
+    "resolution_mode": "formal_requirements",
+    "confidence": "high",
+    "sources": [
+      "_bmad-output/implementation-artifacts/5-4-compliance-audit-reports.md",
+      "_bmad-output/planning-artifacts/epics.md",
+      "_bmad-output/planning-artifacts/prd.md"
+    ],
+    "external_pointer_status": "not_used",
+    "synthetic": false
+  },
+  "links": {
+    "trace_report_path": "_bmad-output/test-artifacts/traceability/5-4-compliance-audit-reports-traceability.md"
+  }
+}

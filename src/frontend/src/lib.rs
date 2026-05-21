@@ -16,6 +16,7 @@ use auth::{provide_auth_context, use_auth};
 use components::AppSidebar;
 use pages::{
     allocations::Allocations,
+    audit_reports::AuditReportsPage,
     cash_flow::CashFlowPage,
     ctc::CtcManagement,
     ctc_completeness::CtcCompleteness,
@@ -124,6 +125,7 @@ pub fn App() -> impl IntoView {
                     <Route path=leptos_router::path!("/thr") view=ThrManagement/>
                     <Route path=leptos_router::path!("/finance/cash-flow") view=CashFlowPage/>
                     <Route path=leptos_router::path!("/finance/ctc-validation") view=CtcValidationPage/>
+                    <Route path=leptos_router::path!("/finance/audit-reports") view=AuditReportsPage/>
                     <ParentRoute path=leptos_router::path!("/settings") view=SettingsPage>
                         <Route path=leptos_router::path!("/holidays") view=SettingsHolidaysPage/>
                         <Route path=leptos_router::path!("/users") view=SettingsUsersPage/>

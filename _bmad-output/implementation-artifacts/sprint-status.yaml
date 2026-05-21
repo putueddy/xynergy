@@ -30,7 +30,8 @@
 # - Dev moves story to review, then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-03-01
-last_updated: 2026-05-20
+last_updated: 2026-05-21
+# 5-4-compliance-audit-reports moved backlog -> review on 2026-05-21 by dev-story; review -> done on 2026-05-21 by code-review.
 project: xynergy
 project_key: NOKEY
 tracking_system: file-system
@@ -73,7 +74,7 @@ development_status:
   5-1-cash-flow-entry: done
   5-2-cash-flow-dashboard: done
   5-3-ctc-validation-reports: done
-  5-4-compliance-audit-reports: backlog
+  5-4-compliance-audit-reports: done
   epic-5-retrospective: optional
 
   epic-6: backlog

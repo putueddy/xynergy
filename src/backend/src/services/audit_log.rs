@@ -1,8 +1,8 @@
 use axum::http::HeaderMap;
 use jsonwebtoken::{decode, DecodingKey, Validation};
 use serde_json::{Map, Value};
-use sqlx::PgPool;
 use sqlx::Row;
+use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 use crate::error::{AppError, Result};
@@ -91,30 +91,24 @@ pub fn recompute_entry_hash(
     )
 }
 
-pub async fn log_audit(
-    pool: &PgPool,
+async fn insert_audit_entry(
+    tx: &mut Transaction<'_, Postgres>,
     user_id: Option<Uuid>,
     action: &str,
     entity_type: &str,
     entity_id: Uuid,
     changes: Value,
 ) -> Result<()> {
-    // Acquire connection and begin transaction to serialize audit log writes globally
-    let mut tx = pool
-        .begin()
-        .await
-        .map_err(|e| AppError::Database(e.to_string()))?;
-
     // Use advisory lock to serialize global audit chain insertion
     sqlx::query("SELECT pg_advisory_xact_lock(88889999)")
-        .execute(&mut *tx)
+        .execute(&mut **tx)
         .await
         .map_err(|e| AppError::Database(e.to_string()))?;
 
     // Get previous hash (default to 'GENESIS' if first entry)
     let previous_hash =
         sqlx::query("SELECT entry_hash FROM audit_logs ORDER BY created_at DESC, id DESC LIMIT 1")
-            .fetch_optional(&mut *tx)
+            .fetch_optional(&mut **tx)
             .await
             .map_err(|e| AppError::Database(e.to_string()))?
             .and_then(|row| {
@@ -134,8 +128,8 @@ pub async fn log_audit(
     )?;
 
     sqlx::query(
-        "INSERT INTO audit_logs (user_id, action, entity_type, entity_id, changes, previous_hash, entry_hash)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)",
+        "INSERT INTO audit_logs (user_id, action, entity_type, entity_id, changes, previous_hash, entry_hash, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, clock_timestamp())",
     )
     .bind(user_id)
     .bind(action)
@@ -144,9 +138,39 @@ pub async fn log_audit(
     .bind(changes)
     .bind(previous_hash)
     .bind(entry_hash)
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await
     .map_err(|e| AppError::Database(e.to_string()))?;
+
+    Ok(())
+}
+
+pub async fn log_audit_in_transaction(
+    tx: &mut Transaction<'_, Postgres>,
+    user_id: Option<Uuid>,
+    action: &str,
+    entity_type: &str,
+    entity_id: Uuid,
+    changes: Value,
+) -> Result<()> {
+    insert_audit_entry(tx, user_id, action, entity_type, entity_id, changes).await
+}
+
+pub async fn log_audit(
+    pool: &PgPool,
+    user_id: Option<Uuid>,
+    action: &str,
+    entity_type: &str,
+    entity_id: Uuid,
+    changes: Value,
+) -> Result<()> {
+    // Acquire connection and begin transaction to serialize audit log writes globally
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|e| AppError::Database(e.to_string()))?;
+
+    insert_audit_entry(&mut tx, user_id, action, entity_type, entity_id, changes).await?;
 
     tx.commit()
         .await

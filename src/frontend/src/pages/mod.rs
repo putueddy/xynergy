@@ -1,4 +1,5 @@
 pub mod allocations;
+pub mod audit_reports;
 pub mod cash_flow;
 pub mod ctc;
 pub mod ctc_completeness;
@@ -17,6 +18,7 @@ pub mod thr;
 pub mod users;
 
 pub use allocations::Allocations;
+pub use audit_reports::AuditReportsPage;
 pub use cash_flow::CashFlowPage;
 pub use ctc::CtcManagement;
 pub use ctc_completeness::CtcCompleteness;

@@ -83,8 +83,9 @@ async fn create_cash_flow_entry(
     headers: HeaderMap,
     Json(req): Json<CreateCashFlowEntryRequest>,
 ) -> Result<Json<CashFlowEntryResponse>> {
-    let user_id = enforce_finance_access(&pool, &headers, "create_cash_flow_entry", "cash_flow_entry")
-        .await?;
+    let user_id =
+        enforce_finance_access(&pool, &headers, "create_cash_flow_entry", "cash_flow_entry")
+            .await?;
 
     cash_flow_service::validate_cash_flow_entry(
         &req.entry_type,
@@ -144,8 +145,9 @@ async fn list_cash_flow_entries(
     headers: HeaderMap,
     Query(query): Query<ListCashFlowEntriesQuery>,
 ) -> Result<Json<Vec<CashFlowEntryResponse>>> {
-    let _user_id = enforce_finance_access(&pool, &headers, "list_cash_flow_entries", "cash_flow_entry")
-        .await?;
+    let _user_id =
+        enforce_finance_access(&pool, &headers, "list_cash_flow_entries", "cash_flow_entry")
+            .await?;
 
     if let Some(entry_type) = &query.entry_type {
         if !matches!(entry_type.as_str(), "cash_in" | "cash_out") {
@@ -268,9 +270,13 @@ async fn get_dashboard(
     headers: HeaderMap,
     Query(query): Query<CashFlowDashboardQuery>,
 ) -> Result<Json<CashFlowDashboardResponse>> {
-    let _user_id =
-        enforce_finance_access(&pool, &headers, "get_cash_flow_dashboard", "cash_flow_dashboard")
-            .await?;
+    let _user_id = enforce_finance_access(
+        &pool,
+        &headers,
+        "get_cash_flow_dashboard",
+        "cash_flow_dashboard",
+    )
+    .await?;
 
     let now = Utc::now().date_naive();
     let start_date = query
@@ -329,7 +335,13 @@ async fn get_dashboard(
 
 pub fn cash_flow_routes() -> Router<PgPool> {
     Router::new()
-        .route("/cash-flow/entries", get(list_cash_flow_entries).post(create_cash_flow_entry))
+        .route(
+            "/cash-flow/entries",
+            get(list_cash_flow_entries).post(create_cash_flow_entry),
+        )
         .route("/cash-flow/dashboard", get(get_dashboard))
-        .route("/projects/:id/cash-flow/entries", get(list_project_cash_flow_entries))
+        .route(
+            "/projects/:id/cash-flow/entries",
+            get(list_project_cash_flow_entries),
+        )
 }

@@ -1117,10 +1117,9 @@ async fn calculate_bpjs_preview(payload: Value) -> Result<Value, String> {
 }
 
 async fn create_ctc_record(payload: Value) -> Result<(), String> {
-    let response =
-        crate::auth::authenticated_post_json("/api/v1/ctc", &payload)
-            .await
-            .map_err(|e| format!("Failed to create CTC record: {}", e))?;
+    let response = crate::auth::authenticated_post_json("/api/v1/ctc", &payload)
+        .await
+        .map_err(|e| format!("Failed to create CTC record: {}", e))?;
 
     if response.status().is_success() {
         Ok(())
@@ -1135,10 +1134,7 @@ async fn create_ctc_record(payload: Value) -> Result<(), String> {
 
 async fn update_ctc_record(resource_id: String, payload: Value) -> Result<(), String> {
     let response = crate::auth::authenticated_put_json(
-        &format!(
-            "/api/v1/ctc/{}/components",
-            resource_id
-        ),
+        &format!("/api/v1/ctc/{}/components", resource_id),
         &payload,
     )
     .await
@@ -1156,12 +1152,9 @@ async fn update_ctc_record(resource_id: String, payload: Value) -> Result<(), St
 }
 
 async fn fetch_ctc_history(resource_id: &str) -> Result<Vec<Value>, String> {
-    let response = crate::auth::authenticated_get(&format!(
-        "/api/v1/ctc/{}/history",
-        resource_id
-    ))
-    .await
-    .map_err(|e| format!("Failed to fetch history: {}", e))?;
+    let response = crate::auth::authenticated_get(&format!("/api/v1/ctc/{}/history", resource_id))
+        .await
+        .map_err(|e| format!("Failed to fetch history: {}", e))?;
 
     if !response.status().is_success() {
         return Err(format!("Failed to fetch history: {}", response.status()));
@@ -1216,12 +1209,9 @@ fn value_to_i64(value: &Value) -> Option<i64> {
 }
 
 async fn fetch_existing_ctc(resource_id: &str) -> Result<Option<ExistingCtcValues>, String> {
-    let response = authenticated_get(&format!(
-        "/api/v1/ctc/{}/components",
-        resource_id
-    ))
-    .await
-    .map_err(|e| format!("Failed to fetch CTC details: {}", e))?;
+    let response = authenticated_get(&format!("/api/v1/ctc/{}/components", resource_id))
+        .await
+        .map_err(|e| format!("Failed to fetch CTC details: {}", e))?;
 
     if !response.status().is_success() {
         return Err(format!(

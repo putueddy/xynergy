@@ -2,6 +2,7 @@ pub mod allocation_service;
 pub mod audit_log;
 pub mod budget_service;
 pub mod cash_flow_service;
+pub mod compliance_audit_report;
 pub mod compliance_report;
 pub mod cost_preview;
 pub mod ctc_calculator;
@@ -21,7 +22,17 @@ pub mod team_service;
 pub mod thr_calculator;
 pub mod user_service;
 
-pub use audit_log::{audit_payload, log_audit, recompute_entry_hash, user_id_from_headers};
+pub use audit_log::{
+    audit_payload, log_audit, log_audit_in_transaction, recompute_entry_hash, user_id_from_headers,
+};
+pub use compliance_audit_report::{
+    build_watermark, clamp_limit as compliance_clamp_limit,
+    clamp_offset as compliance_clamp_offset, generate_report as generate_compliance_audit_report,
+    validate_date_order as compliance_validate_date_order,
+    validate_date_range as compliance_validate_date_range, AccessLogRow, AssignmentHistoryRow,
+    AuditReportType, BudgetModificationRow, ComplianceAuditReport, CtcChangeLogRow,
+    ExportWatermark, ReportFilters as ComplianceReportFilters, ReportRows,
+};
 pub use compliance_report::{validate_bpjs_compliance, ComplianceReport, EmployeeComplianceResult};
 pub use ctc_calculator::{
     calculate_ctc, jkk_rate_for_tier, BpjsConfig, CtcCalculation, CtcComponents,

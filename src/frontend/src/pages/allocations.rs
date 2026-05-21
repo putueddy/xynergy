@@ -1096,10 +1096,9 @@ async fn delete_allocation(allocation_id: String) -> Result<(), String> {
         .parse::<Uuid>()
         .map_err(|_| "Invalid allocation ID")?;
 
-    let response =
-        authenticated_delete(&format!("/api/v1/allocations/{}", id))
-            .await
-            .map_err(|e| format!("Failed to delete allocation: {}", e))?;
+    let response = authenticated_delete(&format!("/api/v1/allocations/{}", id))
+        .await
+        .map_err(|e| format!("Failed to delete allocation: {}", e))?;
 
     if response.status().is_success() {
         Ok(())
