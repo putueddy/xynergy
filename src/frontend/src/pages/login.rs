@@ -5,11 +5,7 @@ use leptos_router::hooks::*;
 
 fn role_dashboard_path(role: &str) -> &'static str {
     match role {
-        "admin" => "/settings/users",
-        "hr" => "/resources",
-        "department_head" => "/allocations",
-        "project_manager" => "/projects",
-        "finance" => "/dashboard",
+        "admin" | "hr" | "department_head" | "project_manager" | "finance" => "/dashboard",
         _ => "/dashboard",
     }
 }

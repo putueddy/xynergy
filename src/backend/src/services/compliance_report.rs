@@ -3,7 +3,7 @@
 use bigdecimal::BigDecimal;
 use chrono::NaiveDate;
 use serde::Serialize;
-use sqlx::{PgPool, Row};
+use sqlx::{postgres::PgRow, PgPool, Postgres, Row, Transaction};
 use uuid::Uuid;
 
 use crate::error::{AppError, Result};
@@ -105,6 +105,42 @@ pub async fn validate_bpjs_compliance(
     .await
     .map_err(|e| AppError::Database(e.to_string()))?;
 
+    build_compliance_report(rows).await
+}
+
+pub async fn validate_bpjs_compliance_in_transaction(
+    tx: &mut Transaction<'_, Postgres>,
+    start_date: NaiveDate,
+    end_date: NaiveDate,
+) -> Result<ComplianceReport> {
+    let rows = sqlx::query(
+        r#"
+        SELECT
+            c.resource_id,
+            r.name,
+            c.encrypted_components,
+            c.key_version,
+            c.encryption_version,
+            c.encryption_algorithm,
+            c.encrypted_at
+        FROM ctc_records c
+        JOIN resources r ON r.id = c.resource_id
+        WHERE c.status = 'Active'
+          AND r.resource_type = 'employee'
+          AND c.effective_date BETWEEN $1 AND $2
+        ORDER BY r.name ASC
+        "#,
+    )
+    .bind(start_date)
+    .bind(end_date)
+    .fetch_all(&mut **tx)
+    .await
+    .map_err(|e| AppError::Database(e.to_string()))?;
+
+    build_compliance_report(rows).await
+}
+
+async fn build_compliance_report(rows: Vec<PgRow>) -> Result<ComplianceReport> {
     let crypto_svc = DefaultCtcCryptoService::new(EnvKeyProvider::new());
     let mut results = Vec::with_capacity(rows.len());
 

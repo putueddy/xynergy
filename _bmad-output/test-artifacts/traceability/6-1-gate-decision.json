@@ -1,0 +1,27 @@
+{
+  "schema_version": "0.1.0",
+  "evaluated_at": "2026-05-21T00:00:00Z",
+  "repo": "xynergy",
+  "target": {
+    "type": "story",
+    "id": "6.1",
+    "label": "Role-Based Dashboard"
+  },
+  "collection_status": "COLLECTED",
+  "gate_basis": "priority_thresholds",
+  "gate_status": "PASS_WITH_ADVISORY",
+  "rationale": "All four P0 acceptance criteria are FULL-covered by 18 backend integration tests in src/backend/tests/dashboard_tests.rs (10 from initial implementation + 8 from automation expansion). Backend dashboard suite executed 10/10 green during implementation; high-risk regression suites (team_tests, project_pl_tests, cash_flow_dashboard_tests, ctc_validation_report_tests, compliance_audit_report_tests = 132/132) re-ran green. Data isolation, sensitive-field guards, list bounds, empty-state, and security-boundary tests are all present. Decision is PASS_WITH_ADVISORY because the frontend Leptos /dashboard page has only compile-level verification (no committed component/E2E harness exists in the repo), 30-second polling is intentionally deferred to Story 6.2, and the login.rs redirect change has no automated frontend test. None of these are release-blocking — the backend is the authority for role scope per Story 6.1 architecture compliance.",
+  "p0_status": "MET",
+  "p1_status": "N/A",
+  "overall_status": "MET",
+  "critical_open": 0,
+  "advisory_gaps": [
+    "Frontend /dashboard rendering has no automated component/E2E coverage; verified by cargo check + Tailwind build only",
+    "30-second polling deferred to Story 6.2 (documented in story scope and Dev Notes)",
+    "login.rs role_dashboard_path() change has no automated frontend test"
+  ],
+  "links": {
+    "trace_report_path": "_bmad-output/test-artifacts/traceability/6-1-role-based-dashboard-traceability.md",
+    "e2e_trace_summary_path": "_bmad-output/test-artifacts/traceability/6-1-e2e-trace-summary.json"
+  }
+}

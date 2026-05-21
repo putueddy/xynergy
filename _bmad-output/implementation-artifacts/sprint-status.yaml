@@ -32,6 +32,10 @@
 generated: 2026-03-01
 last_updated: 2026-05-21
 # 5-4-compliance-audit-reports moved backlog -> review on 2026-05-21 by dev-story; review -> done on 2026-05-21 by code-review.
+# 6-1-role-based-dashboard moved backlog -> ready-for-dev on 2026-05-21 by create-story.
+# 6-1-role-based-dashboard moved ready-for-dev -> in-progress on 2026-05-21 by dev-story.
+# 6-1-role-based-dashboard moved in-progress -> review on 2026-05-21 by dev-story.
+# 6-1-role-based-dashboard moved review -> done on 2026-05-21 by code-review.
 project: xynergy
 project_key: NOKEY
 tracking_system: file-system
@@ -77,8 +81,8 @@ development_status:
   5-4-compliance-audit-reports: done
   epic-5-retrospective: optional
 
-  epic-6: backlog
-  6-1-role-based-dashboard: backlog
+  epic-6: in-progress
+  6-1-role-based-dashboard: done
   6-2-real-time-dashboard-updates: backlog
   6-3-project-health-dashboard: backlog
   6-4-team-utilization-dashboard: backlog

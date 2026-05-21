@@ -1,7 +1,7 @@
 //! CTC completeness reporting service.
 
 use serde::Serialize;
-use sqlx::{PgPool, Row};
+use sqlx::{postgres::PgRow, PgPool, Postgres, Row, Transaction};
 use uuid::Uuid;
 
 use crate::error::{AppError, Result};
@@ -67,6 +67,41 @@ pub async fn get_completeness_summary(
     .await
     .map_err(|e| AppError::Database(e.to_string()))?;
 
+    build_completeness_report(rows)
+}
+
+pub async fn get_completeness_summary_in_transaction(
+    tx: &mut Transaction<'_, Postgres>,
+    department_id: Option<Uuid>,
+) -> Result<CompletenessReport> {
+    let rows = sqlx::query(
+        r#"
+        SELECT
+            d.id AS department_id,
+            d.name AS department,
+            COUNT(r.id) AS total_employees,
+            COUNT(c.resource_id) AS with_ctc
+        FROM departments d
+        LEFT JOIN resources r
+            ON r.department_id = d.id
+           AND r.resource_type = 'employee'
+        LEFT JOIN ctc_records c
+            ON c.resource_id = r.id
+           AND c.status = 'Active'
+        WHERE ($1::uuid IS NULL OR d.id = $1)
+        GROUP BY d.id, d.name
+        ORDER BY d.name
+        "#,
+    )
+    .bind(department_id)
+    .fetch_all(&mut **tx)
+    .await
+    .map_err(|e| AppError::Database(e.to_string()))?;
+
+    build_completeness_report(rows)
+}
+
+fn build_completeness_report(rows: Vec<PgRow>) -> Result<CompletenessReport> {
     let mut departments = Vec::with_capacity(rows.len());
     let mut total_employees = 0i64;
     let mut total_with_ctc = 0i64;
@@ -134,6 +169,39 @@ pub async fn get_missing_employees(
     .await
     .map_err(|e| AppError::Database(e.to_string()))?;
 
+    build_missing_employees(rows)
+}
+
+pub async fn get_missing_employees_in_transaction(
+    tx: &mut Transaction<'_, Postgres>,
+    department_id: Option<Uuid>,
+) -> Result<Vec<MissingCtcEmployee>> {
+    let rows = sqlx::query(
+        r#"
+        SELECT
+            r.id,
+            r.name,
+            d.name AS department
+        FROM resources r
+        JOIN departments d ON d.id = r.department_id
+        LEFT JOIN ctc_records c
+            ON c.resource_id = r.id
+           AND c.status = 'Active'
+        WHERE r.resource_type = 'employee'
+          AND c.resource_id IS NULL
+          AND ($1::uuid IS NULL OR d.id = $1)
+        ORDER BY d.name, r.name
+        "#,
+    )
+    .bind(department_id)
+    .fetch_all(&mut **tx)
+    .await
+    .map_err(|e| AppError::Database(e.to_string()))?;
+
+    build_missing_employees(rows)
+}
+
+fn build_missing_employees(rows: Vec<PgRow>) -> Result<Vec<MissingCtcEmployee>> {
     let mut employees = Vec::with_capacity(rows.len());
     for row in rows {
         employees.push(MissingCtcEmployee {

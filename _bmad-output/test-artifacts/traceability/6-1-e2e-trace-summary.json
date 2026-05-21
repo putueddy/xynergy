@@ -1,0 +1,189 @@
+{
+  "schema_version": "0.1.0",
+  "snapshot_at": "2026-05-21T00:00:00Z",
+  "repo": "xynergy",
+  "collection_mode": "contract_static_plus_local_compile",
+  "collection_status": "COLLECTED",
+  "inventory_basis": "acceptance_criteria",
+  "gate_basis": "priority_thresholds",
+  "target": {
+    "type": "story",
+    "id": "6.1",
+    "label": "Role-Based Dashboard"
+  },
+  "decision_mode": "automated",
+  "evaluator": "Putu",
+  "confidence": "high",
+  "gate_status": "PASS_WITH_ADVISORY",
+  "gate_criteria": {
+    "p0_coverage_required": "100%",
+    "p0_coverage_actual": "100%",
+    "p0_status": "MET",
+    "p1_coverage_target": "90%",
+    "p1_coverage_minimum": "80%",
+    "p1_coverage_actual": "n/a",
+    "p1_status": "N/A",
+    "overall_coverage_minimum": "80%",
+    "overall_coverage_actual": "100%",
+    "overall_status": "MET",
+    "live_db_execution_status": "executed_during_implementation",
+    "regression_suites_status": "executed_during_implementation"
+  },
+  "coverage": {
+    "inventory": { "covered": 4, "total": 4, "pct": 100 },
+    "priority_breakdown": {
+      "P0": { "total": 4, "covered": 4, "pct": 100 },
+      "P1": { "total": 0, "covered": 0, "pct": null },
+      "P2": { "total": 0, "covered": 0, "pct": null },
+      "P3": { "total": 0, "covered": 0, "pct": null }
+    },
+    "by_level": {
+      "e2e":       { "tests": 0,  "criteria_covered": 0 },
+      "api":       { "tests": 18, "criteria_covered": 4 },
+      "component": { "tests": 0,  "criteria_covered": 0 },
+      "unit":      { "tests": 0,  "criteria_covered": 0 },
+      "other":     { "tests": 0,  "criteria_covered": 0 }
+    }
+  },
+  "tests": {
+    "files": 1,
+    "cases": 18,
+    "skipped_cases": 0,
+    "fixme_cases": 0,
+    "pending_cases": 0
+  },
+  "risk_summary": {
+    "critical_open": 0,
+    "high_open": 0,
+    "medium_open": 3,
+    "low_open": 1
+  },
+  "heuristics": {
+    "endpoint_gaps": 0,
+    "auth_negative_path_status": "present",
+    "error_path_status": "present",
+    "data_isolation_status": "present",
+    "list_bound_status": "present",
+    "sensitive_field_guard_status": "present",
+    "ui_journey_status": "missing_compile_only",
+    "ui_state_status": "missing_compile_only",
+    "polling_cleanup_status": "deferred_to_6_2"
+  },
+  "ac_to_tests": [
+    {
+      "ac": 1,
+      "title": "HR sees CTC Completeness, Recent CTC Changes, Pending Updates, Compliance Alerts",
+      "priority": "P0",
+      "coverage": "FULL",
+      "tests": [
+        "hr_dashboard_returns_hr_section_only",
+        "hr_recent_changes_do_not_expose_encrypted_fields",
+        "hr_pending_updates_sample_bounded_to_limit"
+      ]
+    },
+    {
+      "ac": 2,
+      "title": "Department Head sees Team Utilization, Budget, Overallocations, Upcoming Assignments (own dept)",
+      "priority": "P0",
+      "coverage": "FULL",
+      "tests": [
+        "dept_head_only_sees_own_department",
+        "dept_head_response_has_utilization_and_overallocation",
+        "dept_head_without_department_returns_403",
+        "dept_head_upcoming_excludes_past_allocations"
+      ]
+    },
+    {
+      "ac": 3,
+      "title": "Project Manager sees Project Health Cards, Active Projects, Margin Alerts (owned only)",
+      "priority": "P0",
+      "coverage": "FULL",
+      "tests": [
+        "project_manager_only_sees_owned_projects",
+        "project_manager_with_no_projects_returns_empty_state",
+        "project_manager_excludes_non_active_projects"
+      ]
+    },
+    {
+      "ac": 4,
+      "title": "Finance sees Cash Position, CTC Validation Status, Audit Alerts, Pending Export Requests",
+      "priority": "P0",
+      "coverage": "FULL",
+      "tests": [
+        "finance_dashboard_has_cash_and_audit_state",
+        "finance_validation_returns_no_data_when_no_payroll",
+        "finance_audit_alerts_count_recent_security_events"
+      ]
+    }
+  ],
+  "supporting_tests": {
+    "auth_security": [
+      "unauthenticated_dashboard_returns_401",
+      "invalid_bearer_token_returns_401",
+      "unsupported_role_returns_403"
+    ],
+    "contract": [
+      "dashboard_response_includes_recent_generated_at"
+    ],
+    "admin": [
+      "admin_dashboard_returns_admin_section"
+    ]
+  },
+  "non_ac_regression": {
+    "story_scoped": [],
+    "rerun_suites": {
+      "team_tests": 10,
+      "project_pl_tests": 10,
+      "cash_flow_dashboard_tests": 28,
+      "ctc_validation_report_tests": 36,
+      "compliance_audit_report_tests": 48
+    }
+  },
+  "totals": {
+    "story_scoped_tests": 18,
+    "regression_tests": 132,
+    "total_tests_considered": 150
+  },
+  "blockers": [],
+  "advisory_gaps": [
+    "Frontend src/frontend/src/pages/dashboard.rs has no committed automated component or E2E tests — only WASM cargo check + Tailwind build verified. No Leptos/Playwright harness exists in repo.",
+    "30-second polling explicitly deferred to Story 6.2; only manual refresh shipped in 6.1. Future polling implementation must avoid Interval::forget() (see Implementation Pitfalls).",
+    "Login redirect change (role_dashboard_path() in login.rs) has no automated frontend test; manual smoke required during release verification."
+  ],
+  "oracle": {
+    "resolution_mode": "formal_requirements",
+    "confidence": "high",
+    "sources": [
+      "_bmad-output/implementation-artifacts/6-1-role-based-dashboard.md",
+      "_bmad-output/planning-artifacts/epics.md",
+      "_bmad-output/planning-artifacts/prd.md"
+    ],
+    "external_pointer_status": "not_used",
+    "synthetic": false
+  },
+  "recommendations": [
+    {
+      "priority": "MEDIUM",
+      "action": "Add E2E or component coverage for /dashboard role rendering once a Leptos test harness exists; manual smoke today",
+      "requirements": ["UI-frontend-dashboard"]
+    },
+    {
+      "priority": "MEDIUM",
+      "action": "Add loading/empty/error/permission-denied state assertions for /dashboard frontend",
+      "requirements": ["UI-state-empty-error"]
+    },
+    {
+      "priority": "MEDIUM",
+      "action": "Story 6.2 should ship 30-second polling with leak-safe Interval cleanup (deferred from 6.1 by design)",
+      "requirements": []
+    },
+    {
+      "priority": "LOW",
+      "action": "Run /bmad-testarch-test-review on dashboard_tests.rs to confirm test-quality DoD",
+      "requirements": []
+    }
+  ],
+  "links": {
+    "trace_report_path": "_bmad-output/test-artifacts/traceability/6-1-role-based-dashboard-traceability.md"
+  }
+}

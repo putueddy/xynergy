@@ -10,6 +10,7 @@ pub mod ctc_completeness;
 pub mod ctc_crypto;
 pub mod ctc_validation_report;
 pub mod ctc_validator;
+pub mod dashboard_service;
 pub mod key_provider;
 pub mod project_cost_service;
 pub mod project_pl_service;
