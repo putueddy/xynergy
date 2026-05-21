@@ -2,8 +2,8 @@ use crate::timeline::{
     create_timeline_options, groups_to_js_array, items_to_js_array, Timeline, TimelineGroup,
     TimelineItem,
 };
-use leptos::either::Either;
 use js_sys::{Function, Reflect};
+use leptos::either::Either;
 use leptos::prelude::*;
 use wasm_bindgen::closure::Closure;
 use wasm_bindgen::JsCast;

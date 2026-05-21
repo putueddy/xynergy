@@ -6,6 +6,8 @@
 use bigdecimal::BigDecimal;
 use serde::{Deserialize, Serialize};
 
+use crate::error::{AppError, Result};
+
 /// BPJS configuration constants (configurable)
 pub struct BpjsConfig {
     /// BPJS Kesehatan employer rate (default: 4%)
@@ -45,6 +47,24 @@ impl Default for BpjsConfig {
             ketenagakerjaan_jp_cap: BigDecimal::from(10_547_400i64),
         }
     }
+}
+
+/// Resolve the BPJS Ketenagakerjaan JKK rate for the configured risk tier.
+pub fn jkk_rate_for_tier(tier: i32) -> Result<BigDecimal> {
+    let rate = match tier {
+        1 => "0.0024",
+        2 => "0.0054",
+        3 => "0.0089",
+        4 => "0.0174",
+        _ => {
+            return Err(AppError::Validation(
+                "Risk tier must be between 1 and 4".to_string(),
+            ))
+        }
+    };
+
+    rate.parse::<BigDecimal>()
+        .map_err(|e| AppError::Internal(format!("Failed to parse JKK rate: {}", e)))
 }
 
 /// CTC component breakdown

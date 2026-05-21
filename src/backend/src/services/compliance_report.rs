@@ -7,7 +7,9 @@ use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
 use crate::error::{AppError, Result};
-use crate::services::ctc_calculator::{calculate_bpjs, BpjsConfig, CtcComponents};
+use crate::services::ctc_calculator::{
+    calculate_bpjs, jkk_rate_for_tier, BpjsConfig, CtcComponents,
+};
 use crate::services::ctc_crypto::{CtcCryptoService, DefaultCtcCryptoService, EncryptedPayload};
 use crate::services::key_provider::EnvKeyProvider;
 
@@ -31,23 +33,6 @@ pub struct ComplianceReport {
     pub total_passed: i64,
     pub total_discrepancies: i64,
     pub compliance_rate_pct: f64,
-}
-
-fn jkk_rate_for_tier(tier: i32) -> Result<BigDecimal> {
-    let rate = match tier {
-        1 => "0.0024",
-        2 => "0.0054",
-        3 => "0.0089",
-        4 => "0.0174",
-        _ => {
-            return Err(AppError::Validation(
-                "Risk tier must be between 1 and 4".to_string(),
-            ))
-        }
-    };
-
-    rate.parse::<BigDecimal>()
-        .map_err(|e| AppError::Internal(format!("Failed to parse JKK rate: {}", e)))
 }
 
 fn value_as_i64(value: &serde_json::Value, field: &str) -> Result<i64> {

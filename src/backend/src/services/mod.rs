@@ -7,6 +7,7 @@ pub mod cost_preview;
 pub mod ctc_calculator;
 pub mod ctc_completeness;
 pub mod ctc_crypto;
+pub mod ctc_validation_report;
 pub mod ctc_validator;
 pub mod key_provider;
 pub mod project_cost_service;
@@ -22,10 +23,16 @@ pub mod user_service;
 
 pub use audit_log::{audit_payload, log_audit, recompute_entry_hash, user_id_from_headers};
 pub use compliance_report::{validate_bpjs_compliance, ComplianceReport, EmployeeComplianceResult};
-pub use ctc_calculator::{calculate_ctc, BpjsConfig, CtcCalculation, CtcComponents};
+pub use ctc_calculator::{
+    calculate_ctc, jkk_rate_for_tier, BpjsConfig, CtcCalculation, CtcComponents,
+};
 pub use ctc_completeness::{
     get_completeness_summary, get_missing_employees, CompletenessReport, DepartmentCompleteness,
     MissingCtcEmployee,
+};
+pub use ctc_validation_report::{
+    generate_validation_report, BpjsMismatchMetadata, ExcludedRecord, ValidationMismatch,
+    ValidationReport, ValidationReportFilters, MAX_SAMPLED_EMPLOYEE_IDS, PAYROLL_FRESHNESS_DAYS,
 };
 pub use ctc_validator::{
     has_errors, validate_ctc, validate_monetary_whole_numbers, CtcValidationInput, ValidationIssue,

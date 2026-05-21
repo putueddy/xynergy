@@ -17,18 +17,24 @@ pub fn HolidayForm(
     on_submit: Callback<HolidayFormData>,
     on_cancel: Callback<()>,
 ) -> impl IntoView {
-    let (name, set_name) = signal(editing_holiday
-        .as_ref()
-        .map(|h| h.name.clone())
-        .unwrap_or_default());
-    let (date, set_date) = signal(editing_holiday
-        .as_ref()
-        .map(|h| h.date.clone())
-        .unwrap_or_default());
-    let (description, set_description) = signal(editing_holiday
-        .as_ref()
-        .map(|h| h.description.clone())
-        .unwrap_or_default());
+    let (name, set_name) = signal(
+        editing_holiday
+            .as_ref()
+            .map(|h| h.name.clone())
+            .unwrap_or_default(),
+    );
+    let (date, set_date) = signal(
+        editing_holiday
+            .as_ref()
+            .map(|h| h.date.clone())
+            .unwrap_or_default(),
+    );
+    let (description, set_description) = signal(
+        editing_holiday
+            .as_ref()
+            .map(|h| h.description.clone())
+            .unwrap_or_default(),
+    );
 
     let handle_submit = move |ev: leptos::ev::SubmitEvent| {
         ev.prevent_default();

@@ -2,8 +2,8 @@ use crate::auth::{
     authenticated_delete, authenticated_get, authenticated_post_json, authenticated_put_json,
 };
 use crate::components::{HolidayForm, HolidayFormData};
-use leptos::prelude::*;
 use leptos::either::{Either, EitherOf3};
+use leptos::prelude::*;
 use serde::Deserialize;
 use uuid::Uuid;
 
@@ -45,13 +45,13 @@ pub fn HolidaysContent() -> impl IntoView {
         leptos::task::spawn_local(async move {
             set_form_submitting.set(true);
             set_error.set(None);
-        
+
             let result = if let Some(holiday_id) = editing_id {
                 update_holiday(holiday_id.to_string(), form_data).await
             } else {
                 create_holiday(form_data).await
             };
-        
+
             match result {
                 Ok(_) => match fetch_holidays().await {
                     Ok(data) => {
@@ -266,7 +266,7 @@ pub fn HolidaysContent() -> impl IntoView {
 
 /// Fetch all holidays from API
 async fn fetch_holidays() -> Result<Vec<Holiday>, String> {
-    let response = authenticated_get("http://localhost:3000/api/v1/holidays")
+    let response = authenticated_get("/api/v1/holidays")
         .await
         .map_err(|e| format!("Failed to fetch holidays: {}", e))?;
 
@@ -282,7 +282,7 @@ async fn fetch_holidays() -> Result<Vec<Holiday>, String> {
 
 /// Create a new holiday
 async fn create_holiday(form_data: HolidayFormData) -> Result<(), String> {
-    let response = authenticated_post_json("http://localhost:3000/api/v1/holidays", &form_data)
+    let response = authenticated_post_json("/api/v1/holidays", &form_data)
         .await
         .map_err(|e| format!("Failed to create holiday: {}", e))?;
 
@@ -300,7 +300,7 @@ async fn create_holiday(form_data: HolidayFormData) -> Result<(), String> {
 /// Update a holiday
 async fn update_holiday(holiday_id: String, form_data: HolidayFormData) -> Result<(), String> {
     let response = authenticated_put_json(
-        &format!("http://localhost:3000/api/v1/holidays/{}", holiday_id),
+        &format!("/api/v1/holidays/{}", holiday_id),
         &form_data,
     )
     .await
@@ -320,7 +320,7 @@ async fn update_holiday(holiday_id: String, form_data: HolidayFormData) -> Resul
 /// Delete a holiday
 async fn delete_holiday(holiday_id: String) -> Result<(), String> {
     let response = authenticated_delete(&format!(
-        "http://localhost:3000/api/v1/holidays/{}",
+        "/api/v1/holidays/{}",
         holiday_id
     ))
     .await

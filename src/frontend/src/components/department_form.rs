@@ -37,14 +37,18 @@ pub fn DepartmentForm(
     let is_edit = editing_department.is_some();
 
     // Form fields
-    let (name, set_name) = signal(editing_department
-        .as_ref()
-        .map(|d| d.name.clone())
-        .unwrap_or_default());
-    let (head_id, set_head_id) = signal(editing_department
-        .as_ref()
-        .map(|d| d.head_id.clone())
-        .unwrap_or_default());
+    let (name, set_name) = signal(
+        editing_department
+            .as_ref()
+            .map(|d| d.name.clone())
+            .unwrap_or_default(),
+    );
+    let (head_id, set_head_id) = signal(
+        editing_department
+            .as_ref()
+            .map(|d| d.head_id.clone())
+            .unwrap_or_default(),
+    );
 
     // Update form fields when editing_department changes
     Effect::new(move |_| {

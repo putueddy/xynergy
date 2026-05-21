@@ -83,7 +83,7 @@ pub fn AllocationForm(
         let start = start_date.get();
         let end = end_date.get();
         let include_wknd = include_weekend.get();
-    
+
         if !start.is_empty() && !end.is_empty() {
             if let (Ok(start_date), Ok(end_date)) = (
                 chrono::NaiveDate::parse_from_str(&start, "%Y-%m-%d"),
@@ -106,7 +106,7 @@ pub fn AllocationForm(
                     count
                 };
                 set_total_days.set(days.max(0) as i32);
-    
+
                 // Calculate hours per day (8 hours * allocation_percentage / 100)
                 if let Ok(percentage) = allocation_percentage.get().parse::<f64>() {
                     let hours = 8.0 * (percentage / 100.0);

@@ -37,13 +37,13 @@ pub fn DepartmentsContent() -> impl IntoView {
                 Ok(data) => set_departments.set(data),
                 Err(e) => set_error.set(Some(e)),
             }
-            
+
             // Load head candidates
             match fetch_head_candidates().await {
                 Ok(data) => set_head_candidates.set(data),
                 Err(e) => set_error.set(Some(e)),
             }
-            
+
             set_loading.set(false);
         });
     });
@@ -54,13 +54,13 @@ pub fn DepartmentsContent() -> impl IntoView {
         leptos::task::spawn_local(async move {
             set_form_submitting.set(true);
             set_error.set(None);
-        
+
             let result = if let Some(dept_id) = editing_id {
                 update_department(dept_id.to_string(), form_data).await
             } else {
                 create_department(form_data).await
             };
-        
+
             match result {
                 Ok(_) => match fetch_departments().await {
                     Ok(data) => {
@@ -291,7 +291,7 @@ pub fn DepartmentsContent() -> impl IntoView {
 
 /// Fetch all departments from API
 async fn fetch_departments() -> Result<Vec<Department>, String> {
-    let response = authenticated_get("http://localhost:3000/api/v1/departments")
+    let response = authenticated_get("/api/v1/departments")
         .await
         .map_err(|e| format!("Failed to fetch departments: {}", e))?;
 
@@ -310,7 +310,7 @@ async fn fetch_departments() -> Result<Vec<Department>, String> {
 
 /// Fetch head candidates from API
 async fn fetch_head_candidates() -> Result<Vec<HeadCandidate>, String> {
-    let response = authenticated_get("http://localhost:3000/api/v1/departments/head-candidates")
+    let response = authenticated_get("/api/v1/departments/head-candidates")
         .await
         .map_err(|e| format!("Failed to fetch head candidates: {}", e))?;
 
@@ -341,7 +341,7 @@ async fn create_department(form_data: DepartmentFormData) -> Result<(), String> 
     };
 
     let response = authenticated_post_json(
-        "http://localhost:3000/api/v1/departments",
+        "/api/v1/departments",
         &serde_json::json!({
             "name": form_data.name,
             "head_id": head_id,
@@ -379,7 +379,7 @@ async fn update_department(dept_id: String, form_data: DepartmentFormData) -> Re
     };
 
     let response = authenticated_put_json(
-        &format!("http://localhost:3000/api/v1/departments/{}", id),
+        &format!("/api/v1/departments/{}", id),
         &serde_json::json!({
             "name": form_data.name,
             "head_id": head_id,
@@ -406,7 +406,7 @@ async fn delete_department(dept_id: String) -> Result<(), String> {
         .map_err(|_| "Invalid department ID")?;
 
     let response =
-        authenticated_delete(&format!("http://localhost:3000/api/v1/departments/{}", id))
+        authenticated_delete(&format!("/api/v1/departments/{}", id))
             .await
             .map_err(|e| format!("Failed to delete department: {}", e))?;
 

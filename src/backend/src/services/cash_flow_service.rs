@@ -159,7 +159,9 @@ pub async fn get_cash_flow_dashboard(
     loop {
         month_buckets.push((current_year, current_month));
 
-        if current_year == normalized_end_date.year() && current_month == normalized_end_date.month() {
+        if current_year == normalized_end_date.year()
+            && current_month == normalized_end_date.month()
+        {
             break;
         }
 
@@ -205,7 +207,10 @@ pub async fn get_cash_flow_dashboard(
         let cash_out: i64 = row
             .try_get("cash_out_idr")
             .map_err(|e| AppError::Database(e.to_string()))?;
-        agg_map.insert((month_start.year(), month_start.month()), (cash_in, cash_out));
+        agg_map.insert(
+            (month_start.year(), month_start.month()),
+            (cash_in, cash_out),
+        );
     }
 
     let detail_rows = sqlx::query(
@@ -285,7 +290,10 @@ pub async fn get_cash_flow_dashboard(
     let total_cash_in: i64 = months.iter().map(|m| m.cash_in_idr).sum();
     let total_cash_out: i64 = months.iter().map(|m| m.cash_out_idr).sum();
     let net_cash_flow = total_cash_in - total_cash_out;
-    let ending_cumulative = months.last().map(|m| m.cumulative_position_idr).unwrap_or(0);
+    let ending_cumulative = months
+        .last()
+        .map(|m| m.cumulative_position_idr)
+        .unwrap_or(0);
 
     Ok(CashFlowDashboardResult {
         start_date: normalized_start_date,

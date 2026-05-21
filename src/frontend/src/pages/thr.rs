@@ -3,9 +3,9 @@ use crate::auth::{
     validate_token, AuthContext,
 };
 use chrono::NaiveDate;
+use leptos::either::{Either, EitherOf3};
 use leptos::prelude::*;
 use leptos_router::hooks::*;
-use leptos::either::{Either, EitherOf3};
 use serde_json::{json, Value};
 
 #[derive(Clone, Debug)]
@@ -87,7 +87,7 @@ pub fn ThrManagement() -> impl IntoView {
                 navigate("/login", Default::default());
                 return;
             }
-        
+
             if let Some(user) = auth.user.get() {
                 set_auth_checked.set(true);
                 if user.role != "hr" {
@@ -95,11 +95,11 @@ pub fn ThrManagement() -> impl IntoView {
                 }
                 return;
             }
-        
+
             if auth_check_in_progress.get() {
                 return;
             }
-        
+
             let token = match current_access_token(&auth) {
                 Some(t) => t,
                 None => {
@@ -107,7 +107,7 @@ pub fn ThrManagement() -> impl IntoView {
                     return;
                 }
             };
-        
+
             set_auth_check_in_progress.set(true);
             let navigate = navigate.clone();
             leptos::task::spawn_local(async move {
@@ -145,7 +145,7 @@ pub fn ThrManagement() -> impl IntoView {
                     }
                     Err(e) => set_error.set(Some(e)),
                 }
-                
+
                 set_loading.set(false);
             });
         }
@@ -228,7 +228,7 @@ pub fn ThrManagement() -> impl IntoView {
                         "Monthly accrual completed. Processed: {}, Skipped: {}",
                         processed, skipped
                     )));
-        
+
                     let selected = selected_resource.get();
                     if !selected.is_empty() {
                         match fetch_thr_accrual_history(&selected).await {
@@ -489,14 +489,14 @@ pub fn ThrManagement() -> impl IntoView {
                                                     "Select an employee to view accrual history."
                                                 </p>
                                             })
-                                                
+
                                         } else if accrual_history.get().is_empty() {
                                             EitherOf3::B(view! {
                                                 <p class="empty-state">
                                                     "No accrual history found for this employee."
                                                 </p>
                                             })
-                                                
+
                                         } else {
                                             EitherOf3::C(view! {
                                                 <div class="overflow-x-auto">
@@ -530,7 +530,7 @@ pub fn ThrManagement() -> impl IntoView {
                                                     </table>
                                                 </div>
                                             })
-                                                
+
                                         }
                                     }}
                                 </div>
@@ -565,7 +565,7 @@ pub fn ThrManagement() -> impl IntoView {
                                                 "No report data loaded. Generate a report for a month."
                                             </p>
                                         })
-                                            
+
                                     } else {
                                         Either::Right(view! {
                                             <div class="overflow-x-auto">
@@ -607,13 +607,13 @@ pub fn ThrManagement() -> impl IntoView {
                                                 </table>
                                             </div>
                                         })
-                                            
+
                                     }
                                 }}
                             </div>
                         </div>
                     })
-                        
+
                 }}
             </div>
 
@@ -644,7 +644,7 @@ fn value_to_i64(value: &Value) -> Option<i64> {
 }
 
 async fn fetch_resources() -> Result<Vec<ResourceOption>, String> {
-    let response = authenticated_get("http://localhost:3000/api/v1/resources")
+    let response = authenticated_get("/api/v1/resources")
         .await
         .map_err(|e| format!("Failed to fetch resources: {}", e))?;
 
@@ -674,7 +674,7 @@ async fn fetch_resources() -> Result<Vec<ResourceOption>, String> {
 
 async fn fetch_thr_config(resource_id: &str) -> Result<ThrConfig, String> {
     let response = authenticated_get(&format!(
-        "http://localhost:3000/api/v1/thr/config/{}",
+        "/api/v1/thr/config/{}",
         resource_id
     ))
     .await
@@ -711,7 +711,7 @@ async fn fetch_thr_config(resource_id: &str) -> Result<ThrConfig, String> {
 
 async fn configure_thr(resource_id: String, payload: Value) -> Result<(), String> {
     let response = authenticated_post_json(
-        &format!("http://localhost:3000/api/v1/thr/configure/{}", resource_id),
+        &format!("/api/v1/thr/configure/{}", resource_id),
         &payload,
     )
     .await
@@ -734,7 +734,7 @@ async fn run_thr_monthly_accrual(period: &str) -> Result<(i64, i64), String> {
     });
 
     let response =
-        authenticated_post_json("http://localhost:3000/api/v1/thr/accrual/run", &payload)
+        authenticated_post_json("/api/v1/thr/accrual/run", &payload)
             .await
             .map_err(|e| format!("Failed to run THR accrual: {}", e))?;
 
@@ -765,7 +765,7 @@ async fn run_thr_monthly_accrual(period: &str) -> Result<(i64, i64), String> {
 
 async fn fetch_thr_accrual_history(resource_id: &str) -> Result<Vec<ThrAccrualHistoryRow>, String> {
     let response = authenticated_get(&format!(
-        "http://localhost:3000/api/v1/thr/accrual/{}",
+        "/api/v1/thr/accrual/{}",
         resource_id
     ))
     .await
@@ -821,7 +821,7 @@ async fn fetch_thr_accrual_history(resource_id: &str) -> Result<Vec<ThrAccrualHi
 
 async fn fetch_thr_report(month: &str) -> Result<Vec<ThrReportRow>, String> {
     let response = authenticated_get(&format!(
-        "http://localhost:3000/api/v1/thr/report?month={}",
+        "/api/v1/thr/report?month={}",
         month
     ))
     .await

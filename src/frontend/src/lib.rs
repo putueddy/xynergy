@@ -1,3 +1,5 @@
+#![recursion_limit = "256"]
+
 use leptos::prelude::*;
 use leptos_meta::*;
 use leptos_router::components::*;
@@ -17,6 +19,7 @@ use pages::{
     cash_flow::CashFlowPage,
     ctc::CtcManagement,
     ctc_completeness::CtcCompleteness,
+    ctc_validation::CtcValidationPage,
     dashboard::Dashboard,
     home::Home,
     login::Login,
@@ -120,6 +123,7 @@ pub fn App() -> impl IntoView {
                     <Route path=leptos_router::path!("/ctc/completeness") view=CtcCompleteness/>
                     <Route path=leptos_router::path!("/thr") view=ThrManagement/>
                     <Route path=leptos_router::path!("/finance/cash-flow") view=CashFlowPage/>
+                    <Route path=leptos_router::path!("/finance/ctc-validation") view=CtcValidationPage/>
                     <ParentRoute path=leptos_router::path!("/settings") view=SettingsPage>
                         <Route path=leptos_router::path!("/holidays") view=SettingsHolidaysPage/>
                         <Route path=leptos_router::path!("/users") view=SettingsUsersPage/>

@@ -16,10 +16,11 @@ use crate::error::{AppError, Result};
 use crate::services::ctc_crypto::{CtcCryptoService, DefaultCtcCryptoService, EncryptedPayload};
 use crate::services::key_provider::EnvKeyProvider;
 use crate::services::{
-    audit_log::user_claims_from_headers, calculate_ctc, get_completeness_summary,
-    get_missing_employees, has_errors, log_audit, validate_bpjs_compliance, validate_ctc,
-    validate_monetary_whole_numbers, BpjsConfig, CompletenessReport, ComplianceReport,
-    CtcComponents, CtcValidationInput, MissingCtcEmployee,
+    audit_log::user_claims_from_headers, calculate_ctc, generate_validation_report,
+    get_completeness_summary, get_missing_employees, has_errors, jkk_rate_for_tier, log_audit,
+    validate_bpjs_compliance, validate_ctc, validate_monetary_whole_numbers, BpjsConfig,
+    CompletenessReport, ComplianceReport, CtcComponents, CtcValidationInput, MissingCtcEmployee,
+    ValidationReport, ValidationReportFilters, MAX_SAMPLED_EMPLOYEE_IDS,
 };
 
 async fn get_ctc_components(
@@ -764,22 +765,6 @@ fn build_validation_input_from_components(value: &serde_json::Value) -> Result<C
     })
 }
 
-fn jkk_rate_for_tier(tier: i32) -> Result<BigDecimal> {
-    let numerator = match tier {
-        1 => 24i64,
-        2 => 54i64,
-        3 => 89i64,
-        4 => 174i64,
-        _ => {
-            return Err(AppError::Validation(
-                "Risk tier must be between 1 and 4".to_string(),
-            ))
-        }
-    };
-
-    Ok(BigDecimal::from(numerator) / BigDecimal::from(10_000i64))
-}
-
 /// Calculate BPJS preview (for confirmation before saving)
 async fn calculate_bpjs_preview(
     State(_pool): State<PgPool>,
@@ -998,6 +983,7 @@ async fn create_ctc_record(
             "bpjs_ketenagakerjaan_employee": bpjs_ket_employee,
             "thr_monthly_accrual": thr_monthly,
             "total_monthly_ctc": total_ctc,
+            "risk_tier": req.risk_tier.unwrap_or(1),
         }))
         .await?;
 
@@ -1328,6 +1314,138 @@ async fn get_ctc_completeness_missing(
     Ok(Json(missing))
 }
 
+#[derive(Debug, Deserialize)]
+struct ValidationReportQuery {
+    start_date: Option<String>,
+    end_date: Option<String>,
+    limit: Option<i64>,
+    offset: Option<i64>,
+    /// Comma-separated UUIDs. When present, narrows the report to the
+    /// listed resource ids. Capped at MAX_SAMPLED_EMPLOYEE_IDS.
+    employee_ids: Option<String>,
+}
+
+fn parse_required_date(field_name: &str, value: Option<&str>) -> Result<NaiveDate> {
+    let value = value
+        .filter(|v| !v.trim().is_empty())
+        .ok_or_else(|| AppError::Validation(format!("{} is required", field_name)))?;
+    NaiveDate::parse_from_str(value, "%Y-%m-%d")
+        .map_err(|_| AppError::Validation(format!("{} must be YYYY-MM-DD", field_name)))
+}
+
+fn parse_employee_ids(raw: Option<&str>) -> Result<Option<Vec<Uuid>>> {
+    let Some(raw) = raw else {
+        return Ok(None);
+    };
+    if raw.len() > MAX_SAMPLED_EMPLOYEE_IDS * 40 {
+        return Err(AppError::Validation(format!(
+            "employee_ids query parameter is too long; at most {} distinct ids are allowed",
+            MAX_SAMPLED_EMPLOYEE_IDS
+        )));
+    }
+
+    let mut parsed = Vec::new();
+    for raw_id in raw.split(',').map(str::trim).filter(|s| !s.is_empty()) {
+        let id = Uuid::parse_str(raw_id)
+            .map_err(|_| AppError::Validation(format!("Invalid employee_id UUID: {}", raw_id)))?;
+        if !parsed.contains(&id) {
+            parsed.push(id);
+        }
+        if parsed.len() > MAX_SAMPLED_EMPLOYEE_IDS {
+            return Err(AppError::Validation(format!(
+                "employee_ids may contain at most {} distinct ids per request",
+                MAX_SAMPLED_EMPLOYEE_IDS
+            )));
+        }
+    }
+
+    if parsed.is_empty() {
+        return Err(AppError::Validation(
+            "employee_ids must contain at least one valid UUID".to_string(),
+        ));
+    }
+    Ok(Some(parsed))
+}
+
+async fn get_ctc_validation_report(
+    State(pool): State<PgPool>,
+    headers: HeaderMap,
+    Query(query): Query<ValidationReportQuery>,
+) -> Result<Json<ValidationReport>> {
+    let claims = user_claims_from_headers(&headers)?
+        .ok_or_else(|| AppError::Authentication("Missing token".to_string()))?;
+    let user_id = Uuid::parse_str(&claims.sub)
+        .map_err(|_| AppError::Authentication("Invalid user ID in token".to_string()))?;
+
+    if !matches!(claims.role.as_str(), "finance" | "admin") {
+        log_audit(
+            &pool,
+            Some(user_id),
+            "ACCESS_DENIED",
+            "ctc_validation_report",
+            Uuid::nil(),
+            json!({
+                "reason": "insufficient_role",
+                "attempted_role": claims.role,
+                "action": "get_ctc_validation_report",
+            }),
+        )
+        .await
+        .ok();
+        return Err(AppError::Forbidden("Insufficient permissions".to_string()));
+    }
+
+    let start_date = parse_required_date("start_date", query.start_date.as_deref())?;
+    let end_date = parse_required_date("end_date", query.end_date.as_deref())?;
+
+    if end_date < start_date {
+        return Err(AppError::Validation(
+            "end_date must be greater than or equal to start_date".to_string(),
+        ));
+    }
+
+    let employee_ids = parse_employee_ids(query.employee_ids.as_deref())?;
+    let sampled_count = employee_ids.as_ref().map(|v| v.len() as i64).unwrap_or(0);
+
+    let filters = ValidationReportFilters {
+        start_date,
+        end_date,
+        limit: query.limit,
+        offset: query.offset,
+        employee_ids,
+    };
+
+    let mut tx = crate::services::begin_rls_transaction(&pool, &headers).await?;
+    let report = generate_validation_report(&mut tx, filters).await?;
+    tx.commit()
+        .await
+        .map_err(|e| AppError::Database(e.to_string()))?;
+
+    log_audit(
+        &pool,
+        Some(user_id),
+        "ctc_validation_report_generated",
+        "ctc_validation_report",
+        user_id,
+        json!({
+            "start_date": start_date,
+            "end_date": end_date,
+            "total_compared": report.total_compared,
+            "total_matches": report.total_matches,
+            "total_discrepancies": report.total_discrepancies,
+            "excluded_count": report.excluded_count,
+            "bpjs_error_count": report.bpjs_error_count,
+            "match_rate_pct": report.match_rate_pct,
+            "sampled": report.sampled,
+            "sampled_count": sampled_count,
+            "payroll_coverage_pct": report.payroll_coverage_pct,
+        }),
+    )
+    .await?;
+
+    Ok(Json(report))
+}
+
 async fn get_ctc_compliance_report(
     State(pool): State<PgPool>,
     headers: HeaderMap,
@@ -1378,6 +1496,7 @@ pub fn ctc_routes() -> Router<PgPool> {
             get(get_ctc_completeness_missing),
         )
         .route("/ctc/compliance-report", get(get_ctc_compliance_report))
+        .route("/ctc/validation-report", get(get_ctc_validation_report))
         .route("/ctc/:resource_id/components", get(get_ctc_components))
         .route(
             "/ctc/:resource_id/components",

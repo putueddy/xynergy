@@ -3,9 +3,7 @@ use crate::auth::{
     use_auth,
 };
 use crate::components::resource_list::Resource;
-use crate::components::{
-    resource_form::ResourceFormData, ResourceForm, ResourceList,
-};
+use crate::components::{resource_form::ResourceFormData, ResourceForm, ResourceList};
 use leptos::either::{Either, EitherOf3};
 use leptos::prelude::*;
 use leptos_router::hooks::*;
@@ -50,12 +48,12 @@ pub fn Resources() -> impl IntoView {
                 Ok(data) => set_resources.set(data),
                 Err(e) => set_error.set(Some(e)),
             }
-            
+
             match fetch_departments().await {
                 Ok(data) => set_departments.set(data),
                 Err(e) => set_error.set(Some(e)),
             }
-            
+
             set_loading.set(false);
         });
     });
@@ -66,13 +64,13 @@ pub fn Resources() -> impl IntoView {
         leptos::task::spawn_local(async move {
             set_loading.set(true);
             set_error.set(None);
-        
+
             let result = if let Some(resource) = editing {
                 update_resource(resource.id, form_data).await
             } else {
                 create_resource(form_data).await
             };
-        
+
             match result {
                 Ok(_) => {
                     // Reload resources
@@ -96,7 +94,7 @@ pub fn Resources() -> impl IntoView {
         leptos::task::spawn_local(async move {
             set_loading.set(true);
             set_error.set(None);
-        
+
             match delete_resource(id).await {
                 Ok(_) => {
                     // Reload resources

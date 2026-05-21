@@ -3,8 +3,8 @@ use crate::auth::{
     use_auth,
 };
 use crate::components::{DepartmentOption, UserEditData, UserForm, UserFormData};
-use leptos::prelude::*;
 use leptos::either::{Either, EitherOf3};
+use leptos::prelude::*;
 use serde::Deserialize;
 use uuid::Uuid;
 
@@ -54,13 +54,13 @@ pub fn UsersContent() -> impl IntoView {
                 Ok(data) => set_users.set(data),
                 Err(e) => set_error.set(Some(e)),
             }
-            
+
             // Load departments
             match fetch_departments().await {
                 Ok(data) => set_departments.set(data),
                 Err(e) => set_error.set(Some(e)),
             }
-            
+
             set_loading.set(false);
         });
     });
@@ -71,13 +71,13 @@ pub fn UsersContent() -> impl IntoView {
         leptos::task::spawn_local(async move {
             set_form_submitting.set(true);
             set_error.set(None);
-        
+
             let result = if let Some(user_id) = editing_id {
                 update_user_form(user_id.to_string(), form_data).await
             } else {
                 create_user(form_data).await
             };
-        
+
             match result {
                 Ok(_) => {
                     // Reload users
@@ -444,7 +444,7 @@ pub fn UsersContent() -> impl IntoView {
 
 /// Fetch all users from API
 async fn fetch_users() -> Result<Vec<User>, String> {
-    let response = authenticated_get("http://localhost:3000/api/v1/users")
+    let response = authenticated_get("/api/v1/users")
         .await
         .map_err(|e| format!("Failed to fetch users: {}", e))?;
 
@@ -462,7 +462,7 @@ async fn fetch_users() -> Result<Vec<User>, String> {
 
 /// Fetch all departments from API
 async fn fetch_departments() -> Result<Vec<Department>, String> {
-    let response = authenticated_get("http://localhost:3000/api/v1/departments")
+    let response = authenticated_get("/api/v1/departments")
         .await
         .map_err(|e| format!("Failed to fetch departments: {}", e))?;
 
@@ -493,7 +493,7 @@ async fn create_user(form_data: UserFormData) -> Result<(), String> {
     };
 
     let response = authenticated_post_json(
-        "http://localhost:3000/api/v1/users",
+        "/api/v1/users",
         &serde_json::json!({
             "email": form_data.email,
             "password": form_data.password,
@@ -539,7 +539,7 @@ async fn update_user_form(user_id: String, form_data: UserFormData) -> Result<()
     };
 
     let response = authenticated_put_json(
-        &format!("http://localhost:3000/api/v1/users/{}", id),
+        &format!("/api/v1/users/{}", id),
         &serde_json::json!({
             "email": form_data.email,
             "first_name": form_data.first_name,
@@ -571,7 +571,7 @@ async fn update_user_form(user_id: String, form_data: UserFormData) -> Result<()
 async fn delete_user(user_id: String) -> Result<(), String> {
     let id = user_id.parse::<Uuid>().map_err(|_| "Invalid user ID")?;
 
-    let response = authenticated_delete(&format!("http://localhost:3000/api/v1/users/{}", id))
+    let response = authenticated_delete(&format!("/api/v1/users/{}", id))
         .await
         .map_err(|e| format!("Failed to delete user: {}", e))?;
 

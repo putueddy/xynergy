@@ -1,0 +1,95 @@
+{
+  "schema_version": "0.1.0",
+  "snapshot_at": "2026-05-20T00:00:00Z",
+  "repo": "xynergy",
+  "collection_mode": "contract_static",
+  "collection_status": "COLLECTED",
+  "inventory_basis": "acceptance_criteria",
+  "gate_basis": "priority_thresholds",
+  "source_sha": "",
+  "target": { "type": "story", "id": "5.3", "label": "CTC Validation Reports" },
+  "decision_mode": "automated",
+  "evaluator": "Putu",
+  "confidence": "high",
+  "oracle": {
+    "resolution_mode": "formal_requirements",
+    "confidence": "high",
+    "sources": [
+      "_bmad-output/implementation-artifacts/5-3-ctc-validation-reports.md",
+      "_bmad-output/planning-artifacts/epics.md",
+      "_bmad-output/planning-artifacts/prd.md"
+    ],
+    "external_pointer_status": "not_used",
+    "synthetic": false
+  },
+  "coverage": {
+    "inventory": { "covered": 4, "total": 4, "pct": 100 },
+    "priority_breakdown": {
+      "P0": { "total": 4, "covered": 4, "pct": 100 },
+      "P1": { "total": 0, "covered": 0, "pct": 100 },
+      "P2": { "total": 0, "covered": 0, "pct": 100 },
+      "P3": { "total": 0, "covered": 0, "pct": 100 }
+    },
+    "by_level": {
+      "e2e":       { "tests": 0,  "criteria_covered": 0 },
+      "api":       { "tests": 36, "criteria_covered": 4 },
+      "component": { "tests": 0,  "criteria_covered": 0 },
+      "unit":      { "tests": 9,  "criteria_covered": 3 },
+      "other":     { "tests": 0,  "criteria_covered": 0 }
+    }
+  },
+  "tests": {
+    "files": 2,
+    "cases": 45,
+    "skipped_cases": 0,
+    "fixme_cases": 0,
+    "pending_cases": 0
+  },
+  "risk_summary": {
+    "critical_open": 0,
+    "high_open": 1,
+    "medium_open": 1,
+    "low_open": 0
+  },
+  "heuristics": {
+    "endpoint_gaps": 0,
+    "auth_negative_path_status": "present",
+    "error_path_status": "present",
+    "ui_journey_status": "manual_only",
+    "ui_state_status": "manual_only"
+  },
+  "blockers": [
+    "Final 36-test integration suite requires live PostgreSQL execution before release approval"
+  ],
+  "recommendations": [
+    {
+      "priority": "HIGH",
+      "action": "Execute the final 36-test integration suite and regression suites against live PostgreSQL before merge",
+      "requirements": ["AC1","AC2","AC3","AC4"]
+    },
+    {
+      "priority": "MEDIUM",
+      "action": "Add an E2E smoke for /finance/ctc-validation (drilldown a11y)",
+      "requirements": ["AC2","AC3"]
+    }
+  ],
+  "gate_status": "CONCERNS",
+  "gate_criteria": {
+    "p0_coverage_required": "100%",
+    "p0_coverage_actual": "100%",
+    "p0_status": "MET",
+    "p1_coverage_target": "90%",
+    "p1_coverage_minimum": "80%",
+    "p1_coverage_actual": "100%",
+    "p1_status": "MET",
+    "overall_coverage_minimum": "80%",
+    "overall_coverage_actual": "100%",
+    "overall_status": "MET"
+  },
+  "links": {
+    "trace_report_path": "_bmad-output/test-artifacts/traceability/5-3-ctc-validation-reports-traceability.md",
+    "trace_report_url": "",
+    "artifact_url": "",
+    "journey_evidence_url": ""
+  }
+}

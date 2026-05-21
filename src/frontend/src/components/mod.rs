@@ -13,10 +13,10 @@ pub mod settings_sidebar;
 pub mod timeline_chart;
 pub mod user_form;
 
-pub use app_sidebar::AppSidebar;
 pub use allocation_form::{
     AllocationEditData, AllocationForm, AllocationFormData, ProjectOption, ResourceOption,
 };
+pub use app_sidebar::AppSidebar;
 pub use department_form::{DepartmentEditData, DepartmentForm, DepartmentFormData, HeadCandidate};
 pub use gantt_chart::{GanttChart, GanttTaskItem};
 pub use holiday_form::{HolidayForm, HolidayFormData};
@@ -27,7 +27,6 @@ pub use resource_list::ResourceList;
 pub use settings_sidebar::SettingsSidebar;
 pub use timeline_chart::{AllocationItem, ResourceGroup, TimelineChart};
 pub use user_form::{DepartmentOption, UserEditData, UserForm, UserFormData};
-
 
 /// Button component - Primary style
 #[component]

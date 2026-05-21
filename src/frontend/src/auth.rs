@@ -97,14 +97,14 @@ fn setup_token_refresh(
     leptos::task::spawn_local(async move {
         // Refresh token every 14 minutes (token expires at 15 minutes)
         let refresh_interval = 14 * 60 * 1000; // 14 minutes in milliseconds
-    
+
         loop {
             // Wait for the refresh interval
             gloo_timers::future::TimeoutFuture::new(refresh_interval).await;
-    
+
             // Check if we have both tokens
             let current_refresh = refresh_token_signal.get();
-    
+
             if let Some(refresh) = current_refresh {
                 // Attempt to refresh the token
                 match refresh_access_token(&refresh).await {
@@ -112,7 +112,7 @@ fn setup_token_refresh(
                         // Update signals
                         token_signal.set(Some(new_token.clone()));
                         refresh_token_signal.set(Some(new_refresh.clone()));
-    
+
                         // Update localStorage
                         if let Ok(storage) = web_sys::window().unwrap().local_storage() {
                             if let Some(storage) = storage {
@@ -126,7 +126,7 @@ fn setup_token_refresh(
                         web_sys::console::error_1(&format!("Token refresh failed: {}", e).into());
                         token_signal.set(None);
                         refresh_token_signal.set(None);
-    
+
                         if let Ok(storage) = web_sys::window().unwrap().local_storage() {
                             if let Some(storage) = storage {
                                 let _ = storage.remove_item("auth_token");

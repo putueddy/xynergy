@@ -30,6 +30,7 @@
 # - Dev moves story to review, then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-03-01
+last_updated: 2026-05-20
 project: xynergy
 project_key: NOKEY
 tracking_system: file-system
@@ -71,7 +72,7 @@ development_status:
   epic-5: in-progress
   5-1-cash-flow-entry: done
   5-2-cash-flow-dashboard: done
-  5-3-ctc-validation-reports: ready-for-dev
+  5-3-ctc-validation-reports: done
   5-4-compliance-audit-reports: backlog
   epic-5-retrospective: optional
 

@@ -3,8 +3,8 @@ use crate::auth::{
     use_auth,
 };
 use crate::components::{
-    AllocationEditData, AllocationForm, AllocationFormData, ProjectOption,
-    ResourceOption, TimelineChart,
+    AllocationEditData, AllocationForm, AllocationFormData, ProjectOption, ResourceOption,
+    TimelineChart,
 };
 use crate::timeline::{TimelineGroup, TimelineItem};
 use chrono::{Datelike, Weekday};
@@ -90,25 +90,25 @@ pub fn Allocations() -> impl IntoView {
                 Ok(data) => set_allocations.set(data),
                 Err(e) => set_error.set(Some(e)),
             }
-            
+
             // Load resources
             match fetch_resources().await {
                 Ok(data) => set_resources.set(data),
                 Err(e) => set_error.set(Some(e)),
             }
-            
+
             // Load projects
             match fetch_projects().await {
                 Ok(data) => set_projects.set(data),
                 Err(e) => set_error.set(Some(e)),
             }
-            
+
             // Load holidays
             match fetch_holidays().await {
                 Ok(data) => set_holidays.set(data),
                 Err(e) => set_error.set(Some(e)),
             }
-            
+
             set_loading.set(false);
         });
     });
@@ -119,7 +119,7 @@ pub fn Allocations() -> impl IntoView {
 
     Effect::new(move |_| {
         let all_allocations = allocations.get();
-    
+
         // Create groups from unique resources
         let mut resource_map = std::collections::HashMap::new();
         for allocation in &all_allocations {
@@ -127,14 +127,14 @@ pub fn Allocations() -> impl IntoView {
                 .entry(allocation.resource_id.clone())
                 .or_insert_with(|| (allocation.resource_name.clone(), 0.0));
         }
-    
+
         // Calculate total allocation percentage per resource
         for allocation in &all_allocations {
             if let Some((_, total)) = resource_map.get_mut(&allocation.resource_id) {
                 *total += allocation.allocation_percentage;
             }
         }
-    
+
         // Create timeline groups - no background color on rows
         // Sort by resource name for stable ordering
         let mut groups: Vec<TimelineGroup> = resource_map
@@ -149,7 +149,7 @@ pub fn Allocations() -> impl IntoView {
             )
             .collect();
         groups.sort_by(|a, b| a.content.cmp(&b.content));
-    
+
         // Create timeline items from allocations
         // Assign consistent colors to projects
         let mut project_colors: std::collections::HashMap<
@@ -310,7 +310,7 @@ pub fn Allocations() -> impl IntoView {
         ];
         let mut color_index = 0;
         let mut items: Vec<TimelineItem> = Vec::new();
-    
+
         for a in all_allocations {
             // Get or assign color for this project
             let (color, bg_class, text_class, text_color) = project_colors
@@ -327,7 +327,7 @@ pub fn Allocations() -> impl IntoView {
             } else {
                 ""
             };
-    
+
             if a.include_weekend {
                 // Continuous allocation from start to end
                 // Add one day to end date to make it inclusive
@@ -340,7 +340,7 @@ pub fn Allocations() -> impl IntoView {
                 } else {
                     a.end_date.clone()
                 };
-    
+
                 items.push(TimelineItem {
                     id: a.id.to_string(),
                     group: Some(a.resource_id.to_string()),
@@ -367,10 +367,10 @@ pub fn Allocations() -> impl IntoView {
                     // Get holiday dates as a set for O(1) lookup
                     let holiday_dates: std::collections::HashSet<String> =
                         holidays.get().iter().map(|h| h.date.clone()).collect();
-    
+
                     let mut current_start: Option<chrono::NaiveDate> = None;
                     let mut current_end: Option<chrono::NaiveDate> = None;
-    
+
                     let mut current = start_date;
                     while current <= end_date {
                         let weekday = current.weekday();
@@ -379,7 +379,7 @@ pub fn Allocations() -> impl IntoView {
                         let current_date_str = current.format("%Y-%m-%d").to_string();
                         let is_holiday = holiday_dates.contains(&current_date_str);
                         let is_working_day = !is_weekend && !is_holiday;
-    
+
                         if is_working_day {
                             if current_start.is_none() {
                                 current_start = Some(current);
@@ -416,10 +416,10 @@ pub fn Allocations() -> impl IntoView {
                             current_start = None;
                             current_end = None;
                         }
-    
+
                         current = current + chrono::Duration::days(1);
                     }
-    
+
                     // Create final item if there's an ongoing working period
                     if let (Some(start), Some(end)) = (current_start, current_end) {
                         // Add one day to make end date inclusive
@@ -447,7 +447,7 @@ pub fn Allocations() -> impl IntoView {
                 }
             }
         }
-    
+
         // Add holiday background items
         for holiday in holidays.get() {
             if let Ok(date) = chrono::NaiveDate::parse_from_str(&holiday.date, "%Y-%m-%d") {
@@ -467,7 +467,7 @@ pub fn Allocations() -> impl IntoView {
                 });
             }
         }
-    
+
         // Add weekend background items for the visible range (today ± 45 days for scrolling)
         {
             let today = chrono::Local::now().date_naive();
@@ -497,7 +497,7 @@ pub fn Allocations() -> impl IntoView {
                 current += chrono::Duration::days(1);
             }
         }
-    
+
         set_timeline_groups.set(groups);
         set_timeline_items.set(items);
     });
@@ -508,13 +508,13 @@ pub fn Allocations() -> impl IntoView {
         leptos::task::spawn_local(async move {
             set_form_submitting.set(true);
             set_error.set(None);
-        
+
             let result = if let Some(allocation_id) = editing_id {
                 update_allocation_form(allocation_id.to_string(), form_data).await
             } else {
                 create_allocation(form_data).await
             };
-        
+
             match result {
                 Ok(_) => {
                     // Reload allocations
@@ -577,7 +577,7 @@ pub fn Allocations() -> impl IntoView {
             "december",
         ];
         let mut rules = String::new();
-    
+
         // Holiday axis label highlighting
         for holiday in holidays.get() {
             if let Ok(date) = chrono::NaiveDate::parse_from_str(&holiday.date, "%Y-%m-%d") {
@@ -590,7 +590,7 @@ pub fn Allocations() -> impl IntoView {
                 ));
             }
         }
-    
+
         // Weekend axis label highlighting (same style as holidays)
         {
             let today = chrono::Local::now().date_naive();
@@ -611,7 +611,7 @@ pub fn Allocations() -> impl IntoView {
                 current += chrono::Duration::days(1);
             }
         }
-    
+
         rules
     });
 
@@ -895,7 +895,7 @@ pub fn Allocations() -> impl IntoView {
 
 /// Fetch all allocations from API
 async fn fetch_allocations() -> Result<Vec<Allocation>, String> {
-    let response = authenticated_get("http://localhost:3000/api/v1/allocations")
+    let response = authenticated_get("/api/v1/allocations")
         .await
         .map_err(|e| format!("Failed to fetch allocations: {}", e))?;
 
@@ -914,7 +914,7 @@ async fn fetch_allocations() -> Result<Vec<Allocation>, String> {
 
 /// Fetch all resources from API
 async fn fetch_resources() -> Result<Vec<Resource>, String> {
-    let response = authenticated_get("http://localhost:3000/api/v1/resources")
+    let response = authenticated_get("/api/v1/resources")
         .await
         .map_err(|e| format!("Failed to fetch resources: {}", e))?;
 
@@ -943,7 +943,7 @@ async fn fetch_resources() -> Result<Vec<Resource>, String> {
 
 /// Fetch all projects from API
 async fn fetch_projects() -> Result<Vec<Project>, String> {
-    let response = authenticated_get("http://localhost:3000/api/v1/projects")
+    let response = authenticated_get("/api/v1/projects")
         .await
         .map_err(|e| format!("Failed to fetch projects: {}", e))?;
 
@@ -986,7 +986,7 @@ async fn create_allocation(form_data: AllocationFormData) -> Result<(), String> 
         .map_err(|_| "Invalid allocation percentage")?;
 
     let response = authenticated_post_json(
-        "http://localhost:3000/api/v1/allocations",
+        "/api/v1/allocations",
         &serde_json::json!({
             "resource_id": resource_id,
             "project_id": project_id,
@@ -1029,7 +1029,7 @@ async fn update_allocation_form(
         .map_err(|_| "Invalid allocation percentage")?;
 
     let response = authenticated_put_json(
-        &format!("http://localhost:3000/api/v1/allocations/{}", allocation_id),
+        &format!("/api/v1/allocations/{}", allocation_id),
         &serde_json::json!({
             "resource_id": resource_id,
             "project_id": project_id,
@@ -1070,7 +1070,7 @@ async fn update_allocation(
         .map_err(|_| "Invalid allocation ID")?;
 
     let response = authenticated_put_json(
-        &format!("http://localhost:3000/api/v1/allocations/{}", id),
+        &format!("/api/v1/allocations/{}", id),
         &serde_json::json!({
             "start_date": start_date,
             "end_date": end_date,
@@ -1097,7 +1097,7 @@ async fn delete_allocation(allocation_id: String) -> Result<(), String> {
         .map_err(|_| "Invalid allocation ID")?;
 
     let response =
-        authenticated_delete(&format!("http://localhost:3000/api/v1/allocations/{}", id))
+        authenticated_delete(&format!("/api/v1/allocations/{}", id))
             .await
             .map_err(|e| format!("Failed to delete allocation: {}", e))?;
 
@@ -1114,7 +1114,7 @@ async fn delete_allocation(allocation_id: String) -> Result<(), String> {
 
 /// Fetch all holidays from API
 async fn fetch_holidays() -> Result<Vec<Holiday>, String> {
-    let response = authenticated_get("http://localhost:3000/api/v1/holidays")
+    let response = authenticated_get("/api/v1/holidays")
         .await
         .map_err(|e| format!("Failed to fetch holidays: {}", e))?;
 

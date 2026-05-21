@@ -6,8 +6,8 @@ use crate::components::timeline_chart::{AllocationItem, ResourceGroup, TimelineC
 use crate::timeline::{TimelineGroup, TimelineItem};
 use gloo_timers::callback::Timeout;
 use js_sys::Date;
-use leptos::prelude::*;
 use leptos::either::{Either, EitherOf3, EitherOf4};
+use leptos::prelude::*;
 use leptos_router::hooks::*;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -680,8 +680,7 @@ pub fn TeamPage() -> impl IntoView {
     let (assign_error, set_assign_error) = signal(None::<String>);
     let (assign_success, set_assign_success) = signal(None::<String>);
     let (assign_submitting, set_assign_submitting) = signal(false);
-    let (assignable_projects, set_assignable_projects) =
-        signal(Vec::<AssignableProject>::new());
+    let (assignable_projects, set_assignable_projects) = signal(Vec::<AssignableProject>::new());
 
     let (preview_data, set_preview_data) = signal(None::<CostPreviewResponse>);
     let (preview_loading, set_preview_loading) = signal(false);
@@ -730,9 +729,9 @@ pub fn TeamPage() -> impl IntoView {
             let start_date = assign_start_date.get();
             let end_date = assign_end_date.get();
             let pct_str = assign_pct.get();
-        
+
             preview_timer.borrow_mut().take();
-        
+
             if resource_id.is_empty()
                 || project_id.is_empty()
                 || start_date.is_empty()
@@ -744,7 +743,7 @@ pub fn TeamPage() -> impl IntoView {
                 set_preview_loading.set(false);
                 return;
             }
-        
+
             let pct: f64 = match pct_str.parse() {
                 Ok(v) if v > 0.0 && v <= 100.0 => v,
                 _ => {
@@ -754,7 +753,7 @@ pub fn TeamPage() -> impl IntoView {
                     return;
                 }
             };
-        
+
             set_preview_loading.set(true);
             let preview_timer_inner = preview_timer.clone();
             let timeout = Timeout::new(300, move || {
@@ -786,9 +785,9 @@ pub fn TeamPage() -> impl IntoView {
             let token_present = auth.token.get().is_some();
             let start_date = capacity_start_date.get();
             let end_date = capacity_end_date.get();
-        
+
             capacity_timer.borrow_mut().take();
-        
+
             if !token_present || start_date.is_empty() || end_date.is_empty() {
                 if start_date.is_empty() || end_date.is_empty() {
                     set_capacity_report.set(None);
@@ -797,7 +796,7 @@ pub fn TeamPage() -> impl IntoView {
                 set_capacity_loading.set(false);
                 return;
             }
-        
+
             set_capacity_loading.set(true);
             let capacity_timer_inner = capacity_timer.clone();
             let timeout = Timeout::new(300, move || {
@@ -816,7 +815,7 @@ pub fn TeamPage() -> impl IntoView {
                     set_capacity_loading.set(false);
                 });
             });
-        
+
             *capacity_timer.borrow_mut() = Some(timeout);
         });
     }
@@ -830,14 +829,14 @@ pub fn TeamPage() -> impl IntoView {
             let token_present = auth.token.get().is_some();
             let period = budget_period.get();
             let _refresh_nonce = budget_refresh_nonce.get();
-        
+
             budget_timer.borrow_mut().take();
             {
                 let mut seq = budget_request_seq.borrow_mut();
                 *seq += 1;
             }
             let request_id = *budget_request_seq.borrow();
-        
+
             if !token_present || period.is_empty() {
                 set_budget_summary.set(None);
                 set_budget_breakdown.set(None);
@@ -845,7 +844,7 @@ pub fn TeamPage() -> impl IntoView {
                 set_budget_loading.set(false);
                 return;
             }
-        
+
             set_budget_loading.set(true);
             set_budget_error.set(None);
             set_budget_summary.set(None);
@@ -860,11 +859,11 @@ pub fn TeamPage() -> impl IntoView {
                 leptos::task::spawn_local(async move {
                     let summary_result = fetch_budget_summary(&period_for_fetch).await;
                     let breakdown_result = fetch_budget_breakdown(&period_for_fetch).await;
-                        
+
                     if *budget_request_seq_task.borrow() != request_id {
                         return;
                     }
-                        
+
                     match summary_result {
                         Ok(data) => {
                             set_budget_summary.set(Some(data));
@@ -874,7 +873,7 @@ pub fn TeamPage() -> impl IntoView {
                             set_budget_error.set(Some(e));
                         }
                     }
-                        
+
                     match breakdown_result {
                         Ok(data) => {
                             set_budget_breakdown.set(Some(data));
@@ -906,7 +905,7 @@ pub fn TeamPage() -> impl IntoView {
                 navigate("/login", Default::default());
                 return;
             }
-        
+
             if let Some(user) = auth.user.get() {
                 set_auth_checked.set(true);
                 if user.role != "hr" && user.role != "department_head" && user.role != "admin" {
@@ -914,11 +913,11 @@ pub fn TeamPage() -> impl IntoView {
                 }
                 return;
             }
-        
+
             if auth_check_in_progress.get() {
                 return;
             }
-        
+
             let token = match current_access_token(&auth) {
                 Some(t) => t,
                 None => {
@@ -926,7 +925,7 @@ pub fn TeamPage() -> impl IntoView {
                     return;
                 }
             };
-        
+
             set_auth_check_in_progress.set(true);
             let navigate = navigate.clone();
             leptos::task::spawn_local(async move {
@@ -970,13 +969,13 @@ pub fn TeamPage() -> impl IntoView {
             if !is_authorized.get() {
                 return;
             }
-    
+
             if capacity_start_date.get().is_empty() || capacity_end_date.get().is_empty() {
                 let (start, end) = current_month_range();
                 set_capacity_start_date.set(start);
                 set_capacity_end_date.set(end);
             }
-    
+
             set_loading.set(true);
             leptos::task::spawn_local(async move {
                 match fetch_team_members().await {
@@ -1137,7 +1136,7 @@ pub fn TeamPage() -> impl IntoView {
 
         leptos::task::spawn_local(async move {
             let result = authenticated_post_json("/api/v1/allocations", &payload).await;
-        
+
             match result {
                 Ok(resp) => {
                     if resp.status().is_success() {
@@ -1195,7 +1194,7 @@ pub fn TeamPage() -> impl IntoView {
                                 set_preview_error.set(None);
                                 set_overallocation_warning.set(None);
                                 set_show_confirm_overallocation.set(false);
-        
+
                                 if let Ok(members) = fetch_team_members().await {
                                     set_team_members.set(members);
                                 }
@@ -1254,7 +1253,7 @@ pub fn TeamPage() -> impl IntoView {
                             .get("status")
                             .and_then(|v| v.as_str())
                             .unwrap_or("created");
-        
+
                         if status == "created" {
                             set_assign_success.set(Some(
                                 "Assignment created successfully with over-allocation confirmation."
@@ -1265,7 +1264,7 @@ pub fn TeamPage() -> impl IntoView {
                             set_preview_data.set(None);
                             set_preview_loading.set(false);
                             set_preview_error.set(None);
-        
+
                             if let Ok(members) = fetch_team_members().await {
                                 set_team_members.set(members);
                             }
@@ -1286,7 +1285,7 @@ pub fn TeamPage() -> impl IntoView {
                 }
                 Err(e) => set_assign_error.set(Some(e)),
             }
-        
+
             set_confirm_submitting.set(false);
         });
     };

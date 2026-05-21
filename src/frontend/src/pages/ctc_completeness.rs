@@ -1,8 +1,8 @@
 use crate::auth::{
     auth_token, authenticated_get, clear_auth_storage, use_auth, validate_token, AuthContext,
 };
-use leptos::prelude::*;
 use leptos::either::EitherOf3;
+use leptos::prelude::*;
 use leptos_router::hooks::*;
 use serde_json::Value;
 
@@ -347,7 +347,7 @@ pub fn CtcCompleteness() -> impl IntoView {
                 navigate("/login", Default::default());
                 return;
             }
-        
+
             if let Some(user) = auth.user.get() {
                 set_auth_checked.set(true);
                 if user.role != "hr" && user.role != "department_head" && user.role != "finance" {
@@ -355,11 +355,11 @@ pub fn CtcCompleteness() -> impl IntoView {
                 }
                 return;
             }
-        
+
             if auth_check_in_progress.get() {
                 return;
             }
-        
+
             let token = match current_access_token(&auth) {
                 Some(t) => t,
                 None => {
@@ -367,7 +367,7 @@ pub fn CtcCompleteness() -> impl IntoView {
                     return;
                 }
             };
-        
+
             set_auth_check_in_progress.set(true);
             let navigate = navigate.clone();
             leptos::task::spawn_local(async move {
@@ -413,7 +413,7 @@ pub fn CtcCompleteness() -> impl IntoView {
                 if let Ok(depts) = fetch_departments_list().await {
                     set_dept_options.set(depts);
                 }
-                
+
                 match fetch_completeness(None).await {
                     Ok((deps, total, with_ctc, missing, pct)) => {
                         set_departments.set(deps);

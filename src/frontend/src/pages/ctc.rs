@@ -63,8 +63,7 @@ pub fn CtcManagement() -> impl IntoView {
 
     let (is_editing, set_is_editing) = signal(false);
     let (change_reason, set_change_reason) = signal(String::new());
-    let (effective_date_policy, set_effective_date_policy) =
-        signal(String::from("pro_rata"));
+    let (effective_date_policy, set_effective_date_policy) = signal(String::from("pro_rata"));
     let (history, set_history) = signal(Vec::<Value>::new());
     let (show_history, set_show_history) = signal(false);
     let (history_loading, set_history_loading) = signal(false);
@@ -73,8 +72,7 @@ pub fn CtcManagement() -> impl IntoView {
         signal(std::collections::HashMap::<String, String>::new());
     let (server_field_errors, set_server_field_errors) =
         signal(std::collections::HashMap::<String, String>::new());
-    let (server_validation_warnings, set_server_validation_warnings) =
-        signal(Vec::<String>::new());
+    let (server_validation_warnings, set_server_validation_warnings) = signal(Vec::<String>::new());
     let (allowance_warning, set_allowance_warning) = signal(None::<String>);
     let (merged_field_errors, set_merged_field_errors) =
         signal(std::collections::HashMap::<String, String>::new());
@@ -94,7 +92,7 @@ pub fn CtcManagement() -> impl IntoView {
                 navigate("/login", Default::default());
                 return;
             }
-        
+
             if let Some(user) = auth.user.get() {
                 set_auth_checked.set(true);
                 if user.role != "hr" {
@@ -102,11 +100,11 @@ pub fn CtcManagement() -> impl IntoView {
                 }
                 return;
             }
-        
+
             if auth_check_in_progress.get() {
                 return;
             }
-        
+
             let token = match current_access_token(&auth) {
                 Some(t) => t,
                 None => {
@@ -114,7 +112,7 @@ pub fn CtcManagement() -> impl IntoView {
                     return;
                 }
             };
-        
+
             set_auth_check_in_progress.set(true);
             let navigate = navigate.clone();
             leptos::task::spawn_local(async move {
@@ -139,7 +137,7 @@ pub fn CtcManagement() -> impl IntoView {
     Effect::new(move |_| {
         set_server_field_errors.set(std::collections::HashMap::new());
         let mut errs = std::collections::HashMap::new();
-    
+
         let parse_val =
             |input: &str, key: &str, e: &mut std::collections::HashMap<String, String>| -> i64 {
                 if input.is_empty() {
@@ -164,13 +162,13 @@ pub fn CtcManagement() -> impl IntoView {
                     }
                 }
             };
-    
+
         let base = parse_val(&base_salary.get(), "base_salary", &mut errs);
         let hra = parse_val(&hra_allowance.get(), "hra_allowance", &mut errs);
         let med = parse_val(&medical_allowance.get(), "medical_allowance", &mut errs);
         let trans = parse_val(&transport_allowance.get(), "transport_allowance", &mut errs);
         let meal = parse_val(&meal_allowance.get(), "meal_allowance", &mut errs);
-    
+
         if base > 0 {
             let total_allowance = hra + med + trans + meal;
             if total_allowance > base * 2 {
@@ -183,7 +181,7 @@ pub fn CtcManagement() -> impl IntoView {
         } else {
             set_allowance_warning.set(None);
         }
-    
+
         set_field_errors.set(errs);
     });
 
@@ -199,12 +197,12 @@ pub fn CtcManagement() -> impl IntoView {
             leptos::task::spawn_local(async move {
                 let loaded_resources = fetch_resources().await;
                 let loaded_departments = fetch_departments().await;
-                
+
                 match (loaded_resources, loaded_departments) {
                     (Ok(res), Ok(depts)) => {
                         set_resources.set(res);
                         set_departments.set(depts);
-                
+
                         let init_id = initial_resource_id.clone();
                         if !init_id.is_empty() {
                             set_selected_resource.set(init_id.clone());
@@ -231,12 +229,12 @@ pub fn CtcManagement() -> impl IntoView {
                                 set_loading.set(false);
                             });
                         }
-                
+
                         set_error.set(None);
                     }
                     (Err(e), _) | (_, Err(e)) => set_error.set(Some(e)),
                 }
-                
+
                 set_loading.set(false);
             });
         }
@@ -328,7 +326,7 @@ pub fn CtcManagement() -> impl IntoView {
                 "working_days_per_month": days,
                 "risk_tier": tier
             });
-        
+
             match calculate_bpjs_preview(payload).await {
                 Ok(data) => {
                     set_preview.set(Some(data));
@@ -358,7 +356,7 @@ pub fn CtcManagement() -> impl IntoView {
                                     .or_else(|| issue.get("issue_type"))
                                     .and_then(|t| t.as_str())
                                     .unwrap_or("error");
-        
+
                                 if severity == "warning" {
                                     warns.push(msg);
                                 } else {
@@ -475,7 +473,7 @@ pub fn CtcManagement() -> impl IntoView {
                     "reason": reason,
                     "effective_date_policy": policy
                 });
-        
+
                 match update_ctc_record(resource_id.clone(), payload).await {
                     Ok(_) => {
                         set_success.set(Some("CTC changes saved successfully".to_string()));
@@ -508,7 +506,7 @@ pub fn CtcManagement() -> impl IntoView {
                                         .or_else(|| issue.get("issue_type"))
                                         .and_then(|t| t.as_str())
                                         .unwrap_or("error");
-        
+
                                     if severity == "warning" {
                                         warns.push(msg);
                                     } else {
@@ -546,7 +544,7 @@ pub fn CtcManagement() -> impl IntoView {
                     "working_days_per_month": days,
                     "risk_tier": tier
                 });
-        
+
                 match create_ctc_record(payload).await {
                     Ok(_) => {
                         set_success.set(Some("CTC record created with status Active".to_string()));
@@ -576,7 +574,7 @@ pub fn CtcManagement() -> impl IntoView {
                                         .or_else(|| issue.get("issue_type"))
                                         .and_then(|t| t.as_str())
                                         .unwrap_or("error");
-        
+
                                     if severity == "warning" {
                                         warns.push(msg);
                                     } else {
@@ -996,7 +994,7 @@ pub fn CtcManagement() -> impl IntoView {
                     })}
                 </div>
                     })
-                        
+
                 }}
             </div>
 
@@ -1043,7 +1041,7 @@ fn MoneyInput(
 }
 
 async fn fetch_resources() -> Result<Vec<ResourceOption>, String> {
-    let response = authenticated_get("http://localhost:3000/api/v1/resources")
+    let response = authenticated_get("/api/v1/resources")
         .await
         .map_err(|e| format!("Failed to fetch resources: {}", e))?;
 
@@ -1072,7 +1070,7 @@ async fn fetch_resources() -> Result<Vec<ResourceOption>, String> {
 }
 
 async fn fetch_departments() -> Result<Vec<(String, String)>, String> {
-    let response = authenticated_get("http://localhost:3000/api/v1/departments")
+    let response = authenticated_get("/api/v1/departments")
         .await
         .map_err(|e| format!("Failed to fetch departments: {}", e))?;
 
@@ -1100,7 +1098,7 @@ async fn fetch_departments() -> Result<Vec<(String, String)>, String> {
 }
 
 async fn calculate_bpjs_preview(payload: Value) -> Result<Value, String> {
-    let response = authenticated_post_json("http://localhost:3000/api/v1/ctc/calculate", &payload)
+    let response = authenticated_post_json("/api/v1/ctc/calculate", &payload)
         .await
         .map_err(|e| format!("Failed to calculate BPJS: {}", e))?;
 
@@ -1120,7 +1118,7 @@ async fn calculate_bpjs_preview(payload: Value) -> Result<Value, String> {
 
 async fn create_ctc_record(payload: Value) -> Result<(), String> {
     let response =
-        crate::auth::authenticated_post_json("http://localhost:3000/api/v1/ctc", &payload)
+        crate::auth::authenticated_post_json("/api/v1/ctc", &payload)
             .await
             .map_err(|e| format!("Failed to create CTC record: {}", e))?;
 
@@ -1138,7 +1136,7 @@ async fn create_ctc_record(payload: Value) -> Result<(), String> {
 async fn update_ctc_record(resource_id: String, payload: Value) -> Result<(), String> {
     let response = crate::auth::authenticated_put_json(
         &format!(
-            "http://localhost:3000/api/v1/ctc/{}/components",
+            "/api/v1/ctc/{}/components",
             resource_id
         ),
         &payload,
@@ -1159,7 +1157,7 @@ async fn update_ctc_record(resource_id: String, payload: Value) -> Result<(), St
 
 async fn fetch_ctc_history(resource_id: &str) -> Result<Vec<Value>, String> {
     let response = crate::auth::authenticated_get(&format!(
-        "http://localhost:3000/api/v1/ctc/{}/history",
+        "/api/v1/ctc/{}/history",
         resource_id
     ))
     .await
@@ -1219,7 +1217,7 @@ fn value_to_i64(value: &Value) -> Option<i64> {
 
 async fn fetch_existing_ctc(resource_id: &str) -> Result<Option<ExistingCtcValues>, String> {
     let response = authenticated_get(&format!(
-        "http://localhost:3000/api/v1/ctc/{}/components",
+        "/api/v1/ctc/{}/components",
         resource_id
     ))
     .await

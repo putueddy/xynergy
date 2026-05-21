@@ -1,8 +1,8 @@
 use crate::auth::{authenticated_get, logout_user, use_auth};
 
 use chrono::NaiveDate;
-use leptos::prelude::*;
 use leptos::either::Either;
+use leptos::prelude::*;
 use leptos_router::hooks::*;
 use serde::Deserialize;
 
@@ -45,7 +45,7 @@ pub fn Dashboard() -> impl IntoView {
         leptos::task::spawn_local(async move {
             let mut had_error = None;
             let mut session_expired = false;
-            
+
             match fetch_resources_count().await {
                 Ok(count) => set_resources_count.set(count),
                 Err(e) => {
@@ -55,7 +55,7 @@ pub fn Dashboard() -> impl IntoView {
                     had_error = Some(e)
                 }
             }
-            
+
             match fetch_allocations_count().await {
                 Ok(count) => set_allocations_count.set(count),
                 Err(e) => {
@@ -65,12 +65,12 @@ pub fn Dashboard() -> impl IntoView {
                     had_error = Some(e)
                 }
             }
-            
+
             match fetch_projects().await {
                 Ok(projects) => {
                     let active = projects.iter().filter(|p| p.status == "Active").count();
                     set_active_projects_count.set(active);
-            
+
                     let today = chrono::Local::now().date_naive();
                     let mut upcoming: Vec<ProjectSummary> = projects
                         .into_iter()
@@ -87,7 +87,7 @@ pub fn Dashboard() -> impl IntoView {
                     had_error = Some(e)
                 }
             }
-            
+
             match fetch_audit_logs().await {
                 Ok(entries) => set_recent_activity.set(entries),
                 Err(e) => {
@@ -97,7 +97,7 @@ pub fn Dashboard() -> impl IntoView {
                     had_error = Some(e)
                 }
             }
-            
+
             if session_expired {
                 logout_user(&auth);
                 set_dashboard_error.set(Some(
@@ -107,7 +107,7 @@ pub fn Dashboard() -> impl IntoView {
                 set_loading.set(false);
                 return;
             }
-            
+
             set_dashboard_error.set(had_error);
             set_loading.set(false);
         });
@@ -308,7 +308,7 @@ fn parse_date(value: &str) -> Option<NaiveDate> {
 }
 
 async fn fetch_resources_count() -> Result<usize, String> {
-    let response = authenticated_get("http://localhost:3000/api/v1/resources")
+    let response = authenticated_get("/api/v1/resources")
         .await
         .map_err(|e| {
             if e == "SESSION_EXPIRED" {
@@ -330,7 +330,7 @@ async fn fetch_resources_count() -> Result<usize, String> {
 }
 
 async fn fetch_allocations_count() -> Result<usize, String> {
-    let response = authenticated_get("http://localhost:3000/api/v1/allocations")
+    let response = authenticated_get("/api/v1/allocations")
         .await
         .map_err(|e| {
             if e == "SESSION_EXPIRED" {
@@ -355,7 +355,7 @@ async fn fetch_allocations_count() -> Result<usize, String> {
 }
 
 async fn fetch_projects() -> Result<Vec<ProjectSummary>, String> {
-    let response = authenticated_get("http://localhost:3000/api/v1/projects")
+    let response = authenticated_get("/api/v1/projects")
         .await
         .map_err(|e| {
             if e == "SESSION_EXPIRED" {
@@ -376,7 +376,7 @@ async fn fetch_projects() -> Result<Vec<ProjectSummary>, String> {
 }
 
 async fn fetch_audit_logs() -> Result<Vec<AuditLogEntry>, String> {
-    let response = authenticated_get("http://localhost:3000/api/v1/audit-logs?limit=10")
+    let response = authenticated_get("/api/v1/audit-logs?limit=10")
         .await
         .map_err(|e| {
             if e == "SESSION_EXPIRED" {

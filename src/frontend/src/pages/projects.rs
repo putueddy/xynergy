@@ -289,7 +289,7 @@ fn ExpenseFormPanel(
                             />
                         </div>
                     })
-                        
+
                 } else {
                     Either::Right(view! { <div></div> })
                 }}
@@ -1709,7 +1709,7 @@ pub fn Projects() -> impl IntoView {
                                                             on_cancel=expense_cancel_callback
                                                         />
                                                     })
-                                                        
+
                                                 } else {
                                                     Either::Right(view! { <div></div> })
                                                 }}

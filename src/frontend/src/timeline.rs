@@ -182,7 +182,6 @@ pub fn groups_to_js_array(groups: &[TimelineGroup]) -> Array {
     array
 }
 
-
 /// Create timeline options
 pub fn create_timeline_options(
     start: &str,

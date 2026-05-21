@@ -134,7 +134,10 @@ async fn fetch_cash_flow_entries(project_id: Option<&str>) -> Result<Vec<CashFlo
     } else {
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
-        Err(format!("Failed to fetch cash flow entries: {} {}", status, body))
+        Err(format!(
+            "Failed to fetch cash flow entries: {} {}",
+            status, body
+        ))
     }
 }
 
@@ -165,7 +168,10 @@ async fn create_cash_flow_entry(payload: &CreateCashFlowEntryPayload) -> Result<
     } else {
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
-        Err(format!("Failed to create cash flow entry: {} {}", status, body))
+        Err(format!(
+            "Failed to create cash flow entry: {} {}",
+            status, body
+        ))
     }
 }
 
@@ -232,7 +238,8 @@ pub fn CashFlowPage() -> impl IntoView {
     let (dash_end, set_dash_end) = signal(default_end);
     let (dash_project, set_dash_project) = signal(String::new());
     let (dash_reload_nonce, set_dash_reload_nonce) = signal(0u64);
-    let (dashboard_snapshot, set_dashboard_snapshot) = signal(Option::<CashFlowDashboardData>::None);
+    let (dashboard_snapshot, set_dashboard_snapshot) =
+        signal(Option::<CashFlowDashboardData>::None);
     let (dash_loading, set_dash_loading) = signal(false);
     let (dash_error, set_dash_error) = signal(Option::<String>::None);
     let (expanded_month, set_expanded_month) = signal(Option::<(i32, u32)>::None);
@@ -345,22 +352,20 @@ pub fn CashFlowPage() -> impl IntoView {
         }
     });
 
-    Effect::new(move |_| {
-        match dashboard_resource.get() {
-            Some(Some(Ok(data))) => {
-                set_dashboard_snapshot.set(Some(data));
-                set_dash_loading.set(false);
-                set_dash_error.set(None);
-            }
-            Some(Some(Err(err))) => {
-                set_dash_loading.set(false);
-                set_dash_error.set(Some(err));
-            }
-            Some(None) => {
-                set_dash_loading.set(false);
-            }
-            None => {}
+    Effect::new(move |_| match dashboard_resource.get() {
+        Some(Some(Ok(data))) => {
+            set_dashboard_snapshot.set(Some(data));
+            set_dash_loading.set(false);
+            set_dash_error.set(None);
         }
+        Some(Some(Err(err))) => {
+            set_dash_loading.set(false);
+            set_dash_error.set(Some(err));
+        }
+        Some(None) => {
+            set_dash_loading.set(false);
+        }
+        None => {}
     });
 
     Effect::new(move |_| {
