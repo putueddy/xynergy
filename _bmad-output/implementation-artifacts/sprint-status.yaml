@@ -30,7 +30,7 @@
 # - Dev moves story to review, then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-03-01
-last_updated: 2026-05-22  # Story 6.4 ready-for-dev → in-progress → review
+last_updated: 2026-05-23  # Story 6.5 review rerun
 # 5-4-compliance-audit-reports moved backlog -> review on 2026-05-21 by dev-story; review -> done on 2026-05-21 by code-review.
 # 6-1-role-based-dashboard moved backlog -> ready-for-dev on 2026-05-21 by create-story.
 # 6-1-role-based-dashboard moved ready-for-dev -> in-progress on 2026-05-21 by dev-story.
@@ -52,6 +52,11 @@ last_updated: 2026-05-22  # Story 6.4 ready-for-dev → in-progress → review
 # 6-4-team-utilization-dashboard review patch on 2026-05-22 by bmad-code-review: +1 backend INT for malformed non-DH team range params; dashboard_tests 52->53; story remains review pending patched browser re-verification.
 # 6-4-team-utilization-dashboard review rerun patch on 2026-05-22 by bmad-code-review: +2 backend INT, +4 frontend native tests, DH relationship RBAC/date/deep-link/artifact fixes; dashboard_tests 53->55, frontend lib 71->75; story remains review pending patched browser re-verification.
 # 6-4-team-utilization-dashboard full-diff review rerun patch on 2026-05-22 by bmad-code-review: +2 backend INT, +2 backend route unit, +2 frontend native tests, duplicate query/date/deep-link/artifact fixes; dashboard_tests 55->57, backend lib 66->68, frontend lib 75->77; story remains review pending patched browser re-verification.
+# 6-5-ctc-completeness-dashboard moved backlog -> ready-for-dev on 2026-05-22 by create-story.
+# 6-5-ctc-completeness-dashboard moved ready-for-dev -> in-progress on 2026-05-22 by dev-story.
+# 6-5-ctc-completeness-dashboard moved in-progress -> review on 2026-05-22 by dev-story; backend trend service + HR dashboard change-flash + /ctc/completeness page upgrade + regression tests landed; manual browser walk-through pending.
+# 6-5-ctc-completeness-dashboard review rerun patch on 2026-05-22 by bmad-code-review: trend UTC/NULL created_at fix, stale completeness fetch guard, artifact clarity; ctc_validation_tests 32->33; story remains review pending browser walk-through.
+# 6-5-ctc-completeness-dashboard full-diff review rerun patch on 2026-05-23 by bmad-code-review: current-month trend as-of cap, dashboard trend degradation, parser/stale-state/Add CTC/artifact fixes; frontend lib 93->96, ctc_validation_tests 33->34; story remains review pending browser walk-through.
 project: xynergy
 project_key: NOKEY
 tracking_system: file-system
@@ -102,5 +107,5 @@ development_status:
   6-2-real-time-dashboard-updates: done
   6-3-project-health-dashboard: done
   6-4-team-utilization-dashboard: done
-  6-5-ctc-completeness-dashboard: backlog
+  6-5-ctc-completeness-dashboard: done
   epic-6-retrospective: optional

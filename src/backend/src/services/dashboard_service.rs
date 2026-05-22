@@ -20,8 +20,8 @@ use crate::services::budget_service::{
 };
 use crate::services::compliance_report::validate_bpjs_compliance_in_transaction;
 use crate::services::ctc_completeness::{
-    get_completeness_summary_in_transaction, get_missing_employees_in_transaction,
-    CompletenessReport,
+    get_completeness_summary_core_in_transaction, get_completeness_trend_in_transaction,
+    get_missing_employees_in_transaction, CompletenessReport,
 };
 use crate::services::ctc_validation_report::{generate_validation_report, ValidationReportFilters};
 use crate::services::project_pl_service::{get_project_pl_dashboard, get_project_pl_forecast};
@@ -502,7 +502,24 @@ async fn rollback_savepoint(tx: &mut Transaction<'_, Postgres>, name: &str) -> R
 
 async fn build_hr_dashboard(tx: &mut Transaction<'_, Postgres>) -> Result<HrDashboard> {
     let mut warnings = Vec::new();
-    let completeness = get_completeness_summary_in_transaction(&mut *tx, None).await?;
+    let mut completeness = get_completeness_summary_core_in_transaction(&mut *tx, None).await?;
+    savepoint(&mut *tx, "dashboard_completeness_trend").await?;
+    let mut completeness_trend_unavailable = false;
+    match get_completeness_trend_in_transaction(&mut *tx, None).await {
+        Ok(trend) => {
+            completeness.trend = trend;
+        }
+        Err(e) => {
+            completeness_trend_unavailable = true;
+            rollback_savepoint(&mut *tx, "dashboard_completeness_trend").await?;
+            tracing::warn!("dashboard CTC completeness trend unavailable: {}", e);
+            warnings.push("CTC completeness trend is temporarily unavailable.".to_string());
+            completeness.trend = Vec::new();
+        }
+    }
+    if !completeness_trend_unavailable {
+        release_savepoint(&mut *tx, "dashboard_completeness_trend").await?;
+    }
 
     let missing_employees = get_missing_employees_in_transaction(&mut *tx, None).await?;
     let missing_count = missing_employees.len() as i64;

@@ -293,6 +293,30 @@ async fn hr_dashboard_returns_hr_section_only(pool: PgPool) {
     assert!(hr["pending_updates"]["missing_count"].as_i64().unwrap() >= 1);
     assert!(hr["recent_changes"].is_array());
     assert!(hr["compliance_alerts"].is_object());
+
+    // Story 6.5: completeness.trend is present, bounded, and ascending by month.
+    let trend = hr["completeness"]["trend"]
+        .as_array()
+        .expect("completeness.trend should be an array");
+    assert!(!trend.is_empty(), "trend should contain month buckets");
+    assert!(trend.len() <= 24, "trend must respect bounded ceiling");
+    let mut last: Option<String> = None;
+    for point in trend {
+        let month = point["month"].as_str().expect("month present");
+        assert!(month.len() == 7, "month must be YYYY-MM, got {}", month);
+        if let Some(prev) = &last {
+            assert!(
+                month > prev.as_str(),
+                "trend months must ascend: {} after {}",
+                month,
+                prev
+            );
+        }
+        last = Some(month.to_string());
+        assert!(point.get("total_employees").is_some());
+        assert!(point.get("total_with_ctc").is_some());
+        assert!(point.get("completion_pct").is_some());
+    }
 }
 
 #[sqlx::test(migrations = "../../migrations")]
@@ -330,6 +354,87 @@ async fn hr_recent_changes_do_not_expose_encrypted_fields(pool: PgPool) {
             forbidden
         );
     }
+}
+
+/// Story 6.5: the whole HR section of `/api/v1/dashboard` must be free of
+/// salary, daily-rate, BPJS components, and any encryption metadata —
+/// completeness rollup, department breakdown, trend, pending-updates sample,
+/// compliance alerts, and warnings included. The existing recent-changes
+/// test only walks a single sub-tree; this test recursively walks the
+/// entire `hr` object.
+#[sqlx::test(migrations = "../../migrations")]
+async fn hr_dashboard_section_has_no_sensitive_fields_anywhere(pool: PgPool) {
+    set_test_env();
+    let app = xynergy_backend::create_app(pool.clone());
+
+    let dept_id = create_department(&pool, "Story65 Sensitive Dept", None).await;
+    let hr_email = test_email("hr-sensitive");
+    let hr_id = create_user_with_role(&pool, &hr_email, "hr").await;
+    assign_user_to_department(&pool, hr_id, dept_id).await;
+
+    let with_ctc = create_resource_in_dept(&pool, "Story65 Has CTC", dept_id).await;
+    let _no_ctc = create_resource_in_dept(&pool, "Story65 No CTC", dept_id).await;
+    create_ctc_for_resource(&pool, with_ctc, hr_id).await;
+    add_ctc_revision(&pool, with_ctc, hr_id).await;
+
+    let token = login_token(&app, &hr_email).await;
+    let (status, body) = get_dashboard(&app, Some(&token)).await;
+    assert_eq!(status, StatusCode::OK);
+
+    const FORBIDDEN: &[&str] = &[
+        "base_salary",
+        "hra_allowance",
+        "medical_allowance",
+        "transport_allowance",
+        "meal_allowance",
+        "bpjs_kesehatan_employer",
+        "bpjs_kesehatan_employee",
+        "bpjs_ketenagakerjaan_employer",
+        "bpjs_ketenagakerjaan_employee",
+        "thr_monthly_accrual",
+        "total_monthly_ctc",
+        "daily_rate",
+        "encrypted_components",
+        "encrypted_daily_rate",
+        "ciphertext",
+        "key_version",
+        "encryption_version",
+        "encryption_algorithm",
+        "encrypted_at",
+        "components",
+    ];
+
+    fn walk(v: &Value, path: &str, forbidden: &[&str]) {
+        match v {
+            Value::Object(map) => {
+                for (k, child) in map {
+                    let key_lower = k.to_ascii_lowercase();
+                    for sensitive in forbidden {
+                        assert!(
+                            key_lower.as_str() != *sensitive,
+                            "sensitive field '{}' leaked at {}.{}",
+                            sensitive,
+                            path,
+                            k
+                        );
+                    }
+                    walk(child, &format!("{}.{}", path, k), forbidden);
+                }
+            }
+            Value::Array(arr) => {
+                for (i, item) in arr.iter().enumerate() {
+                    walk(item, &format!("{}[{}]", path, i), forbidden);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    let hr_section = &body["hr"];
+    assert!(hr_section.is_object(), "HR section present");
+    // Cover completeness, trend, departments, pending_updates, recent_changes,
+    // compliance_alerts, and warnings in one walk.
+    walk(hr_section, "$.hr", FORBIDDEN);
 }
 
 // ── Department Head ─────────────────────────────────────────────────────

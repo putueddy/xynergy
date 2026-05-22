@@ -1,0 +1,38 @@
+{
+  "schema_version": "0.1.0",
+  "evaluated_at": "2026-05-23T00:00:00+07:00",
+  "repo": "xynergy",
+  "target": {
+    "type": "story",
+    "id": "6.5",
+    "label": "CTC Completeness Dashboard"
+  },
+  "collection_status": "COLLECTED",
+  "gate_basis": "priority_thresholds",
+  "gate_status": "CONDITIONAL_PASS",
+  "rationale": "Automated coverage is 100% (4/4 ACs, 55 active Story 6.5 mapped tests, 0 skipped). Release sign-off is conditional on the live HR browser walk-through (Story 6.5 Task 7 final sub-bullet), which is deferred to a deployed environment and not exercisable in this review loop. Automated gate criteria are MET; manual UI verification gate is OPEN.",
+  "p0_status": "MET",
+  "p1_status": "MET",
+  "overall_status": "MET",
+  "critical_open": 0,
+  "links": {
+    "trace_report_path": "_bmad-output/test-artifacts/traceability/6-5-ctc-completeness-dashboard-traceability.md",
+    "trace_report_url": "",
+    "artifact_url": "",
+    "journey_evidence_url": ""
+  },
+  "manual_verification_status": "deferred_to_deployed_environment",
+  "release_approved": false,
+  "manual_verification_blocking_release": true,
+  "source_sha": "cc7847f416cb988d773ab31bea5e107623b9d700+working-tree",
+  "recommendations": [
+    {
+      "priority": "MEDIUM",
+      "action": "Run live HR browser walk-through against a deployed environment before release sign-off.",
+      "manual_verification_gate": true,
+      "requirements": [
+        "story-6.5-task-7-final"
+      ]
+    }
+  ]
+}

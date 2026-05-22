@@ -54,6 +54,40 @@ struct CompletenessReport {
     total_with_ctc: i64,
     total_missing: i64,
     overall_completion_pct: f64,
+    #[serde(default)]
+    departments: Vec<DepartmentCompleteness>,
+    #[serde(default)]
+    trend: Vec<CompletenessTrendPoint>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct DepartmentCompleteness {
+    #[serde(default)]
+    department_id: Option<Uuid>,
+    #[serde(default)]
+    department: String,
+    #[serde(default)]
+    total_employees: i64,
+    #[serde(default)]
+    with_ctc: i64,
+    #[serde(default)]
+    missing_ctc: i64,
+    #[serde(default)]
+    completion_pct: f64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct CompletenessTrendPoint {
+    #[serde(default)]
+    month: String,
+    #[serde(default)]
+    total_employees: i64,
+    #[serde(default)]
+    total_with_ctc: i64,
+    #[serde(default)]
+    total_missing: i64,
+    #[serde(default)]
+    completion_pct: f64,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -547,6 +581,18 @@ fn recent_ctc_change_key(change: &RecentCtcChange) -> String {
     }
 }
 
+fn trend_key_part(month: &str, index: usize, month_count: usize) -> String {
+    if month.is_empty() || month_count > 1 {
+        format!("row.{}.{}", index, month)
+    } else {
+        month.to_string()
+    }
+}
+
+fn add_ctc_href(resource_id: Option<Uuid>) -> Option<String> {
+    resource_id.map(|id| format!("/ctc?resource_id={}", id))
+}
+
 fn dashboard_value_map(data: &RoleDashboardResponse) -> HashMap<String, String> {
     let mut map = HashMap::new();
 
@@ -612,6 +658,69 @@ fn dashboard_value_map(data: &RoleDashboardResponse) -> HashMap<String, String> 
                 ),
             };
             map.insert(key, format!("{}|{}", risk.name, risk.variance_amount));
+        }
+        // Story 6.5 — completeness departments + monthly trend become visible
+        // HR values; emit stable keys so change-flash highlights only the cell
+        // whose number actually moved.
+        map.insert(
+            "hr.completeness.total_missing".into(),
+            hr.completeness.total_missing.to_string(),
+        );
+        map.insert(
+            "hr.completeness.departments.count".into(),
+            hr.completeness.departments.len().to_string(),
+        );
+        for (index, dept) in hr.completeness.departments.iter().enumerate() {
+            let key_base = match dept.department_id {
+                Some(id) => format!("hr.completeness.department.{}", id),
+                None => format!(
+                    "hr.completeness.department.name.{}.{}",
+                    dept.department, index
+                ),
+            };
+            map.insert(
+                format!("{}.completion_pct", key_base),
+                format!("{:.1}", dept.completion_pct),
+            );
+            map.insert(format!("{}.with_ctc", key_base), dept.with_ctc.to_string());
+            map.insert(
+                format!("{}.missing_ctc", key_base),
+                dept.missing_ctc.to_string(),
+            );
+            map.insert(
+                format!("{}.total_employees", key_base),
+                dept.total_employees.to_string(),
+            );
+        }
+        let mut trend_month_counts: HashMap<&str, usize> = HashMap::new();
+        for point in &hr.completeness.trend {
+            *trend_month_counts.entry(point.month.as_str()).or_insert(0) += 1;
+        }
+        for (index, point) in hr.completeness.trend.iter().enumerate() {
+            let trend_key = trend_key_part(
+                &point.month,
+                index,
+                trend_month_counts
+                    .get(point.month.as_str())
+                    .copied()
+                    .unwrap_or(0),
+            );
+            map.insert(
+                format!("hr.completeness.trend.{}.completion_pct", trend_key),
+                format!("{:.1}", point.completion_pct),
+            );
+            map.insert(
+                format!("hr.completeness.trend.{}.total_with_ctc", trend_key),
+                point.total_with_ctc.to_string(),
+            );
+            map.insert(
+                format!("hr.completeness.trend.{}.total_employees", trend_key),
+                point.total_employees.to_string(),
+            );
+            map.insert(
+                format!("hr.completeness.trend.{}.total_missing", trend_key),
+                point.total_missing.to_string(),
+            );
         }
     }
 
@@ -1514,6 +1623,8 @@ fn HrPanel(hr: HrDashboard) -> impl IntoView {
     let pending = hr.pending_updates.clone();
     let compliance = hr.compliance_alerts.clone();
     let changes = hr.recent_changes.clone();
+    let trend = hr.completeness.trend.clone();
+    let dept_breakdown = hr.completeness.departments.clone();
     let changed = expect_context::<ChangedKeysCtx>();
 
     view! {
@@ -1548,6 +1659,9 @@ fn HrPanel(hr: HrDashboard) -> impl IntoView {
                         <p class="stat-label">"Pending Updates"</p>
                         <p
                             class="stat-value"
+                            // This renders pending.missing_count. It is equal by construction
+                            // to completeness.total_missing in the same dashboard transaction;
+                            // using one trigger avoids flashing an unchanged displayed value.
                             class:dashboard-change-flash=flash_if_changed(changed, "hr.pending_updates.missing_count")
                         >
                             {pending.missing_count.to_string()}
@@ -1622,25 +1736,39 @@ fn HrPanel(hr: HrDashboard) -> impl IntoView {
                         } else {
                             Either::Right(view! {
                                 <div>
-                                    {pending.sample.into_iter().map(|e| {
-                                        let key = match e.id {
-                                            Some(id) => format!("hr.pending_updates.sample.{}", id),
-                                            None => format!("hr.pending_updates.sample.name.{}", e.name),
-                                        };
-                                        let flash = flash_if_changed_owned(changed, key);
-                                        view! {
-                                            <div class="activity-item" class:dashboard-change-flash=flash>
-                                                <span class="text-sm text-huly-content flex-1">{e.name.clone()}</span>
-                                                <span class="text-xs text-huly-muted whitespace-nowrap">{e.department.clone()}</span>
-                                            </div>
-                                        }
-                                    }).collect_view()}
-                                </div>
-                            })
+                                        {pending.sample.into_iter().map(|e| {
+                                            let key = match e.id {
+                                                Some(id) => format!("hr.pending_updates.sample.{}", id),
+                                                None => format!("hr.pending_updates.sample.name.{}", e.name),
+                                            };
+                                            let flash = flash_if_changed_owned(changed, key);
+                                            let href = add_ctc_href(e.id);
+                                            view! {
+                                                <div class="activity-item" class:dashboard-change-flash=flash>
+                                                    <div class="min-w-0 flex-1">
+                                                        <span class="text-sm text-huly-content block truncate">{e.name.clone()}</span>
+                                                        <span class="text-xs text-huly-muted block truncate">{e.department.clone()}</span>
+                                                    </div>
+                                                    {if let Some(href) = href {
+                                                        Either::Left(view! {
+                                                            <a href=href class="text-xs text-primary-400 hover:text-primary-300 whitespace-nowrap">"Add CTC"</a>
+                                                        })
+                                                    } else {
+                                                        Either::Right(view! {
+                                                            <a href="/ctc/completeness" class="text-xs text-primary-400 hover:text-primary-300 whitespace-nowrap">"Open list"</a>
+                                                        })
+                                                    }}
+                                                </div>
+                                            }
+                                        }).collect_view()}
+                                    </div>
+                                })
                         }}
                     </div>
                 </div>
             </div>
+
+            <HrCompletenessTrend trend=trend dept_breakdown=dept_breakdown />
 
             <div class="panel">
                 <div class="toolbar">
@@ -1704,6 +1832,166 @@ fn HrPanel(hr: HrDashboard) -> impl IntoView {
                         })
                     }}
                 </div>
+            </div>
+        </div>
+    }
+}
+
+#[component]
+fn HrCompletenessTrend(
+    trend: Vec<CompletenessTrendPoint>,
+    dept_breakdown: Vec<DepartmentCompleteness>,
+) -> impl IntoView {
+    let changed = expect_context::<ChangedKeysCtx>();
+    let has_trend = !trend.is_empty();
+    let has_departments = !dept_breakdown.is_empty();
+    let mut trend_month_counts: HashMap<String, usize> = HashMap::new();
+    for point in &trend {
+        *trend_month_counts.entry(point.month.clone()).or_insert(0) += 1;
+    }
+    view! {
+        <div class="panel">
+            <div class="toolbar flex items-center justify-between">
+                <h3 class="text-xs font-semibold text-huly-secondary uppercase tracking-wider">"CTC Completeness Trend"</h3>
+                <a href="/ctc/completeness" class="text-xs text-primary-400 hover:text-primary-300">"Open dashboard →"</a>
+            </div>
+            <div class="p-3 space-y-3">
+                {if has_trend {
+                    Either::Left(view! {
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-xs">
+                                <thead>
+                                    <tr class="text-huly-secondary uppercase tracking-wider">
+                                        <th class="text-left p-2">"Month"</th>
+                                        <th class="text-right p-2">"With CTC"</th>
+                                        <th class="text-right p-2">"Total"</th>
+                                        <th class="text-right p-2">"Missing"</th>
+                                        <th class="text-right p-2">"Completion"</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {trend.into_iter().enumerate().map(|(index, p)| {
+                                        let trend_key = trend_key_part(
+                                            &p.month,
+                                            index,
+                                            trend_month_counts.get(&p.month).copied().unwrap_or(0),
+                                        );
+                                        let pct_key = format!("hr.completeness.trend.{}.completion_pct", trend_key);
+                                        let with_key = format!("hr.completeness.trend.{}.total_with_ctc", trend_key);
+                                        let total_key = format!("hr.completeness.trend.{}.total_employees", trend_key);
+                                        let missing_key = format!("hr.completeness.trend.{}.total_missing", trend_key);
+                                        let bar_w = bar_width_pct(p.completion_pct);
+                                        let bar_color = if p.completion_pct >= 90.0 {
+                                            "background-color: var(--color-positive-default);"
+                                        } else if p.completion_pct >= 70.0 {
+                                            "background-color: var(--color-warning-default);"
+                                        } else {
+                                            "background-color: var(--color-negative-default);"
+                                        };
+                                        let row_flash = flash_if_any_changed_owned(
+                                            changed,
+                                            vec![pct_key.clone(), with_key.clone(), total_key.clone(), missing_key.clone()],
+                                        );
+                                        view! {
+                                            <tr class="border-t border-huly-divider" class:dashboard-change-flash=row_flash>
+                                                <td class="p-2 text-huly-content font-mono">{p.month.clone()}</td>
+                                                <td
+                                                    class="p-2 text-right font-mono text-huly-caption"
+                                                    class:dashboard-change-flash=flash_if_changed_owned(changed, with_key.clone())
+                                                >{p.total_with_ctc}</td>
+                                                <td
+                                                    class="p-2 text-right font-mono text-huly-muted"
+                                                    class:dashboard-change-flash=flash_if_changed_owned(changed, total_key.clone())
+                                                >{p.total_employees}</td>
+                                                <td
+                                                    class="p-2 text-right font-mono text-negative-default"
+                                                    class:dashboard-change-flash=flash_if_changed_owned(changed, missing_key.clone())
+                                                >{p.total_missing}</td>
+                                                <td
+                                                    class="p-2 text-right"
+                                                    class:dashboard-change-flash=flash_if_changed_owned(changed, pct_key.clone())
+                                                >
+                                                    <div class="flex items-center justify-end gap-2">
+                                                        <div class="progress-track h-2" style="width: 80px;">
+                                                            <div
+                                                                class="h-2 rounded-full transition-all"
+                                                                style=format!("width: {:.2}%; {}", bar_w, bar_color)
+                                                            ></div>
+                                                        </div>
+                                                        <span class="font-mono text-huly-content">{format!("{:.1}%", p.completion_pct)}</span>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        }
+                                    }).collect_view()}
+                                </tbody>
+                            </table>
+                        </div>
+                    })
+                } else {
+                    Either::Right(view! {
+                        <div class="empty-state py-4">
+                            <p class="text-huly-muted text-xs">"Trend data is not yet available."</p>
+                        </div>
+                    })
+                }}
+                {if has_departments {
+                    Some(view! {
+                        <div
+                            class="overflow-x-auto"
+                            class:dashboard-change-flash=flash_if_changed(changed, "hr.completeness.departments.count")
+                        >
+                            <table class="w-full text-xs">
+                                <thead>
+                                    <tr class="text-huly-secondary uppercase tracking-wider">
+                                        <th class="text-left p-2">"Department"</th>
+                                        <th class="text-right p-2">"Employees"</th>
+                                        <th class="text-right p-2">"With CTC"</th>
+                                        <th class="text-right p-2">"Missing"</th>
+                                        <th class="text-right p-2">"Completion"</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {dept_breakdown.into_iter().enumerate().map(|(index, d)| {
+                                        let key_base = match d.department_id {
+                                            Some(id) => format!("hr.completeness.department.{}", id),
+                                            None => format!("hr.completeness.department.name.{}.{}", d.department, index),
+                                        };
+                                        let pct_key = format!("{}.completion_pct", key_base);
+                                        let with_key = format!("{}.with_ctc", key_base);
+                                        let missing_key = format!("{}.missing_ctc", key_base);
+                                        let total_key = format!("{}.total_employees", key_base);
+                                        let row_flash = flash_if_any_changed_owned(
+                                            changed,
+                                            vec![pct_key.clone(), with_key.clone(), missing_key.clone(), total_key.clone()],
+                                        );
+                                        view! {
+                                            <tr class="border-t border-huly-divider" class:dashboard-change-flash=row_flash>
+                                                <td class="p-2 text-huly-content">{d.department.clone()}</td>
+                                                <td
+                                                    class="p-2 text-right font-mono text-huly-caption"
+                                                    class:dashboard-change-flash=flash_if_changed_owned(changed, total_key.clone())
+                                                >{d.total_employees}</td>
+                                                <td
+                                                    class="p-2 text-right font-mono text-huly-caption"
+                                                    class:dashboard-change-flash=flash_if_changed_owned(changed, with_key.clone())
+                                                >{d.with_ctc}</td>
+                                                <td
+                                                    class="p-2 text-right font-mono text-negative-default"
+                                                    class:dashboard-change-flash=flash_if_changed_owned(changed, missing_key.clone())
+                                                >{d.missing_ctc}</td>
+                                                <td
+                                                    class="p-2 text-right font-mono text-huly-content"
+                                                    class:dashboard-change-flash=flash_if_changed_owned(changed, pct_key.clone())
+                                                >{format!("{:.1}%", d.completion_pct)}</td>
+                                            </tr>
+                                        }
+                                    }).collect_view()}
+                                </tbody>
+                            </table>
+                        </div>
+                    })
+                } else { None }}
             </div>
         </div>
     }
@@ -3459,6 +3747,8 @@ mod tests {
                 total_with_ctc: 9,
                 total_missing: 1,
                 overall_completion_pct: 90.0,
+                departments: vec![],
+                trend: vec![],
             },
             pending_updates: HrPendingUpdates {
                 missing_count: 1,
@@ -3485,6 +3775,8 @@ mod tests {
                 total_with_ctc: 9,
                 total_missing: 1,
                 overall_completion_pct: 90.0,
+                departments: vec![],
+                trend: vec![],
             },
             pending_updates: HrPendingUpdates {
                 missing_count: 1,
@@ -3534,6 +3826,8 @@ mod tests {
                 total_with_ctc: 9,
                 total_missing: 1,
                 overall_completion_pct: 90.0,
+                departments: vec![],
+                trend: vec![],
             },
             pending_updates: HrPendingUpdates {
                 missing_count: 1,
@@ -3909,6 +4203,8 @@ mod tests {
                 total_with_ctc: 5,
                 total_missing: 0,
                 overall_completion_pct: 100.0,
+                departments: vec![],
+                trend: vec![],
             },
             pending_updates: HrPendingUpdates {
                 missing_count: 0,
@@ -3967,6 +4263,8 @@ mod tests {
                 total_with_ctc: 1,
                 total_missing: 0,
                 overall_completion_pct: 100.0,
+                departments: vec![],
+                trend: vec![],
             },
             pending_updates: HrPendingUpdates {
                 missing_count: 0,
@@ -4054,6 +4352,8 @@ mod tests {
                 total_with_ctc: 9,
                 total_missing: 1,
                 overall_completion_pct: 90.0,
+                departments: vec![],
+                trend: vec![],
             },
             pending_updates: HrPendingUpdates {
                 missing_count: 1,
@@ -4104,6 +4404,8 @@ mod tests {
                 total_with_ctc: 5,
                 total_missing: 0,
                 overall_completion_pct: 100.0,
+                departments: vec![],
+                trend: vec![],
             },
             pending_updates: HrPendingUpdates {
                 missing_count: 0,
@@ -5421,6 +5723,312 @@ mod tests {
             map.get("department_head.team.underutilized_count")
                 .map(String::as_str),
             Some("0")
+        );
+    }
+
+    // ── Story 6.5: HR completeness trend + department breakdown keys ────────
+
+    fn hr_response_with_completeness(
+        departments: Vec<DepartmentCompleteness>,
+        trend: Vec<CompletenessTrendPoint>,
+        total_missing: i64,
+    ) -> RoleDashboardResponse {
+        let mut resp = empty_response("hr");
+        resp.hr = Some(HrDashboard {
+            completeness: CompletenessReport {
+                total_employees: 10,
+                total_with_ctc: 10 - total_missing,
+                total_missing,
+                overall_completion_pct: ((10 - total_missing) as f64) * 10.0,
+                departments,
+                trend,
+            },
+            pending_updates: HrPendingUpdates {
+                missing_count: total_missing,
+                sample: vec![],
+            },
+            recent_changes: vec![],
+            compliance_alerts: ComplianceAlertSummary {
+                start_date: "2026-05-01".into(),
+                end_date: "2026-05-22".into(),
+                total_validated: 0,
+                total_passed: 0,
+                total_discrepancies: 0,
+                compliance_rate_pct: 100.0,
+                top_risks: vec![],
+            },
+            warnings: vec![],
+        });
+        resp
+    }
+
+    fn dept(id: Uuid, name: &str, total: i64, with_ctc: i64) -> DepartmentCompleteness {
+        DepartmentCompleteness {
+            department_id: Some(id),
+            department: name.to_string(),
+            total_employees: total,
+            with_ctc,
+            missing_ctc: total - with_ctc,
+            completion_pct: if total > 0 {
+                (with_ctc as f64 / total as f64) * 100.0
+            } else {
+                0.0
+            },
+        }
+    }
+
+    fn trend_point(month: &str, total: i64, with_ctc: i64) -> CompletenessTrendPoint {
+        CompletenessTrendPoint {
+            month: month.to_string(),
+            total_employees: total,
+            total_with_ctc: with_ctc,
+            total_missing: total - with_ctc,
+            completion_pct: if total > 0 {
+                (with_ctc as f64 / total as f64) * 100.0
+            } else {
+                0.0
+            },
+        }
+    }
+
+    #[test]
+    fn hr_total_missing_key_flashes_on_change() {
+        let prev_map = dashboard_value_map(&hr_response_with_completeness(vec![], vec![], 1));
+        let next_map = dashboard_value_map(&hr_response_with_completeness(vec![], vec![], 2));
+        let changed = compute_changed_keys(&prev_map, &next_map);
+        assert!(
+            changed.contains("hr.completeness.total_missing"),
+            "hr.completeness.total_missing must flash when missing count moves: {:?}",
+            changed
+        );
+    }
+
+    #[test]
+    fn add_ctc_href_points_to_existing_ctc_resource_flow() {
+        let resource_id = Uuid::new_v4();
+        assert_eq!(
+            add_ctc_href(Some(resource_id)),
+            Some(format!("/ctc?resource_id={}", resource_id))
+        );
+        assert_eq!(add_ctc_href(None), None);
+    }
+
+    #[test]
+    fn hr_department_completion_pct_key_is_stable_on_id() {
+        let dept_id = Uuid::new_v4();
+        let prev_map = dashboard_value_map(&hr_response_with_completeness(
+            vec![dept(dept_id, "Engineering", 5, 4)],
+            vec![],
+            1,
+        ));
+        let next_map = dashboard_value_map(&hr_response_with_completeness(
+            vec![dept(dept_id, "Engineering", 5, 5)],
+            vec![],
+            0,
+        ));
+        let changed = compute_changed_keys(&prev_map, &next_map);
+        let pct_key = format!("hr.completeness.department.{}.completion_pct", dept_id);
+        let with_key = format!("hr.completeness.department.{}.with_ctc", dept_id);
+        let missing_key = format!("hr.completeness.department.{}.missing_ctc", dept_id);
+        assert!(
+            changed.contains(&pct_key),
+            "department completion_pct must flash: {:?}",
+            changed
+        );
+        assert!(
+            changed.contains(&with_key),
+            "department with_ctc must flash: {:?}",
+            changed
+        );
+        assert!(
+            changed.contains(&missing_key),
+            "department missing_ctc must flash: {:?}",
+            changed
+        );
+    }
+
+    #[test]
+    fn hr_trend_period_keys_flash_only_for_changed_months() {
+        let prev_map = dashboard_value_map(&hr_response_with_completeness(
+            vec![],
+            vec![trend_point("2026-04", 10, 5), trend_point("2026-05", 10, 7)],
+            3,
+        ));
+        let next_map = dashboard_value_map(&hr_response_with_completeness(
+            vec![],
+            vec![trend_point("2026-04", 10, 5), trend_point("2026-05", 10, 8)],
+            2,
+        ));
+        let changed = compute_changed_keys(&prev_map, &next_map);
+        assert!(
+            !changed.contains("hr.completeness.trend.2026-04.completion_pct"),
+            "unchanged month must not flash: {:?}",
+            changed
+        );
+        assert!(
+            changed.contains("hr.completeness.trend.2026-05.completion_pct"),
+            "changed month must flash: {:?}",
+            changed
+        );
+        assert!(
+            changed.contains("hr.completeness.trend.2026-05.total_with_ctc"),
+            "with_ctc per-month key must flash: {:?}",
+            changed
+        );
+    }
+
+    #[test]
+    fn hr_departments_count_key_flashes_when_department_added() {
+        // Story 6.5 polled deltas must surface a change in the *number* of
+        // departments visible to HR, not only per-department field deltas.
+        let dept_a = Uuid::new_v4();
+        let dept_b = Uuid::new_v4();
+        let prev_map = dashboard_value_map(&hr_response_with_completeness(
+            vec![dept(dept_a, "Engineering", 5, 4)],
+            vec![],
+            1,
+        ));
+        let next_map = dashboard_value_map(&hr_response_with_completeness(
+            vec![
+                dept(dept_a, "Engineering", 5, 4),
+                dept(dept_b, "Marketing", 3, 1),
+            ],
+            vec![],
+            3,
+        ));
+        let changed = compute_changed_keys(&prev_map, &next_map);
+        assert!(
+            changed.contains("hr.completeness.departments.count"),
+            "departments.count must flash when a new department appears: {:?}",
+            changed
+        );
+    }
+
+    #[test]
+    fn hr_department_with_no_id_falls_back_to_name_keyed_change_flash() {
+        // The dashboard_value_map falls back to a name-keyed bucket when the
+        // backend omits a department_id (legacy / degraded shape). Without
+        // this fallback, the row's change-flash would silently never fire.
+        // Build two `DepartmentCompleteness` rows with `department_id = None`
+        // and only the completion_pct moving, then confirm the name-prefixed
+        // key surfaces in `changed`.
+        let no_id_dept = DepartmentCompleteness {
+            department_id: None,
+            department: "Legacy NoId Dept".to_string(),
+            total_employees: 4,
+            with_ctc: 1,
+            missing_ctc: 3,
+            completion_pct: 25.0,
+        };
+        let mut moved = no_id_dept.clone();
+        moved.with_ctc = 2;
+        moved.missing_ctc = 2;
+        moved.completion_pct = 50.0;
+
+        let prev_map =
+            dashboard_value_map(&hr_response_with_completeness(vec![no_id_dept], vec![], 3));
+        let next_map = dashboard_value_map(&hr_response_with_completeness(vec![moved], vec![], 2));
+        let changed = compute_changed_keys(&prev_map, &next_map);
+
+        let name_key = "hr.completeness.department.name.Legacy NoId Dept.0.completion_pct";
+        assert!(
+            changed.contains(name_key),
+            "name-keyed department fallback must flash when id is missing: {:?}",
+            changed
+        );
+    }
+
+    #[test]
+    fn hr_recent_change_with_no_resource_id_falls_back_to_name_keyed_change_flash() {
+        // Mirror of `hr_department_with_no_id_falls_back_to_name_keyed_change_flash`,
+        // but for the `recent_changes` list. A `RecentCtcChange` row whose
+        // backend omits `resource_id` must still flash through the
+        // name-keyed fallback in `recent_ctc_change_key` — otherwise legacy /
+        // degraded payloads would silently never highlight when a revision
+        // appears for the same resource_name + created_at pair.
+        let base = RecentCtcChange {
+            resource_id: None,
+            resource_name: "Legacy NoId Resource".to_string(),
+            revision_number: 3,
+            changed_by_name: Some("Auditor".to_string()),
+            created_at: "2026-05-22T00:00:00Z".to_string(),
+            reason: "Adjustment".to_string(),
+        };
+        let key = recent_ctc_change_key(&base);
+        assert!(
+            key.starts_with("hr.recent_changes.name."),
+            "fallback key must be name-prefixed when resource_id is None, got {}",
+            key
+        );
+        assert!(key.contains("Legacy NoId Resource"));
+        assert!(key.contains("rev3"));
+        assert!(key.contains("2026-05-22T00:00:00Z"));
+
+        // End-to-end: when `changed_by_name` moves on the *same* row, the
+        // fallback key must surface in `changed`. Otherwise the row's flash
+        // would silently never fire.
+        let mut prev_resp = empty_response("hr");
+        prev_resp.hr = Some(HrDashboard {
+            completeness: CompletenessReport {
+                total_employees: 0,
+                total_with_ctc: 0,
+                total_missing: 0,
+                overall_completion_pct: 0.0,
+                departments: vec![],
+                trend: vec![],
+            },
+            pending_updates: HrPendingUpdates {
+                missing_count: 0,
+                sample: vec![],
+            },
+            recent_changes: vec![base.clone()],
+            compliance_alerts: ComplianceAlertSummary {
+                start_date: "2026-05-01".into(),
+                end_date: "2026-05-22".into(),
+                total_validated: 0,
+                total_passed: 0,
+                total_discrepancies: 0,
+                compliance_rate_pct: 100.0,
+                top_risks: vec![],
+            },
+            warnings: vec![],
+        });
+        let mut moved = base.clone();
+        moved.changed_by_name = Some("Different Auditor".to_string());
+        let mut next_resp = prev_resp.clone();
+        next_resp.hr.as_mut().unwrap().recent_changes = vec![moved];
+
+        let prev_map = dashboard_value_map(&prev_resp);
+        let next_map = dashboard_value_map(&next_resp);
+        let changed = compute_changed_keys(&prev_map, &next_map);
+        assert!(
+            changed.contains(&key),
+            "name-keyed recent_changes fallback must flash when changed_by_name moves: {:?}",
+            changed
+        );
+    }
+
+    #[test]
+    fn hr_generated_at_only_change_does_not_flash_completeness_keys() {
+        // Reuse the existing Story-6.2 guarantee: a polled response that
+        // changes only `generated_at` must not light up the new HR trend or
+        // department keys either.
+        let mut prev_resp = hr_response_with_completeness(
+            vec![dept(Uuid::new_v4(), "Engineering", 5, 5)],
+            vec![trend_point("2026-05", 10, 7)],
+            3,
+        );
+        let mut next_resp = prev_resp.clone();
+        prev_resp.generated_at = "2026-05-21T00:00:00Z".to_string();
+        next_resp.generated_at = "2026-05-21T00:00:30Z".to_string();
+
+        let prev_map = dashboard_value_map(&prev_resp);
+        let next_map = dashboard_value_map(&next_resp);
+        let changed = compute_changed_keys(&prev_map, &next_map);
+        assert!(
+            changed.is_empty(),
+            "generated_at-only deltas must produce no changed keys, got {:?}",
+            changed
         );
     }
 }

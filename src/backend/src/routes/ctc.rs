@@ -1274,6 +1274,39 @@ async fn resolve_user_department(pool: &PgPool, user_id: Uuid) -> Result<Option<
         .map(|value| value.flatten())
 }
 
+async fn resolve_department_head_completeness_department(
+    pool: &PgPool,
+    user_id: Uuid,
+) -> Result<Uuid> {
+    let department_id = resolve_user_department(pool, user_id)
+        .await?
+        .ok_or_else(|| {
+            AppError::Forbidden("Department head has no department assignment".to_string())
+        })?;
+
+    let is_head = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(
+            SELECT 1
+            FROM departments
+            WHERE id = $1
+              AND head_id = $2
+        )",
+    )
+    .bind(department_id)
+    .bind(user_id)
+    .fetch_one(pool)
+    .await
+    .map_err(|e| AppError::Database(e.to_string()))?;
+
+    if !is_head {
+        return Err(AppError::Forbidden(
+            "Department head is not assigned to this department".to_string(),
+        ));
+    }
+
+    Ok(department_id)
+}
+
 async fn get_ctc_completeness(
     State(pool): State<PgPool>,
     headers: HeaderMap,
@@ -1289,7 +1322,7 @@ async fn get_ctc_completeness(
     }
 
     let department_filter = if claims.role == "department_head" {
-        resolve_user_department(&pool, user_id).await?
+        Some(resolve_department_head_completeness_department(&pool, user_id).await?)
     } else {
         query.department_id
     };

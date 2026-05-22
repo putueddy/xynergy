@@ -1,0 +1,166 @@
+{
+  "schema_version": "0.1.0",
+  "snapshot_at": "2026-05-23T00:00:00+07:00",
+  "repo": "xynergy",
+  "collection_mode": "sequential",
+  "collection_status": "COLLECTED",
+  "inventory_basis": "acceptance_criteria",
+  "gate_basis": "priority_thresholds",
+  "source_sha": "cc7847f416cb988d773ab31bea5e107623b9d700+working-tree",
+  "target": {
+    "type": "story",
+    "id": "6.5",
+    "label": "CTC Completeness Dashboard"
+  },
+  "decision_mode": "automatic",
+  "evaluator": "Putu",
+  "confidence": "high",
+  "oracle": {
+    "resolution_mode": "formal_requirements",
+    "confidence": "high",
+    "sources": [
+      "_bmad-output/implementation-artifacts/6-5-ctc-completeness-dashboard.md",
+      "_bmad-output/planning-artifacts/epics.md",
+      "_bmad-output/planning-artifacts/prd.md",
+      "_bmad-output/test-artifacts/automation-summary-6-5.md"
+    ],
+    "external_pointer_status": "not_used",
+    "synthetic": false
+  },
+  "coverage": {
+    "inventory": {
+      "covered": 4,
+      "total": 4,
+      "pct": 100
+    },
+    "priority_breakdown": {
+      "P0": {
+        "total": 4,
+        "covered": 4,
+        "pct": 100
+      },
+      "P1": {
+        "total": 0,
+        "covered": 0,
+        "pct": 100
+      },
+      "P2": {
+        "total": 0,
+        "covered": 0,
+        "pct": 100
+      },
+      "P3": {
+        "total": 0,
+        "covered": 0,
+        "pct": 100
+      }
+    },
+    "by_level": {
+      "e2e": {
+        "tests": 0,
+        "criteria_covered": 0
+      },
+      "api": {
+        "tests": 28,
+        "criteria_covered": 4
+      },
+      "component": {
+        "tests": 0,
+        "criteria_covered": 0
+      },
+      "unit": {
+        "tests": 27,
+        "criteria_covered": 4
+      },
+      "other": {
+        "tests": 0,
+        "criteria_covered": 0
+      }
+    },
+    "layer_breakdown": {
+      "automated": {
+        "pct": 100,
+        "status": "FULL"
+      },
+      "manual_ui": {
+        "pct": 0,
+        "status": "DEFERRED",
+        "blocks_release": true
+      }
+    },
+    "ac_overrides": {
+      "AC#3": {
+        "automated": "FULL",
+        "manual_ui": "MANUAL_DEFERRED",
+        "note": "Missing-list payload and Add CTC resource_id target are API/helper-covered; clicking Missing CTC and /ctc?resource_id=<uuid> navigation require live HR browser verification."
+      }
+    }
+  },
+  "tests": {
+    "files": 5,
+      "cases": 55,
+    "skipped_cases": 0,
+    "fixme_cases": 0,
+    "pending_cases": 0
+  },
+  "risk_summary": {
+    "critical_open": 0,
+    "high_open": 0,
+    "medium_open": 0,
+    "low_open": 0
+  },
+  "heuristics": {
+    "endpoint_gaps": 0,
+    "auth_negative_path_status": "present",
+    "error_path_status": "present",
+    "ui_journey_status": "deferred_manual",
+    "ui_state_status": "present_helper_layer"
+  },
+  "blockers": [],
+  "recommendations": [
+    {
+      "priority": "MEDIUM",
+      "action": "Run live HR browser walk-through against a deployed environment to clear the last unchecked sub-bullet of Task 7",
+      "requirements": [
+        "story-6.5-task-7-final"
+      ],
+      "manual_verification_gate": true
+    },
+    {
+      "priority": "LOW",
+      "action": "Optionally promote the deferred live walk-through to a Playwright/Cypress harness alongside future Epic 6+ UI E2E work",
+      "requirements": [
+        "story-6.5-task-7-final"
+      ]
+    },
+    {
+      "priority": "LOW",
+      "action": "Run /bmad:tea:test-review to assess test quality",
+      "requirements": []
+    }
+  ],
+  "links": {
+    "trace_report_path": "_bmad-output/test-artifacts/traceability/6-5-ctc-completeness-dashboard-traceability.md",
+    "trace_report_url": "",
+    "artifact_url": "",
+    "journey_evidence_url": ""
+  },
+  "gate_status": "CONDITIONAL_PASS",
+  "gate_criteria": {
+    "p0_coverage_required": "100%",
+    "p0_coverage_actual": "100%",
+    "p0_status": "MET",
+    "p1_coverage_target": "90%",
+    "p1_coverage_minimum": "80%",
+    "p1_coverage_actual": "100%",
+    "p1_status": "MET",
+    "overall_coverage_minimum": "80%",
+    "overall_coverage_actual": "100%",
+    "overall_status": "MET",
+    "manual_ui_status": "OPEN",
+    "manual_ui_required_for_release": true
+  },
+  "manual_verification_status": "deferred_to_deployed_environment",
+  "release_approved": false,
+  "manual_verification_blocking_release": true
+}

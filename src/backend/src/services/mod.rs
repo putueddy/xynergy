@@ -39,7 +39,9 @@ pub use ctc_calculator::{
     calculate_ctc, jkk_rate_for_tier, BpjsConfig, CtcCalculation, CtcComponents,
 };
 pub use ctc_completeness::{
-    get_completeness_summary, get_missing_employees, CompletenessReport, DepartmentCompleteness,
+    get_completeness_summary, get_completeness_summary_core_in_transaction,
+    get_completeness_summary_in_transaction, get_completeness_trend_in_transaction,
+    get_missing_employees, CompletenessReport, CompletenessTrendPoint, DepartmentCompleteness,
     MissingCtcEmployee,
 };
 pub use ctc_validation_report::{
