@@ -798,6 +798,28 @@
   gap: 0.75rem;
 }
 
+/* ─── Dashboard Change Flash ───
+ * Brief, non-disruptive highlight for changed values on the role-based
+ * dashboard. No layout shift, no text resize, no auto-scroll. Pairs with
+ * the polling/change-detection logic in pages/dashboard.rs (Story 6.2).
+ */
+@utility dashboard-change-flash {
+  animation: dashboard-change-flash 1800ms var(--ease-huly) forwards;
+  border-radius: 0.25rem;
+
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+    background-color: rgba(53, 117, 222, 0.16);
+    box-shadow: inset 0 0 0 1px rgba(53, 117, 222, 0.25);
+  }
+}
+
+@keyframes dashboard-change-flash {
+  0%   { background-color: rgba(53, 117, 222, 0.28); box-shadow: inset 0 0 0 1px rgba(53, 117, 222, 0.45); }
+  60%  { background-color: rgba(53, 117, 222, 0.16); box-shadow: inset 0 0 0 1px rgba(53, 117, 222, 0.25); }
+  100% { background-color: transparent; box-shadow: inset 0 0 0 1px transparent; }
+}
+
 /* ─── Vis.js Timeline Overrides (Dark Theme) ─── */
 @layer components {
   /* Hide delete button on items */

@@ -1,0 +1,28 @@
+{
+  "schema_version": "0.1.0",
+  "evaluated_at": "2026-05-22T00:00:00Z",
+  "repo": "xynergy",
+  "target": {
+    "type": "story",
+    "id": "6.2",
+    "label": "Real-Time Dashboard Updates"
+  },
+  "collection_status": "COLLECTED",
+  "gate_basis": "priority_thresholds",
+  "gate_status": "PASS_WITH_ADVISORY",
+  "rationale": "All three ACs (1 P0 + 2 P1) are FULL-covered at the automated test layer reachable by the current harness, and the WASM-runtime/browser slice was manually verified on 2026-05-22. AC#1 polling reuses GET /api/v1/dashboard which is exercised by 27 backend integration tests including generated_at freshness (6.1-INT-018); 27/27 PASS confirmed by automation-summary-6-2.md. Manual browser verification confirmed initial dashboard load, 30s polling, navigation cleanup, and expired-session redirect. AC#2 server-authoritative generated_at contract is FULL on the INT suite, and the format_date/role_display helpers feeding the last-updated label are FULL on the frontend unit suite (UNIT-019, UNIT-020); manual Refresh updated the Last updated label in-browser. AC#3 change-detection logic plus display helpers (format_idr) are FULL-covered by 27 frontend native unit tests across all five role panels (HR, Department Head, Project Manager, Finance, Admin), all dashboard_value_map key paths, and the two cross-cutting security invariants (no generated_at flash, no sensitive CTC field leak); manual browser verification observed dashboard-change-flash on a real data change and fade after the flash window. Frontend WASM compile clean. Decision is PASS_WITH_ADVISORY because these browser/runtime behaviors have manual evidence but no repeatable automated harness — no Leptos component test runner or wasm-bindgen-test harness exists in the repo, and the story Architecture Compliance section forbids introducing new dependencies for this work.",
+  "p0_status": "MET",
+  "p1_status": "MET",
+  "overall_status": "MET",
+  "critical_open": 0,
+  "advisory_gaps": [
+    "Frontend polling lifecycle (Interval creation, on_cleanup, no-stacking guard, 30s cadence) was manually browser-verified on 2026-05-22 but has no repeatable automated coverage.",
+    "Frontend manual-refresh UI behavior (button busy state, aria-live status region, monotonic request id ordering, last-updated label assembly) was manually browser-verified on 2026-05-22 but has no component-level automated coverage. No Leptos component test harness exists in repo (carry-over from Story 6.1 advisory). Note: display helpers feeding the label are unit-covered as of Run 2.",
+    "Changed-value visual flash (1.8s dashboard-change-flash animation, prefers-reduced-motion variant) and on-unmount Timeout cleanup were manually browser-verified for the normal flash/fade and navigation-cleanup paths, but have no repeatable automated browser coverage.",
+    "Frontend-side poll-failure / 5xx scenario (AC#1 error path) is not unit-tested at the frontend; authenticated_get retry behavior is shared but un-asserted at poll time."
+  ],
+  "links": {
+    "trace_report_path": "_bmad-output/test-artifacts/traceability/6-2-real-time-dashboard-updates-traceability.md",
+    "e2e_trace_summary_path": "_bmad-output/test-artifacts/traceability/6-2-e2e-trace-summary.json"
+  }
+}

@@ -1,0 +1,222 @@
+{
+  "schema_version": "0.1.0",
+  "snapshot_at": "2026-05-22T00:00:00Z",
+  "repo": "xynergy",
+  "collection_mode": "contract_static_plus_local_compile",
+  "collection_status": "COLLECTED",
+  "inventory_basis": "acceptance_criteria",
+  "gate_basis": "priority_thresholds",
+  "target": {
+    "type": "story",
+    "id": "6.2",
+    "label": "Real-Time Dashboard Updates"
+  },
+  "decision_mode": "automated",
+  "evaluator": "Putu",
+  "confidence": "high",
+  "gate_status": "PASS_WITH_ADVISORY",
+  "gate_criteria": {
+    "p0_coverage_required": "100%",
+    "p0_coverage_actual": "100% automated test layer + manual browser verified",
+    "p0_status": "MET",
+    "p1_coverage_target": "90%",
+    "p1_coverage_minimum": "80%",
+    "p1_coverage_actual": "100% automated test layer + manual browser verified",
+    "p1_status": "MET",
+    "overall_coverage_minimum": "80%",
+    "overall_coverage_actual": "100% automated test layer + manual browser verified",
+    "overall_status": "MET",
+    "frontend_unit_execution_status": "executed_during_automation_run (27/27)",
+    "backend_integration_execution_status": "executed_during_automation_run (27/27)",
+    "wasm_compile_status": "clean"
+  },
+  "coverage": {
+    "inventory": { "covered": 3, "total": 3, "pct": 100 },
+    "priority_breakdown": {
+      "P0": { "total": 1, "covered": 1, "pct": 100 },
+      "P1": { "total": 2, "covered": 2, "pct": 100 },
+      "P2": { "total": 0, "covered": 0, "pct": null },
+      "P3": { "total": 0, "covered": 0, "pct": null }
+    },
+    "by_level": {
+      "e2e":       { "tests": 0,  "criteria_covered": 0 },
+      "api":       { "tests": 27, "criteria_covered": 3 },
+      "component": { "tests": 0,  "criteria_covered": 0 },
+      "unit":      { "tests": 27, "criteria_covered": 2 },
+      "other":     { "tests": 0,  "criteria_covered": 0 }
+    }
+  },
+  "tests": {
+    "files": 2,
+    "cases": 54,
+    "skipped_cases": 0,
+    "fixme_cases": 0,
+    "pending_cases": 0
+  },
+  "risk_summary": {
+    "critical_open": 0,
+    "high_open": 0,
+    "medium_open": 3,
+    "low_open": 1
+  },
+  "heuristics": {
+    "endpoint_gaps": 0,
+    "auth_negative_path_status": "present",
+    "error_path_status": "partial",
+    "data_isolation_status": "present",
+    "list_bound_status": "present",
+    "sensitive_field_guard_status": "present",
+    "ui_journey_status": "manual_browser_verified_no_automated_harness",
+    "ui_state_status": "manual_browser_verified_no_component_harness",
+    "polling_runtime_status": "manual_browser_verified_no_automated_harness",
+    "highlight_visual_status": "manual_browser_verified_no_automated_harness",
+    "display_helper_status": "present"
+  },
+  "manual_browser_verification": {
+    "status": "completed",
+    "verified_at": "2026-05-22",
+    "coverage": [
+      "initial Admin role dashboard load",
+      "manual Refresh updates Last updated",
+      "automatic polling updates Last updated after 30 seconds",
+      "changed value applies dashboard-change-flash and clears after the flash window",
+      "navigation away from /dashboard stops polling",
+      "expired session redirects /dashboard to /login"
+    ],
+    "screenshot_path": "/tmp/xynergy-story-6-2-dashboard-verification.png"
+  },
+  "ac_to_tests": [
+    {
+      "ac": 1,
+      "title": "Dashboard updates within 30s via polling (FR50, NFR7)",
+      "priority": "P0",
+      "coverage": "FULL_AUTOMATED_TEST_LAYER_PLUS_MANUAL_BROWSER",
+      "tests": [
+        "dashboard_response_includes_recent_generated_at",
+        "unauthenticated_dashboard_returns_401",
+        "invalid_bearer_token_returns_401",
+        "hr_dashboard_returns_hr_section_only",
+        "dept_head_only_sees_own_department",
+        "project_manager_only_sees_owned_projects",
+        "finance_dashboard_has_cash_and_audit_state",
+        "admin_dashboard_returns_admin_section"
+      ]
+    },
+    {
+      "ac": 2,
+      "title": "Manual Refresh fetches latest immediately AND displays last-updated timestamp (FR51)",
+      "priority": "P1",
+      "coverage": "FULL_AUTOMATED_TEST_LAYER_PLUS_MANUAL_BROWSER",
+      "tests": [
+        "dashboard_response_includes_recent_generated_at",
+        "format_date_strips_iso_time_component",
+        "role_display_returns_canonical_labels"
+      ]
+    },
+    {
+      "ac": 3,
+      "title": "Changed values briefly highlight when new data arrives",
+      "priority": "P1",
+      "coverage": "FULL_AUTOMATED_TEST_LAYER_PLUS_MANUAL_BROWSER",
+      "tests": [
+        "initial_load_produces_no_changed_keys",
+        "generated_at_only_change_produces_no_changed_keys",
+        "scalar_change_produces_expected_key",
+        "newly_visible_row_produces_expected_key",
+        "removed_row_does_not_panic",
+        "dept_head_budget_utilization_change_produces_expected_key",
+        "dept_head_upcoming_assignment_id_change_produces_stable_key",
+        "project_manager_margin_pct_change_produces_expected_key",
+        "project_manager_margin_alert_uses_project_id_stable_key",
+        "finance_cash_position_change_produces_expected_key",
+        "finance_export_request_new_pending_id_produces_changed_key",
+        "finance_audit_alerts_total_change_produces_expected_key",
+        "value_map_excludes_generated_at_key",
+        "value_map_excludes_sensitive_ctc_fields",
+        "fallback_key_used_when_resource_id_missing",
+        "format_idr_handles_zero",
+        "format_idr_groups_thousands_with_dots",
+        "format_idr_handles_negative_amount",
+        "hr_pending_updates_sample_id_keyed_change",
+        "hr_compliance_top_risks_id_keyed_row_change",
+        "dept_head_top_at_risk_id_stable_key",
+        "pm_project_fallback_key_used_when_project_id_missing",
+        "pm_active_projects_count_changes_when_project_added",
+        "finance_audit_alerts_recent_row_uses_id_stable_key",
+        "finance_ctc_validation_status_change_produces_expected_key",
+        "hr_recent_changes_do_not_expose_encrypted_fields"
+      ]
+    }
+  ],
+  "supporting_tests": {
+    "auth_security": [
+      "unauthenticated_dashboard_returns_401",
+      "invalid_bearer_token_returns_401",
+      "unsupported_role_returns_403",
+      "dept_head_without_department_returns_403",
+      "dept_head_dashboard_uses_current_department_not_stale_token"
+    ],
+    "contract": [
+      "dashboard_response_includes_recent_generated_at"
+    ],
+    "regression_safety_story_6_1": [
+      "All 27 backend dashboard_tests.rs tests re-ran green (Story 6.2 made no backend changes — contract preservation verified)."
+    ]
+  },
+  "non_ac_regression": {
+    "story_scoped": [],
+    "rerun_suites": {
+      "dashboard_tests": 27,
+      "frontend_dashboard_unit_tests": 27
+    }
+  },
+  "totals": {
+    "story_scoped_tests": 27,
+    "regression_tests": 27,
+    "total_tests_considered": 54
+  },
+  "blockers": [],
+  "advisory_gaps": [
+    "Frontend polling lifecycle (Interval creation, on_cleanup, no-stacking guard, 30s cadence) was manually browser-verified on 2026-05-22 but has no repeatable automated coverage.",
+    "Frontend manual-refresh UI behavior (button busy state, aria-live status region, monotonic request id ordering, last-updated label assembly) was browser-verified on 2026-05-22 but has no component-level automated coverage. No Leptos component test harness exists in repo (carry-over from Story 6.1 advisory). Note: display helpers feeding the label are unit-covered as of Run 2.",
+    "Changed-value visual flash (1.8s dashboard-change-flash animation, prefers-reduced-motion variant) and on-unmount Timeout cleanup were manually browser-verified for the normal flash/fade and navigation-cleanup paths, but have no repeatable automated browser coverage.",
+    "Frontend-side poll-failure / 5xx scenario (AC#1 error path) is not unit-tested at the frontend; authenticated_get retry behavior is shared but un-asserted at poll time."
+  ],
+  "oracle": {
+    "resolution_mode": "formal_requirements",
+    "confidence": "high",
+    "sources": [
+      "_bmad-output/implementation-artifacts/6-2-real-time-dashboard-updates.md",
+      "_bmad-output/planning-artifacts/epics.md",
+      "_bmad-output/planning-artifacts/prd.md",
+      "_bmad-output/planning-artifacts/ux-design-specification.md",
+      "_bmad-output/test-artifacts/automation-summary-6-2.md"
+    ],
+    "external_pointer_status": "not_used",
+    "synthetic": false
+  },
+  "recommendations": [
+    {
+      "priority": "HIGH",
+      "action": "Introduce a frontend test harness (Playwright + cargo-leptos serve, or wasm-bindgen-test) so future dashboard work can automate the /dashboard UI journey and WASM-runtime lifecycle. Cross-story tech debt carried over from Story 6.1 advisory.",
+      "requirements": ["AC#1", "AC#2", "AC#3"]
+    },
+    {
+      "priority": "MEDIUM",
+      "action": "Once a frontend harness exists, add loading/empty/error UI-state coverage on /dashboard (currently relies on backend integration tests only).",
+      "requirements": ["AC#1", "AC#2", "AC#3"]
+    },
+    {
+      "priority": "MEDIUM",
+      "action": "Add a frontend-side poll-failure / 5xx scenario test (AC#1 error path currently un-asserted).",
+      "requirements": ["AC#1"]
+    },
+    {
+      "priority": "LOW",
+      "action": "Run /bmad-testarch-test-review (Acceptance Auditor + Edge Case Hunter) over the 22 new unit tests (6.2-UNIT-006..027) before landing the expansion."
+    }
+  ],
+  "links": {
+    "trace_report_path": "_bmad-output/test-artifacts/traceability/6-2-real-time-dashboard-updates-traceability.md"
+  }
+}

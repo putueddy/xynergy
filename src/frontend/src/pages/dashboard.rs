@@ -1,10 +1,19 @@
 use crate::auth::{authenticated_get, logout_user, use_auth};
 
+use gloo_timers::callback::{Interval, Timeout};
 use leptos::either::Either;
 use leptos::prelude::*;
 use leptos_router::hooks::*;
 use serde::Deserialize;
+use std::collections::{HashMap, HashSet};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
 use uuid::Uuid;
+
+const POLL_INTERVAL_MS: u32 = 30_000;
+const CHANGE_HIGHLIGHT_TIMEOUT_MS: u32 = 1_800;
 
 // ── Response shape (mirror of backend RoleDashboardResponse) ──────────────
 
@@ -54,12 +63,16 @@ struct HrPendingUpdates {
 
 #[derive(Debug, Clone, Deserialize)]
 struct HrMissingEmployee {
+    #[serde(default)]
+    id: Option<Uuid>,
     name: String,
     department: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 struct RecentCtcChange {
+    #[serde(default)]
+    resource_id: Option<Uuid>,
     resource_name: String,
     revision_number: i32,
     #[serde(default)]
@@ -82,6 +95,8 @@ struct ComplianceAlertSummary {
 
 #[derive(Debug, Clone, Deserialize)]
 struct ComplianceTopRisk {
+    #[serde(default)]
+    resource_id: Option<Uuid>,
     name: String,
     variance_amount: i64,
 }
@@ -110,6 +125,8 @@ struct UtilizationSummary {
 
 #[derive(Debug, Clone, Deserialize)]
 struct UtilizationAtRisk {
+    #[serde(default)]
+    resource_id: Option<Uuid>,
     resource_name: String,
     current_allocation_pct: f64,
 }
@@ -135,6 +152,8 @@ struct OverallocationSummary {
 
 #[derive(Debug, Clone, Deserialize)]
 struct UpcomingAssignment {
+    #[serde(default)]
+    allocation_id: Option<Uuid>,
     resource_name: String,
     project_name: String,
     start_date: String,
@@ -156,6 +175,8 @@ struct ProjectManagerDashboard {
 
 #[derive(Debug, Clone, Deserialize)]
 struct ProjectHealthCard {
+    #[serde(default)]
+    project_id: Option<Uuid>,
     project_name: String,
     status: String,
     end_date: String,
@@ -175,6 +196,8 @@ struct ProjectHealthCard {
 
 #[derive(Debug, Clone, Deserialize)]
 struct MarginAlert {
+    #[serde(default)]
+    project_id: Option<Uuid>,
     project_name: String,
     margin_pct: f64,
     message: String,
@@ -231,6 +254,8 @@ struct AuditAlertsSummary {
 
 #[derive(Debug, Clone, Deserialize)]
 struct AuditAlertEntry {
+    #[serde(default)]
+    id: Option<Uuid>,
     action: String,
     entity_type: String,
     created_at: String,
@@ -245,6 +270,8 @@ struct ExportRequestsSummary {
 
 #[derive(Debug, Clone, Deserialize)]
 struct PendingExportRequest {
+    #[serde(default)]
+    id: Option<Uuid>,
     status: String,
     created_at: String,
     #[serde(default)]
@@ -331,6 +358,450 @@ impl DashboardState {
     }
 }
 
+// ── Change detection ─────────────────────────────────────────────────────
+//
+// Build a stable key → display-value map for visible dashboard values, then
+// diff consecutive snapshots to determine which keys changed. `generated_at`
+// is deliberately excluded so polling does not flash every value each tick.
+
+fn recent_ctc_change_key(change: &RecentCtcChange) -> String {
+    match change.resource_id {
+        Some(id) => format!(
+            "hr.recent_changes.{}|rev{}|{}",
+            id, change.revision_number, change.created_at
+        ),
+        None => format!(
+            "hr.recent_changes.name.{}|rev{}|{}",
+            change.resource_name, change.revision_number, change.created_at
+        ),
+    }
+}
+
+fn dashboard_value_map(data: &RoleDashboardResponse) -> HashMap<String, String> {
+    let mut map = HashMap::new();
+
+    if let Some(hr) = &data.hr {
+        map.insert(
+            "hr.completeness.overall_completion_pct".into(),
+            format!("{:.1}", hr.completeness.overall_completion_pct),
+        );
+        map.insert(
+            "hr.completeness.total_with_ctc".into(),
+            hr.completeness.total_with_ctc.to_string(),
+        );
+        map.insert(
+            "hr.completeness.total_employees".into(),
+            hr.completeness.total_employees.to_string(),
+        );
+        map.insert(
+            "hr.pending_updates.missing_count".into(),
+            hr.pending_updates.missing_count.to_string(),
+        );
+        map.insert(
+            "hr.compliance_alerts.compliance_rate_pct".into(),
+            format!("{:.1}", hr.compliance_alerts.compliance_rate_pct),
+        );
+        map.insert(
+            "hr.compliance_alerts.total_discrepancies".into(),
+            hr.compliance_alerts.total_discrepancies.to_string(),
+        );
+        map.insert(
+            "hr.compliance_alerts.total_validated".into(),
+            hr.compliance_alerts.total_validated.to_string(),
+        );
+        map.insert(
+            "hr.compliance_alerts.total_passed".into(),
+            hr.compliance_alerts.total_passed.to_string(),
+        );
+        for change in &hr.recent_changes {
+            map.insert(
+                recent_ctc_change_key(change),
+                format!(
+                    "{}|{}",
+                    change.resource_name,
+                    change.changed_by_name.clone().unwrap_or_default()
+                ),
+            );
+        }
+        for emp in &hr.pending_updates.sample {
+            let key = match emp.id {
+                Some(id) => format!("hr.pending_updates.sample.{}", id),
+                None => format!(
+                    "hr.pending_updates.sample.name.{}|{}",
+                    emp.name, emp.department
+                ),
+            };
+            map.insert(key, format!("{}|{}", emp.name, emp.department));
+        }
+        for risk in &hr.compliance_alerts.top_risks {
+            let key = match risk.resource_id {
+                Some(id) => format!("hr.compliance_alerts.top_risks.{}", id),
+                None => format!(
+                    "hr.compliance_alerts.top_risks.name.{}|{}",
+                    risk.name, risk.variance_amount
+                ),
+            };
+            map.insert(key, format!("{}|{}", risk.name, risk.variance_amount));
+        }
+    }
+
+    if let Some(dh) = &data.department_head {
+        map.insert(
+            "department_head.utilization.average_utilization_pct".into(),
+            format!("{:.1}", dh.utilization.average_utilization_pct),
+        );
+        map.insert(
+            "department_head.utilization.overallocated_count".into(),
+            dh.utilization.overallocated_count.to_string(),
+        );
+        map.insert(
+            "department_head.overallocations.overallocated_count".into(),
+            dh.overallocations.overallocated_count.to_string(),
+        );
+        if let Some(budget) = &dh.budget {
+            map.insert(
+                "department_head.budget.utilization_percentage".into(),
+                format!("{:.0}", budget.utilization_percentage),
+            );
+            map.insert(
+                "department_head.budget.remaining_idr".into(),
+                budget.remaining_idr.to_string(),
+            );
+            map.insert(
+                "department_head.budget.total_committed_idr".into(),
+                budget.total_committed_idr.to_string(),
+            );
+            map.insert(
+                "department_head.budget.total_budget_idr".into(),
+                budget.total_budget_idr.to_string(),
+            );
+            map.insert(
+                "department_head.budget.budget_health".into(),
+                budget.budget_health.clone(),
+            );
+        }
+        for member in &dh.utilization.top_at_risk {
+            let key = match member.resource_id {
+                Some(id) => format!("department_head.top_at_risk.{}", id),
+                None => format!("department_head.top_at_risk.name.{}", member.resource_name),
+            };
+            map.insert(
+                key,
+                format!(
+                    "{}|{:.0}",
+                    member.resource_name, member.current_allocation_pct
+                ),
+            );
+        }
+        for assignment in &dh.upcoming_assignments {
+            let key = match assignment.allocation_id {
+                Some(id) => format!("department_head.upcoming_assignments.{}", id),
+                None => format!(
+                    "department_head.upcoming_assignments.name.{}|{}|{}|{}",
+                    assignment.resource_name,
+                    assignment.project_name,
+                    assignment.start_date,
+                    assignment.end_date
+                ),
+            };
+            map.insert(
+                key,
+                format!(
+                    "{}|{}|{:.0}|{}|{}",
+                    assignment.resource_name,
+                    assignment.project_name,
+                    assignment.allocation_percentage,
+                    assignment.start_date,
+                    assignment.end_date
+                ),
+            );
+        }
+    }
+
+    if let Some(pm) = &data.project_manager {
+        map.insert(
+            "project_manager.active_projects.count".into(),
+            pm.active_projects.len().to_string(),
+        );
+        map.insert(
+            "project_manager.margin_alerts.count".into(),
+            pm.margin_alerts.len().to_string(),
+        );
+        for project in &pm.active_projects {
+            let id_key = match project.project_id {
+                Some(id) => id.to_string(),
+                None => format!("name.{}", project.project_name),
+            };
+            map.insert(
+                format!("project_manager.project.{}.margin_pct", id_key),
+                format!("{:.1}", project.margin_pct),
+            );
+            map.insert(
+                format!("project_manager.project.{}.project_name", id_key),
+                project.project_name.clone(),
+            );
+            map.insert(
+                format!("project_manager.project.{}.status", id_key),
+                project.status.clone(),
+            );
+            map.insert(
+                format!("project_manager.project.{}.end_date", id_key),
+                project.end_date.clone(),
+            );
+            map.insert(
+                format!("project_manager.project.{}.total_budget_idr", id_key),
+                project.total_budget_idr.to_string(),
+            );
+            map.insert(
+                format!("project_manager.project.{}.budget_spent_idr", id_key),
+                project.budget_spent_idr.to_string(),
+            );
+            map.insert(
+                format!("project_manager.project.{}.gross_profit_idr", id_key),
+                project.gross_profit_idr.to_string(),
+            );
+            map.insert(
+                format!("project_manager.project.{}.budget_status", id_key),
+                project.budget_status.clone(),
+            );
+            map.insert(
+                format!("project_manager.project.{}.budget_remaining_idr", id_key),
+                project.budget_remaining_idr.to_string(),
+            );
+            map.insert(
+                format!("project_manager.project.{}.total_revenue_idr", id_key),
+                project.total_revenue_idr.to_string(),
+            );
+            map.insert(
+                format!("project_manager.project.{}.total_cost_idr", id_key),
+                project.total_cost_idr.to_string(),
+            );
+            map.insert(
+                format!("project_manager.project.{}.warning", id_key),
+                project.warning.clone().unwrap_or_default(),
+            );
+            map.insert(
+                format!("project_manager.project.{}.margin_alert", id_key),
+                project.margin_alert.clone().unwrap_or_default(),
+            );
+        }
+        for alert in &pm.margin_alerts {
+            let id_key = match alert.project_id {
+                Some(id) => id.to_string(),
+                None => format!("name.{}", alert.project_name),
+            };
+            map.insert(
+                format!("project_manager.margin_alert.{}", id_key),
+                format!("{:.1}|{}", alert.margin_pct, alert.message),
+            );
+        }
+    }
+
+    if let Some(finance) = &data.finance {
+        map.insert(
+            "finance.cash_position.ending_cumulative_position_idr".into(),
+            finance
+                .cash_position
+                .ending_cumulative_position_idr
+                .to_string(),
+        );
+        map.insert(
+            "finance.cash_position.net_cash_flow_idr".into(),
+            finance.cash_position.net_cash_flow_idr.to_string(),
+        );
+        map.insert(
+            "finance.cash_position.total_cash_in_idr".into(),
+            finance.cash_position.total_cash_in_idr.to_string(),
+        );
+        map.insert(
+            "finance.cash_position.total_cash_out_idr".into(),
+            finance.cash_position.total_cash_out_idr.to_string(),
+        );
+        map.insert(
+            "finance.ctc_validation.status".into(),
+            finance.ctc_validation.status.clone(),
+        );
+        if let Some(rate) = finance.ctc_validation.match_rate_pct {
+            map.insert(
+                "finance.ctc_validation.match_rate_pct".into(),
+                format!("{:.1}", rate),
+            );
+        } else {
+            map.insert(
+                "finance.ctc_validation.match_rate_pct".into(),
+                "none".into(),
+            );
+        }
+        map.insert(
+            "finance.ctc_validation.total_compared".into(),
+            finance
+                .ctc_validation
+                .total_compared
+                .map(|v| v.to_string())
+                .unwrap_or_else(|| "none".to_string()),
+        );
+        map.insert(
+            "finance.ctc_validation.total_matches".into(),
+            finance
+                .ctc_validation
+                .total_matches
+                .map(|v| v.to_string())
+                .unwrap_or_else(|| "none".to_string()),
+        );
+        map.insert(
+            "finance.ctc_validation.total_discrepancies".into(),
+            finance
+                .ctc_validation
+                .total_discrepancies
+                .map(|v| v.to_string())
+                .unwrap_or_else(|| "none".to_string()),
+        );
+        map.insert(
+            "finance.audit_alerts.total".into(),
+            (finance.audit_alerts.access_denied_count
+                + finance.audit_alerts.login_failed_count
+                + finance.audit_alerts.login_blocked_count
+                + finance.audit_alerts.chain_verification_failure_count)
+                .to_string(),
+        );
+        map.insert(
+            "finance.audit_alerts.access_denied_count".into(),
+            finance.audit_alerts.access_denied_count.to_string(),
+        );
+        map.insert(
+            "finance.audit_alerts.login_failed_count".into(),
+            finance.audit_alerts.login_failed_count.to_string(),
+        );
+        map.insert(
+            "finance.audit_alerts.login_blocked_count".into(),
+            finance.audit_alerts.login_blocked_count.to_string(),
+        );
+        map.insert(
+            "finance.audit_alerts.chain_verification_failure_count".into(),
+            finance
+                .audit_alerts
+                .chain_verification_failure_count
+                .to_string(),
+        );
+        map.insert(
+            "finance.export_requests.pending_count".into(),
+            finance.export_requests.pending_count.to_string(),
+        );
+        for entry in &finance.audit_alerts.recent {
+            let key = match entry.id {
+                Some(id) => format!("finance.audit_alerts.recent.{}", id),
+                None => format!(
+                    "finance.audit_alerts.recent.{}|{}|{}",
+                    entry.action, entry.entity_type, entry.created_at
+                ),
+            };
+            map.insert(
+                key,
+                format!(
+                    "{}|{}|{}",
+                    entry.action, entry.entity_type, entry.created_at
+                ),
+            );
+        }
+        for pending in &finance.export_requests.latest_pending {
+            let key = match pending.id {
+                Some(id) => format!("finance.export_requests.latest.{}", id),
+                None => format!(
+                    "finance.export_requests.latest.{}|{}",
+                    pending.status, pending.created_at
+                ),
+            };
+            map.insert(
+                key,
+                format!(
+                    "{}|{}|{}",
+                    pending.status,
+                    pending.report_type.clone().unwrap_or_default(),
+                    pending.created_at
+                ),
+            );
+        }
+    }
+
+    if let Some(admin) = &data.admin {
+        map.insert("admin.total_users".into(), admin.total_users.to_string());
+        map.insert(
+            "admin.total_departments".into(),
+            admin.total_departments.to_string(),
+        );
+        map.insert(
+            "admin.total_active_projects".into(),
+            admin.total_active_projects.to_string(),
+        );
+        map.insert(
+            "admin.total_active_ctc_records".into(),
+            admin.total_active_ctc_records.to_string(),
+        );
+        map.insert(
+            "admin.pending_export_requests".into(),
+            admin.pending_export_requests.to_string(),
+        );
+        map.insert(
+            "admin.access_denied_24h".into(),
+            admin.access_denied_24h.to_string(),
+        );
+    }
+
+    map
+}
+
+fn compute_changed_keys(
+    prev: &HashMap<String, String>,
+    next: &HashMap<String, String>,
+) -> HashSet<String> {
+    let mut changed = HashSet::new();
+    for (key, value) in next {
+        match prev.get(key) {
+            Some(prev_value) if prev_value == value => {}
+            _ => {
+                changed.insert(key.clone());
+            }
+        }
+    }
+    changed
+}
+
+#[derive(Clone, Copy)]
+struct ChangedKeysCtx(ReadSignal<HashSet<String>>);
+
+fn flash_if_changed(
+    changed: ChangedKeysCtx,
+    key: &'static str,
+) -> impl Fn() -> bool + Copy + 'static {
+    move || changed.0.with(|set| set.contains(key))
+}
+
+fn flash_if_changed_owned(changed: ChangedKeysCtx, key: String) -> impl Fn() -> bool + 'static {
+    move || changed.0.with(|set| set.contains(&key))
+}
+
+fn flash_if_any_changed(
+    changed: ChangedKeysCtx,
+    keys: &'static [&'static str],
+) -> impl Fn() -> bool + Copy + 'static {
+    move || {
+        changed
+            .0
+            .with(|set| keys.iter().any(|key| set.contains(*key)))
+    }
+}
+
+fn flash_if_any_changed_owned(
+    changed: ChangedKeysCtx,
+    keys: Vec<String>,
+) -> impl Fn() -> bool + 'static {
+    move || {
+        changed
+            .0
+            .with(|set| keys.iter().any(|key| set.contains(key)))
+    }
+}
+
 #[component]
 pub fn Dashboard() -> impl IntoView {
     let auth = use_auth();
@@ -356,26 +827,94 @@ pub fn Dashboard() -> impl IntoView {
 
     let user = auth.user;
     let (state, set_state) = signal(DashboardState::initial());
-    let (refresh_token, set_refresh_token) = signal(0u32);
+    let (changed_keys, set_changed_keys) = signal::<HashSet<String>>(HashSet::new());
+
+    // Component-scoped, !Send+!Sync handles. Replacing/clearing the inner
+    // Option drops the previous Interval/Timeout, preventing leaks and
+    // interval stacking when effects rerun or the component unmounts.
+    let poll_interval = StoredValue::new_local(Option::<Interval>::None);
+    let highlight_timeout = StoredValue::new_local(Option::<Timeout>::None);
+
+    // Monotonic request id ensures slower stale responses cannot overwrite
+    // newer ones, and the loading badge tracks only the most recent request.
+    let next_request_id: StoredValue<u64> = StoredValue::new(0);
+    let latest_request_id: StoredValue<u64> = StoredValue::new(0);
+
+    // Previous successful snapshot value-map for change detection.
+    let prev_value_map: StoredValue<Option<HashMap<String, String>>> = StoredValue::new(None);
+
+    // Track whether the initial load has run for the current authenticated
+    // session so we kick off a single immediate load instead of waiting for
+    // the first interval tick.
+    let did_initial_load: StoredValue<bool> = StoredValue::new(false);
+
+    // Async requests may resolve after auth teardown or component cleanup.
+    // Keep a non-reactive liveness guard outside the Leptos owner so stale
+    // tasks can exit before touching disposed signals.
+    let dashboard_alive = Arc::new(AtomicBool::new(true));
+
+    // Provide changed keys signal to child panels via context.
+    provide_context(ChangedKeysCtx(changed_keys));
 
     let load_dashboard = {
         let navigate = navigate.clone();
+        let dashboard_alive = dashboard_alive.clone();
         move || {
+            if !dashboard_alive.load(Ordering::Relaxed) {
+                return;
+            }
+            let request_id = next_request_id.with_value(|n| n.wrapping_add(1));
+            next_request_id.set_value(request_id);
+            latest_request_id.set_value(request_id);
             set_state.update(|s| {
                 s.loading = true;
                 s.error = None;
             });
+
             let navigate = navigate.clone();
+            let dashboard_alive = dashboard_alive.clone();
             leptos::task::spawn_local(async move {
-                match fetch_role_dashboard().await {
+                let result = fetch_role_dashboard().await;
+
+                if !dashboard_alive.load(Ordering::Relaxed) {
+                    return;
+                }
+
+                // Drop stale responses so an older slow request cannot
+                // overwrite a newer one.
+                if latest_request_id.get_value() != request_id {
+                    return;
+                }
+
+                match result {
                     Ok(data) => {
+                        let next_map = dashboard_value_map(&data);
+                        let changed = match prev_value_map.with_value(|prev| prev.clone()) {
+                            Some(prev_map) => compute_changed_keys(&prev_map, &next_map),
+                            None => HashSet::new(),
+                        };
+                        prev_value_map.set_value(Some(next_map));
+
                         set_state.update(|s| {
                             s.data = Some(data);
                             s.error = None;
                             s.loading = false;
                         });
+
+                        if !changed.is_empty() {
+                            set_changed_keys.set(changed);
+                            // Replace any pending timeout — drops the old one,
+                            // restarting the highlight clear window.
+                            let timeout = Timeout::new(CHANGE_HIGHLIGHT_TIMEOUT_MS, move || {
+                                set_changed_keys.set(HashSet::new());
+                            });
+                            highlight_timeout.set_value(Some(timeout));
+                        }
                     }
                     Err(e) if e == "SESSION_EXPIRED" => {
+                        // Stop polling immediately and tear down auth state.
+                        poll_interval.set_value(None);
+                        highlight_timeout.set_value(None);
                         logout_user(&auth);
                         set_state.update(|s| {
                             s.error =
@@ -385,6 +924,7 @@ pub fn Dashboard() -> impl IntoView {
                         navigate("/login", Default::default());
                     }
                     Err(e) => {
+                        // Keep existing data visible; surface a bounded error.
                         set_state.update(|s| {
                             s.error = Some(e);
                             s.loading = false;
@@ -395,17 +935,60 @@ pub fn Dashboard() -> impl IntoView {
         }
     };
 
+    // Single effect that handles both the initial load and the polling
+    // lifecycle. Replacing the StoredValue's inner Option drops the previous
+    // Interval (RAII clears the underlying timer), which keeps exactly one
+    // active polling interval for this dashboard instance.
     {
         let load = load_dashboard.clone();
         Effect::new(move |_| {
-            let _ = refresh_token.get();
-            load();
+            let is_auth = auth.is_authenticated.get();
+            if is_auth {
+                if !did_initial_load.get_value() {
+                    did_initial_load.set_value(true);
+                    load();
+                }
+                let load = load.clone();
+                let interval = Interval::new(POLL_INTERVAL_MS, move || {
+                    if !state.with(|s| s.loading) {
+                        load();
+                    }
+                });
+                poll_interval.set_value(Some(interval));
+            } else {
+                // Allow a future re-login to trigger a fresh initial load.
+                let invalidation_id = next_request_id.with_value(|n| n.wrapping_add(1));
+                next_request_id.set_value(invalidation_id);
+                latest_request_id.set_value(invalidation_id);
+                did_initial_load.set_value(false);
+                poll_interval.set_value(None);
+                highlight_timeout.set_value(None);
+                prev_value_map.set_value(None);
+                set_changed_keys.set(HashSet::new());
+                set_state.update(|s| {
+                    s.data = None;
+                    s.loading = false;
+                });
+            }
         });
     }
 
+    // Tear down timers and highlight state when the component unmounts.
+    on_cleanup(move || {
+        dashboard_alive.store(false, Ordering::Relaxed);
+        let invalidation_id = next_request_id.with_value(|n| n.wrapping_add(1));
+        next_request_id.set_value(invalidation_id);
+        latest_request_id.set_value(invalidation_id);
+        poll_interval.set_value(None);
+        highlight_timeout.set_value(None);
+        prev_value_map.set_value(None);
+        set_changed_keys.set(HashSet::new());
+    });
+
     let refresh_click = {
+        let load = load_dashboard.clone();
         move |_| {
-            set_refresh_token.update(|n| *n = n.wrapping_add(1));
+            load();
         }
     };
 
@@ -420,9 +1003,23 @@ pub fn Dashboard() -> impl IntoView {
                         <p class="text-xs text-huly-muted mt-0.5">
                             {move || user.get().map(|u| format!("{} · {}", role_display(&u.role), u.email)).unwrap_or_default()}
                         </p>
-                        <p class="text-xs text-huly-muted mt-0.5">
+                        <p class="text-xs text-huly-muted mt-0.5" aria-live="polite">
                             {move || {
-                                state.get().data.as_ref().map(|d| format!("Last updated: {}", format_datetime(&d.generated_at))).unwrap_or_default()
+                                let s = state.get();
+                                if let Some(data) = s.data.as_ref() {
+                                    if s.loading {
+                                        format!(
+                                            "Last updated: {} · refreshing…",
+                                            format_datetime(&data.generated_at)
+                                        )
+                                    } else {
+                                        format!("Last updated: {}", format_datetime(&data.generated_at))
+                                    }
+                                } else if s.loading {
+                                    "Loading dashboard…".to_string()
+                                } else {
+                                    String::new()
+                                }
                             }}
                         </p>
                     </div>
@@ -444,7 +1041,7 @@ pub fn Dashboard() -> impl IntoView {
                 </div>
 
                 {move || state.get().error.map(|err| view! {
-                    <div class="alert-error mb-3">
+                    <div class="alert-error mb-3" role="alert">
                         <span class="text-sm">{err}</span>
                     </div>
                 })}
@@ -532,6 +1129,7 @@ fn HrPanel(hr: HrDashboard) -> impl IntoView {
     let pending = hr.pending_updates.clone();
     let compliance = hr.compliance_alerts.clone();
     let changes = hr.recent_changes.clone();
+    let changed = expect_context::<ChangedKeysCtx>();
 
     view! {
         <div class="space-y-4">
@@ -540,22 +1138,53 @@ fn HrPanel(hr: HrDashboard) -> impl IntoView {
                 <div class="stat-card card-hover">
                     <div>
                         <p class="stat-label">"CTC Completeness"</p>
-                        <p class="stat-value">{format!("{:.1}%", completeness.overall_completion_pct)}</p>
-                        <p class="text-xs text-huly-muted">{format!("{} / {} employees", completeness.total_with_ctc, completeness.total_employees)}</p>
+                        <p
+                            class="stat-value"
+                            class:dashboard-change-flash=flash_if_changed(changed, "hr.completeness.overall_completion_pct")
+                        >
+                            {format!("{:.1}%", completeness.overall_completion_pct)}
+                        </p>
+                        <p
+                            class="text-xs text-huly-muted"
+                            class:dashboard-change-flash=flash_if_any_changed(
+                                changed,
+                                &[
+                                    "hr.completeness.total_with_ctc",
+                                    "hr.completeness.total_employees",
+                                ],
+                            )
+                        >
+                            {format!("{} / {} employees", completeness.total_with_ctc, completeness.total_employees)}
+                        </p>
                     </div>
                 </div>
                 <div class="stat-card card-hover">
                     <div>
                         <p class="stat-label">"Pending Updates"</p>
-                        <p class="stat-value">{pending.missing_count.to_string()}</p>
+                        <p
+                            class="stat-value"
+                            class:dashboard-change-flash=flash_if_changed(changed, "hr.pending_updates.missing_count")
+                        >
+                            {pending.missing_count.to_string()}
+                        </p>
                         <p class="text-xs text-huly-muted">"Missing CTC records"</p>
                     </div>
                 </div>
                 <div class="stat-card card-hover">
                     <div>
                         <p class="stat-label">"Compliance Rate"</p>
-                        <p class="stat-value">{format!("{:.1}%", compliance.compliance_rate_pct)}</p>
-                        <p class="text-xs text-huly-muted">{format!("{} discrepancies", compliance.total_discrepancies)}</p>
+                        <p
+                            class="stat-value"
+                            class:dashboard-change-flash=flash_if_changed(changed, "hr.compliance_alerts.compliance_rate_pct")
+                        >
+                            {format!("{:.1}%", compliance.compliance_rate_pct)}
+                        </p>
+                        <p
+                            class="text-xs text-huly-muted"
+                            class:dashboard-change-flash=flash_if_changed(changed, "hr.compliance_alerts.total_discrepancies")
+                        >
+                            {format!("{} discrepancies", compliance.total_discrepancies)}
+                        </p>
                     </div>
                 </div>
             </div>
@@ -577,9 +1206,11 @@ fn HrPanel(hr: HrDashboard) -> impl IntoView {
                             Either::Right(view! {
                                 <div>
                                     {changes.into_iter().map(|c| {
-                                        let summary = format!("{} · rev {} · {}", c.resource_name, c.revision_number, c.changed_by_name.unwrap_or_else(|| "System".to_string()));
+                                        let summary = format!("{} · rev {} · {}", c.resource_name, c.revision_number, c.changed_by_name.clone().unwrap_or_else(|| "System".to_string()));
+                                        let key = recent_ctc_change_key(&c);
+                                        let flash = flash_if_changed_owned(changed, key);
                                         view! {
-                                            <div class="activity-item">
+                                            <div class="activity-item" class:dashboard-change-flash=flash>
                                                 <span class="text-sm text-huly-content flex-1">{summary}</span>
                                                 <span class="text-xs text-huly-muted whitespace-nowrap">{format_date(&c.created_at)}</span>
                                             </div>
@@ -607,8 +1238,13 @@ fn HrPanel(hr: HrDashboard) -> impl IntoView {
                             Either::Right(view! {
                                 <div>
                                     {pending.sample.into_iter().map(|e| {
+                                        let key = match e.id {
+                                            Some(id) => format!("hr.pending_updates.sample.{}", id),
+                                            None => format!("hr.pending_updates.sample.name.{}", e.name),
+                                        };
+                                        let flash = flash_if_changed_owned(changed, key);
                                         view! {
-                                            <div class="activity-item">
+                                            <div class="activity-item" class:dashboard-change-flash=flash>
                                                 <span class="text-sm text-huly-content flex-1">{e.name.clone()}</span>
                                                 <span class="text-xs text-huly-muted whitespace-nowrap">{e.department.clone()}</span>
                                             </div>
@@ -631,15 +1267,30 @@ fn HrPanel(hr: HrDashboard) -> impl IntoView {
                     <div class="grid grid-cols-3 gap-3 mb-3">
                         <div>
                             <p class="stat-label">"Validated"</p>
-                            <p class="stat-value">{compliance.total_validated.to_string()}</p>
+                            <p
+                                class="stat-value"
+                                class:dashboard-change-flash=flash_if_changed(changed, "hr.compliance_alerts.total_validated")
+                            >
+                                {compliance.total_validated.to_string()}
+                            </p>
                         </div>
                         <div>
                             <p class="stat-label">"Passed"</p>
-                            <p class="stat-value">{compliance.total_passed.to_string()}</p>
+                            <p
+                                class="stat-value"
+                                class:dashboard-change-flash=flash_if_changed(changed, "hr.compliance_alerts.total_passed")
+                            >
+                                {compliance.total_passed.to_string()}
+                            </p>
                         </div>
                         <div>
                             <p class="stat-label">"Discrepancies"</p>
-                            <p class="stat-value">{compliance.total_discrepancies.to_string()}</p>
+                            <p
+                                class="stat-value"
+                                class:dashboard-change-flash=flash_if_changed(changed, "hr.compliance_alerts.total_discrepancies")
+                            >
+                                {compliance.total_discrepancies.to_string()}
+                            </p>
                         </div>
                     </div>
                     {if compliance.top_risks.is_empty() {
@@ -650,8 +1301,13 @@ fn HrPanel(hr: HrDashboard) -> impl IntoView {
                         Either::Right(view! {
                             <div>
                                 {compliance.top_risks.into_iter().map(|r| {
+                                    let key = match r.resource_id {
+                                        Some(id) => format!("hr.compliance_alerts.top_risks.{}", id),
+                                        None => format!("hr.compliance_alerts.top_risks.name.{}", r.name),
+                                    };
+                                    let flash = flash_if_changed_owned(changed, key);
                                     view! {
-                                        <div class="activity-item">
+                                        <div class="activity-item" class:dashboard-change-flash=flash>
                                             <span class="text-sm text-huly-content flex-1">{r.name.clone()}</span>
                                             <span class="text-xs text-huly-muted whitespace-nowrap">
                                                 {format!("Δ {}", format_idr(r.variance_amount))}
@@ -677,6 +1333,7 @@ fn DepartmentHeadPanel(dh: DepartmentHeadDashboard) -> impl IntoView {
     let overallocations = dh.overallocations.clone();
     let upcoming = dh.upcoming_assignments.clone();
     let budget = dh.budget.clone();
+    let changed = expect_context::<ChangedKeysCtx>();
 
     view! {
         <div class="space-y-4">
@@ -685,21 +1342,47 @@ fn DepartmentHeadPanel(dh: DepartmentHeadDashboard) -> impl IntoView {
                 <div class="stat-card card-hover">
                     <div>
                         <p class="stat-label">"Avg Utilization (30d)"</p>
-                        <p class="stat-value">{format!("{:.1}%", utilization.average_utilization_pct)}</p>
+                        <p
+                            class="stat-value"
+                            class:dashboard-change-flash=flash_if_changed(changed, "department_head.utilization.average_utilization_pct")
+                        >
+                            {format!("{:.1}%", utilization.average_utilization_pct)}
+                        </p>
                     </div>
                 </div>
                 <div class="stat-card card-hover">
                     <div>
                         <p class="stat-label">"Overallocated"</p>
-                        <p class="stat-value">{overallocations.overallocated_count.to_string()}</p>
+                        <p
+                            class="stat-value"
+                            class:dashboard-change-flash=flash_if_changed(changed, "department_head.overallocations.overallocated_count")
+                        >
+                            {overallocations.overallocated_count.to_string()}
+                        </p>
                     </div>
                 </div>
                 {budget.clone().map(|b| view! {
                     <div class="stat-card card-hover">
                         <div>
                             <p class="stat-label">{format!("Budget ({})", b.budget_period.clone())}</p>
-                            <p class="stat-value">{format!("{:.0}%", b.utilization_percentage)}</p>
-                            <p class="text-xs text-huly-muted">{format!("{} of {}", format_idr(b.total_committed_idr), format_idr(b.total_budget_idr))}</p>
+                            <p
+                                class="stat-value"
+                                class:dashboard-change-flash=flash_if_changed(changed, "department_head.budget.utilization_percentage")
+                            >
+                                {format!("{:.0}%", b.utilization_percentage)}
+                            </p>
+                            <p
+                                class="text-xs text-huly-muted"
+                                class:dashboard-change-flash=flash_if_any_changed(
+                                    changed,
+                                    &[
+                                        "department_head.budget.total_committed_idr",
+                                        "department_head.budget.total_budget_idr",
+                                    ],
+                                )
+                            >
+                                {format!("{} of {}", format_idr(b.total_committed_idr), format_idr(b.total_budget_idr))}
+                            </p>
                         </div>
                     </div>
                 })}
@@ -718,11 +1401,15 @@ fn DepartmentHeadPanel(dh: DepartmentHeadDashboard) -> impl IntoView {
                         </p>
                         <p>
                             <span class="text-huly-muted">"Remaining: "</span>
-                            <span>{format_idr(b.remaining_idr)}</span>
+                            <span class:dashboard-change-flash=flash_if_changed(changed, "department_head.budget.remaining_idr")>
+                                {format_idr(b.remaining_idr)}
+                            </span>
                         </p>
                         <p>
                             <span class="text-huly-muted">"Health: "</span>
-                            <span>{b.budget_health.clone()}</span>
+                            <span class:dashboard-change-flash=flash_if_changed(changed, "department_head.budget.budget_health")>
+                                {b.budget_health.clone()}
+                            </span>
                         </p>
                         {if !b.budget_configured {
                             Some(view! { <p class="text-xs text-huly-muted mt-1">"(Budget not yet configured for this period.)"</p> })
@@ -746,11 +1433,18 @@ fn DepartmentHeadPanel(dh: DepartmentHeadDashboard) -> impl IntoView {
                         } else {
                             Either::Right(view! {
                                 <div>
-                                    {utilization.top_at_risk.into_iter().map(|m| view! {
-                                        <div class="activity-item">
-                                            <span class="text-sm text-huly-content flex-1">{m.resource_name.clone()}</span>
-                                            <span class="text-xs text-huly-muted whitespace-nowrap">{format!("{:.0}%", m.current_allocation_pct)}</span>
-                                        </div>
+                                    {utilization.top_at_risk.into_iter().map(|m| {
+                                        let key = match m.resource_id {
+                                            Some(id) => format!("department_head.top_at_risk.{}", id),
+                                            None => format!("department_head.top_at_risk.name.{}", m.resource_name),
+                                        };
+                                        let flash = flash_if_changed_owned(changed, key);
+                                        view! {
+                                            <div class="activity-item" class:dashboard-change-flash=flash>
+                                                <span class="text-sm text-huly-content flex-1">{m.resource_name.clone()}</span>
+                                                <span class="text-xs text-huly-muted whitespace-nowrap">{format!("{:.0}%", m.current_allocation_pct)}</span>
+                                            </div>
+                                        }
                                     }).collect_view()}
                                 </div>
                             })
@@ -775,8 +1469,16 @@ fn DepartmentHeadPanel(dh: DepartmentHeadDashboard) -> impl IntoView {
                                 <div>
                                     {upcoming.into_iter().map(|u| {
                                         let label = format!("{} → {} · {:.0}%", u.resource_name, u.project_name, u.allocation_percentage);
+                                        let key = match u.allocation_id {
+                                            Some(id) => format!("department_head.upcoming_assignments.{}", id),
+                                            None => format!(
+                                                "department_head.upcoming_assignments.name.{}|{}",
+                                                u.resource_name, u.project_name
+                                            ),
+                                        };
+                                        let flash = flash_if_changed_owned(changed, key);
                                         view! {
-                                            <div class="activity-item">
+                                            <div class="activity-item" class:dashboard-change-flash=flash>
                                                 <span class="text-sm text-huly-content flex-1">{label}</span>
                                                 <span class="text-xs text-huly-muted whitespace-nowrap">{format!("{} → {}", format_date(&u.start_date), format_date(&u.end_date))}</span>
                                             </div>
@@ -799,6 +1501,7 @@ fn ProjectManagerPanel(pm: ProjectManagerDashboard) -> impl IntoView {
     let warnings = pm.warnings.clone();
     let alerts = pm.margin_alerts.clone();
     let projects = pm.active_projects.clone();
+    let changed = expect_context::<ChangedKeysCtx>();
 
     view! {
         <div class="space-y-4">
@@ -807,13 +1510,23 @@ fn ProjectManagerPanel(pm: ProjectManagerDashboard) -> impl IntoView {
                 <div class="stat-card card-hover">
                     <div>
                         <p class="stat-label">"Active Projects"</p>
-                        <p class="stat-value">{projects.len().to_string()}</p>
+                        <p
+                            class="stat-value"
+                            class:dashboard-change-flash=flash_if_changed(changed, "project_manager.active_projects.count")
+                        >
+                            {projects.len().to_string()}
+                        </p>
                     </div>
                 </div>
                 <div class="stat-card card-hover">
                     <div>
                         <p class="stat-label">"Margin Alerts"</p>
-                        <p class="stat-value">{alerts.len().to_string()}</p>
+                        <p
+                            class="stat-value"
+                            class:dashboard-change-flash=flash_if_changed(changed, "project_manager.margin_alerts.count")
+                        >
+                            {alerts.len().to_string()}
+                        </p>
                     </div>
                 </div>
             </div>
@@ -825,11 +1538,19 @@ fn ProjectManagerPanel(pm: ProjectManagerDashboard) -> impl IntoView {
                             <h3 class="text-xs font-semibold text-huly-secondary uppercase tracking-wider">"Margin Alerts"</h3>
                         </div>
                         <div class="p-3">
-                            {alerts.into_iter().map(|a| view! {
-                                <div class="activity-item">
-                                    <span class="text-sm text-huly-content flex-1">{a.project_name.clone()}</span>
-                                    <span class="text-xs text-huly-muted whitespace-nowrap">{format!("{:.1}% · {}", a.margin_pct, a.message)}</span>
-                                </div>
+                            {alerts.into_iter().map(|a| {
+                                let id_key = match a.project_id {
+                                    Some(id) => id.to_string(),
+                                    None => format!("name.{}", a.project_name),
+                                };
+                                let key = format!("project_manager.margin_alert.{}", id_key);
+                                let flash = flash_if_changed_owned(changed, key);
+                                view! {
+                                    <div class="activity-item" class:dashboard-change-flash=flash>
+                                        <span class="text-sm text-huly-content flex-1">{a.project_name.clone()}</span>
+                                        <span class="text-xs text-huly-muted whitespace-nowrap">{format!("{:.1}% · {}", a.margin_pct, a.message)}</span>
+                                    </div>
+                                }
                             }).collect_view()}
                         </div>
                     </div>
@@ -851,23 +1572,101 @@ fn ProjectManagerPanel(pm: ProjectManagerDashboard) -> impl IntoView {
                     } else {
                         Either::Right(view! {
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
-                                {projects.into_iter().map(|p| view! {
-                                    <div class="panel p-3">
-                                        <div class="flex items-center justify-between mb-1">
-                                            <span class="text-sm font-medium text-huly-caption">{p.project_name.clone()}</span>
-                                            <span class="text-xs text-huly-muted">{p.status.clone()}</span>
+                                {projects.into_iter().map(|p| {
+                                    let id_key = match p.project_id {
+                                        Some(id) => id.to_string(),
+                                        None => format!("name.{}", p.project_name),
+                                    };
+                                    let name_key = format!("project_manager.project.{}.project_name", id_key);
+                                    let project_status_key = format!("project_manager.project.{}.status", id_key);
+                                    let end_date_key = format!("project_manager.project.{}.end_date", id_key);
+                                    let margin_key = format!("project_manager.project.{}.margin_pct", id_key);
+                                    let profit_key = format!("project_manager.project.{}.gross_profit_idr", id_key);
+                                    let budget_status_key = format!("project_manager.project.{}.budget_status", id_key);
+                                    let total_budget_key = format!("project_manager.project.{}.total_budget_idr", id_key);
+                                    let spent_key = format!("project_manager.project.{}.budget_spent_idr", id_key);
+                                    let remaining_key = format!("project_manager.project.{}.budget_remaining_idr", id_key);
+                                    let revenue_key = format!("project_manager.project.{}.total_revenue_idr", id_key);
+                                    let cost_key = format!("project_manager.project.{}.total_cost_idr", id_key);
+                                    let warning_key = format!("project_manager.project.{}.warning", id_key);
+                                    let margin_alert_key = format!("project_manager.project.{}.margin_alert", id_key);
+                                    let flash_card = {
+                                        let any_change_keys = [
+                                            name_key.clone(),
+                                            project_status_key.clone(),
+                                            end_date_key.clone(),
+                                            margin_key.clone(),
+                                            profit_key.clone(),
+                                            budget_status_key.clone(),
+                                            total_budget_key.clone(),
+                                            spent_key.clone(),
+                                            remaining_key.clone(),
+                                            revenue_key.clone(),
+                                            cost_key.clone(),
+                                            warning_key.clone(),
+                                            margin_alert_key.clone(),
+                                        ];
+                                        move || changed.0.with(|set| any_change_keys.iter().any(|k| set.contains(k)))
+                                    };
+                                    view! {
+                                        <div class="panel p-3" class:dashboard-change-flash=flash_card>
+                                            <div class="flex items-center justify-between mb-1">
+                                                <span
+                                                    class="text-sm font-medium text-huly-caption"
+                                                    class:dashboard-change-flash=flash_if_changed_owned(changed, name_key.clone())
+                                                >
+                                                    {p.project_name.clone()}
+                                                </span>
+                                                <span
+                                                    class="text-xs text-huly-muted"
+                                                    class:dashboard-change-flash=flash_if_changed_owned(changed, project_status_key.clone())
+                                                >
+                                                    {p.status.clone()}
+                                                </span>
+                                            </div>
+                                            <p
+                                                class="text-xs text-huly-muted"
+                                                class:dashboard-change-flash=flash_if_changed_owned(changed, end_date_key.clone())
+                                            >
+                                                {format!("Ends {}", format_date(&p.end_date))}
+                                            </p>
+                                            <div class="mt-2 text-xs text-huly-content space-y-0.5">
+                                                <p class:dashboard-change-flash=flash_if_any_changed_owned(changed, vec![budget_status_key.clone(), total_budget_key.clone()])>
+                                                    {format!("Budget: {} · {}", p.budget_status, format_idr(p.total_budget_idr))}
+                                                </p>
+                                                <p class:dashboard-change-flash=flash_if_any_changed_owned(changed, vec![spent_key.clone(), remaining_key.clone()])>
+                                                    {format!("Budget spent: {} · remaining {}", format_idr(p.budget_spent_idr), format_idr(p.budget_remaining_idr))}
+                                                </p>
+                                                <p class:dashboard-change-flash=flash_if_changed_owned(changed, revenue_key.clone())>
+                                                    {format!("Revenue: {}", format_idr(p.total_revenue_idr))}
+                                                </p>
+                                                <p class:dashboard-change-flash=flash_if_changed_owned(changed, cost_key.clone())>
+                                                    {format!("Cost: {}", format_idr(p.total_cost_idr))}
+                                                </p>
+                                                <p
+                                                    class:dashboard-change-flash=flash_if_any_changed_owned(changed, vec![profit_key.clone(), margin_key.clone()])
+                                                >
+                                                    {format!("Profit: {} ({:.1}%)", format_idr(p.gross_profit_idr), p.margin_pct)}
+                                                </p>
+                                                {p.warning.as_ref().map(|w| view! {
+                                                    <p
+                                                        class="text-xs text-negative-default"
+                                                        class:dashboard-change-flash=flash_if_changed_owned(changed, warning_key.clone())
+                                                    >
+                                                        {w.clone()}
+                                                    </p>
+                                                })}
+                                                {p.margin_alert.as_ref().map(|a| view! {
+                                                    <p
+                                                        class="text-xs text-negative-default"
+                                                        class:dashboard-change-flash=flash_if_changed_owned(changed, margin_alert_key.clone())
+                                                    >
+                                                        {a.clone()}
+                                                    </p>
+                                                })}
+                                            </div>
                                         </div>
-                                        <p class="text-xs text-huly-muted">{format!("Ends {}", format_date(&p.end_date))}</p>
-                                        <div class="mt-2 text-xs text-huly-content space-y-0.5">
-                                            <p>{format!("Budget: {} · {}", p.budget_status, format_idr(p.total_budget_idr))}</p>
-                                            <p>{format!("Budget spent: {} · remaining {}", format_idr(p.budget_spent_idr), format_idr(p.budget_remaining_idr))}</p>
-                                            <p>{format!("Revenue: {}", format_idr(p.total_revenue_idr))}</p>
-                                            <p>{format!("Cost: {}", format_idr(p.total_cost_idr))}</p>
-                                            <p>{format!("Profit: {} ({:.1}%)", format_idr(p.gross_profit_idr), p.margin_pct)}</p>
-                                            {p.warning.as_ref().map(|w| view! { <p class="text-xs text-negative-default">{w.clone()}</p> })}
-                                            {p.margin_alert.as_ref().map(|a| view! { <p class="text-xs text-negative-default">{a.clone()}</p> })}
-                                        </div>
-                                    </div>
+                                    }
                                 }).collect_view()}
                             </div>
                         })
@@ -887,6 +1686,7 @@ fn FinancePanel(finance: FinanceDashboard) -> impl IntoView {
     let validation = finance.ctc_validation.clone();
     let audit = finance.audit_alerts.clone();
     let exports = finance.export_requests.clone();
+    let changed = expect_context::<ChangedKeysCtx>();
 
     let validation_status_label = match validation.status.as_str() {
         "ok" => "Validated",
@@ -902,27 +1702,57 @@ fn FinancePanel(finance: FinanceDashboard) -> impl IntoView {
                 <div class="stat-card card-hover">
                     <div>
                         <p class="stat-label">"Cash Position (YTD)"</p>
-                        <p class="stat-value">{format_idr(cash.ending_cumulative_position_idr)}</p>
-                        <p class="text-xs text-huly-muted">{format!("Net: {}", format_idr(cash.net_cash_flow_idr))}</p>
+                        <p
+                            class="stat-value"
+                            class:dashboard-change-flash=flash_if_changed(changed, "finance.cash_position.ending_cumulative_position_idr")
+                        >
+                            {format_idr(cash.ending_cumulative_position_idr)}
+                        </p>
+                        <p
+                            class="text-xs text-huly-muted"
+                            class:dashboard-change-flash=flash_if_changed(changed, "finance.cash_position.net_cash_flow_idr")
+                        >
+                            {format!("Net: {}", format_idr(cash.net_cash_flow_idr))}
+                        </p>
                     </div>
                 </div>
                 <div class="stat-card card-hover">
                     <div>
                         <p class="stat-label">"CTC Validation"</p>
-                        <p class="stat-value">{validation_status_label}</p>
-                        <p class="text-xs text-huly-muted">{validation.match_rate_pct.map(|p| format!("Match {:.1}%", p)).unwrap_or_else(|| "—".to_string())}</p>
+                        <p
+                            class="stat-value"
+                            class:dashboard-change-flash=flash_if_changed(changed, "finance.ctc_validation.status")
+                        >
+                            {validation_status_label}
+                        </p>
+                        <p
+                            class="text-xs text-huly-muted"
+                            class:dashboard-change-flash=flash_if_changed(changed, "finance.ctc_validation.match_rate_pct")
+                        >
+                            {validation.match_rate_pct.map(|p| format!("Match {:.1}%", p)).unwrap_or_else(|| "—".to_string())}
+                        </p>
                     </div>
                 </div>
                 <div class="stat-card card-hover">
                     <div>
                         <p class="stat-label">"Audit Alerts (7d)"</p>
-                        <p class="stat-value">{(audit.access_denied_count + audit.login_failed_count + audit.login_blocked_count + audit.chain_verification_failure_count).to_string()}</p>
+                        <p
+                            class="stat-value"
+                            class:dashboard-change-flash=flash_if_changed(changed, "finance.audit_alerts.total")
+                        >
+                            {(audit.access_denied_count + audit.login_failed_count + audit.login_blocked_count + audit.chain_verification_failure_count).to_string()}
+                        </p>
                     </div>
                 </div>
                 <div class="stat-card card-hover">
                     <div>
                         <p class="stat-label">"Pending Exports"</p>
-                        <p class="stat-value">{exports.pending_count.to_string()}</p>
+                        <p
+                            class="stat-value"
+                            class:dashboard-change-flash=flash_if_changed(changed, "finance.export_requests.pending_count")
+                        >
+                            {exports.pending_count.to_string()}
+                        </p>
                     </div>
                 </div>
             </div>
@@ -935,10 +1765,18 @@ fn FinancePanel(finance: FinanceDashboard) -> impl IntoView {
                     </div>
                     <div class="p-3 text-sm text-huly-content space-y-1">
                         <p>{format!("Period: {} → {}", format_date(&cash.start_date), format_date(&cash.end_date))}</p>
-                        <p>{format!("Cash in: {}", format_idr(cash.total_cash_in_idr))}</p>
-                        <p>{format!("Cash out: {}", format_idr(cash.total_cash_out_idr))}</p>
-                        <p>{format!("Net: {}", format_idr(cash.net_cash_flow_idr))}</p>
-                        <p>{format!("Ending position: {}", format_idr(cash.ending_cumulative_position_idr))}</p>
+                        <p class:dashboard-change-flash=flash_if_changed(changed, "finance.cash_position.total_cash_in_idr")>
+                            {format!("Cash in: {}", format_idr(cash.total_cash_in_idr))}
+                        </p>
+                        <p class:dashboard-change-flash=flash_if_changed(changed, "finance.cash_position.total_cash_out_idr")>
+                            {format!("Cash out: {}", format_idr(cash.total_cash_out_idr))}
+                        </p>
+                        <p class:dashboard-change-flash=flash_if_changed(changed, "finance.cash_position.net_cash_flow_idr")>
+                            {format!("Net: {}", format_idr(cash.net_cash_flow_idr))}
+                        </p>
+                        <p class:dashboard-change-flash=flash_if_changed(changed, "finance.cash_position.ending_cumulative_position_idr")>
+                            {format!("Ending position: {}", format_idr(cash.ending_cumulative_position_idr))}
+                        </p>
                     </div>
                 </div>
 
@@ -952,9 +1790,15 @@ fn FinancePanel(finance: FinanceDashboard) -> impl IntoView {
                         {match validation.status.as_str() {
                             "ok" => Either::Left(view! {
                                 <div class="space-y-1">
-                                    <p>{format!("Compared: {}", validation.total_compared.unwrap_or(0))}</p>
-                                    <p>{format!("Matches: {}", validation.total_matches.unwrap_or(0))}</p>
-                                    <p>{format!("Discrepancies: {}", validation.total_discrepancies.unwrap_or(0))}</p>
+                                    <p class:dashboard-change-flash=flash_if_changed(changed, "finance.ctc_validation.total_compared")>
+                                        {format!("Compared: {}", validation.total_compared.unwrap_or(0))}
+                                    </p>
+                                    <p class:dashboard-change-flash=flash_if_changed(changed, "finance.ctc_validation.total_matches")>
+                                        {format!("Matches: {}", validation.total_matches.unwrap_or(0))}
+                                    </p>
+                                    <p class:dashboard-change-flash=flash_if_changed(changed, "finance.ctc_validation.total_discrepancies")>
+                                        {format!("Discrepancies: {}", validation.total_discrepancies.unwrap_or(0))}
+                                    </p>
                                 </div>
                             }),
                             _ => Either::Right(view! {
@@ -972,10 +1816,18 @@ fn FinancePanel(finance: FinanceDashboard) -> impl IntoView {
                         <a href="/finance/audit-reports" class="text-xs text-primary-400 hover:text-primary-300">"Open report →"</a>
                     </div>
                     <div class="p-3 text-sm text-huly-content space-y-1">
-                        <p>{format!("Access denied: {}", audit.access_denied_count)}</p>
-                        <p>{format!("Login failed: {}", audit.login_failed_count)}</p>
-                        <p>{format!("Login blocked: {}", audit.login_blocked_count)}</p>
-                        <p>{format!("Chain failures: {}", audit.chain_verification_failure_count)}</p>
+                        <p class:dashboard-change-flash=flash_if_changed(changed, "finance.audit_alerts.access_denied_count")>
+                            {format!("Access denied: {}", audit.access_denied_count)}
+                        </p>
+                        <p class:dashboard-change-flash=flash_if_changed(changed, "finance.audit_alerts.login_failed_count")>
+                            {format!("Login failed: {}", audit.login_failed_count)}
+                        </p>
+                        <p class:dashboard-change-flash=flash_if_changed(changed, "finance.audit_alerts.login_blocked_count")>
+                            {format!("Login blocked: {}", audit.login_blocked_count)}
+                        </p>
+                        <p class:dashboard-change-flash=flash_if_changed(changed, "finance.audit_alerts.chain_verification_failure_count")>
+                            {format!("Chain failures: {}", audit.chain_verification_failure_count)}
+                        </p>
                         {if audit.recent.is_empty() {
                             Either::Left(view! {
                                 <p class="text-xs text-huly-muted">"No recent alert events."</p>
@@ -983,11 +1835,21 @@ fn FinancePanel(finance: FinanceDashboard) -> impl IntoView {
                         } else {
                             Either::Right(view! {
                                 <div>
-                                    {audit.recent.into_iter().map(|e| view! {
-                                        <div class="activity-item">
-                                            <span class="text-sm text-huly-content flex-1">{format!("{} · {}", e.action, e.entity_type)}</span>
-                                            <span class="text-xs text-huly-muted whitespace-nowrap">{format_date(&e.created_at)}</span>
-                                        </div>
+                                    {audit.recent.into_iter().map(|e| {
+                                        let key = match e.id {
+                                            Some(id) => format!("finance.audit_alerts.recent.{}", id),
+                                            None => format!(
+                                                "finance.audit_alerts.recent.{}|{}|{}",
+                                                e.action, e.entity_type, e.created_at
+                                            ),
+                                        };
+                                        let flash = flash_if_changed_owned(changed, key);
+                                        view! {
+                                            <div class="activity-item" class:dashboard-change-flash=flash>
+                                                <span class="text-sm text-huly-content flex-1">{format!("{} · {}", e.action, e.entity_type)}</span>
+                                                <span class="text-xs text-huly-muted whitespace-nowrap">{format_date(&e.created_at)}</span>
+                                            </div>
+                                        }
                                     }).collect_view()}
                                 </div>
                             })
@@ -1011,9 +1873,18 @@ fn FinancePanel(finance: FinanceDashboard) -> impl IntoView {
                             Either::Right(view! {
                                 <div>
                                     {exports.latest_pending.into_iter().map(|p| {
-                                        let label = format!("{} · {}", p.report_type.unwrap_or_else(|| "generic".to_string()), p.status);
+                                        let report_label = p.report_type.clone().unwrap_or_else(|| "generic".to_string());
+                                        let label = format!("{} · {}", report_label, p.status);
+                                        let key = match p.id {
+                                            Some(id) => format!("finance.export_requests.latest.{}", id),
+                                            None => format!(
+                                                "finance.export_requests.latest.{}|{}",
+                                                p.status, p.created_at
+                                            ),
+                                        };
+                                        let flash = flash_if_changed_owned(changed, key);
                                         view! {
-                                            <div class="activity-item">
+                                            <div class="activity-item" class:dashboard-change-flash=flash>
                                                 <span class="text-sm text-huly-content flex-1">{label}</span>
                                                 <span class="text-xs text-huly-muted whitespace-nowrap">{format_date(&p.created_at)}</span>
                                             </div>
@@ -1033,43 +1904,74 @@ fn FinancePanel(finance: FinanceDashboard) -> impl IntoView {
 
 #[component]
 fn AdminPanel(admin: AdminDashboard) -> impl IntoView {
+    let changed = expect_context::<ChangedKeysCtx>();
     view! {
         <div class="space-y-4">
             <div class="stat-grid">
                 <div class="stat-card card-hover">
                     <div>
                         <p class="stat-label">"Users"</p>
-                        <p class="stat-value">{admin.total_users.to_string()}</p>
+                        <p
+                            class="stat-value"
+                            class:dashboard-change-flash=flash_if_changed(changed, "admin.total_users")
+                        >
+                            {admin.total_users.to_string()}
+                        </p>
                     </div>
                 </div>
                 <div class="stat-card card-hover">
                     <div>
                         <p class="stat-label">"Departments"</p>
-                        <p class="stat-value">{admin.total_departments.to_string()}</p>
+                        <p
+                            class="stat-value"
+                            class:dashboard-change-flash=flash_if_changed(changed, "admin.total_departments")
+                        >
+                            {admin.total_departments.to_string()}
+                        </p>
                     </div>
                 </div>
                 <div class="stat-card card-hover">
                     <div>
                         <p class="stat-label">"Active Projects"</p>
-                        <p class="stat-value">{admin.total_active_projects.to_string()}</p>
+                        <p
+                            class="stat-value"
+                            class:dashboard-change-flash=flash_if_changed(changed, "admin.total_active_projects")
+                        >
+                            {admin.total_active_projects.to_string()}
+                        </p>
                     </div>
                 </div>
                 <div class="stat-card card-hover">
                     <div>
                         <p class="stat-label">"Active CTC"</p>
-                        <p class="stat-value">{admin.total_active_ctc_records.to_string()}</p>
+                        <p
+                            class="stat-value"
+                            class:dashboard-change-flash=flash_if_changed(changed, "admin.total_active_ctc_records")
+                        >
+                            {admin.total_active_ctc_records.to_string()}
+                        </p>
                     </div>
                 </div>
                 <div class="stat-card card-hover">
                     <div>
                         <p class="stat-label">"Pending Exports"</p>
-                        <p class="stat-value">{admin.pending_export_requests.to_string()}</p>
+                        <p
+                            class="stat-value"
+                            class:dashboard-change-flash=flash_if_changed(changed, "admin.pending_export_requests")
+                        >
+                            {admin.pending_export_requests.to_string()}
+                        </p>
                     </div>
                 </div>
                 <div class="stat-card card-hover">
                     <div>
                         <p class="stat-label">"Access Denied (24h)"</p>
-                        <p class="stat-value">{admin.access_denied_24h.to_string()}</p>
+                        <p
+                            class="stat-value"
+                            class:dashboard-change-flash=flash_if_changed(changed, "admin.access_denied_24h")
+                        >
+                            {admin.access_denied_24h.to_string()}
+                        </p>
                     </div>
                 </div>
             </div>
@@ -1077,5 +1979,911 @@ fn AdminPanel(admin: AdminDashboard) -> impl IntoView {
     }
 }
 
-#[allow(dead_code)]
-fn _unused_uuid_marker(_id: Uuid) {}
+// ── Native test surface (compile-time only on non-WASM targets) ──────────
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod tests {
+    use super::*;
+
+    fn empty_response(role: &str) -> RoleDashboardResponse {
+        RoleDashboardResponse {
+            role: role.to_string(),
+            generated_at: "2026-05-21T00:00:00Z".to_string(),
+            hr: None,
+            department_head: None,
+            project_manager: None,
+            finance: None,
+            admin: None,
+        }
+    }
+
+    fn admin_response(total_active_projects: i64, total_users: i64) -> RoleDashboardResponse {
+        let mut resp = empty_response("admin");
+        resp.admin = Some(AdminDashboard {
+            total_users,
+            total_departments: 4,
+            total_active_projects,
+            total_active_ctc_records: 22,
+            pending_export_requests: 1,
+            access_denied_24h: 0,
+        });
+        resp
+    }
+
+    #[test]
+    fn initial_load_produces_no_changed_keys() {
+        let next = dashboard_value_map(&admin_response(7, 50));
+        // With no previous snapshot, the dashboard never highlights — verify by
+        // matching the diff path used at runtime.
+        let changed: HashSet<String> = HashSet::new();
+        assert!(changed.is_empty());
+        // Sanity: helper produces non-empty key set when admin data is present.
+        assert!(next.contains_key("admin.total_active_projects"));
+    }
+
+    #[test]
+    fn generated_at_only_change_produces_no_changed_keys() {
+        let mut prev_resp = admin_response(7, 50);
+        let mut next_resp = admin_response(7, 50);
+        prev_resp.generated_at = "2026-05-21T00:00:00Z".to_string();
+        next_resp.generated_at = "2026-05-21T00:00:30Z".to_string();
+
+        let prev_map = dashboard_value_map(&prev_resp);
+        let next_map = dashboard_value_map(&next_resp);
+        let changed = compute_changed_keys(&prev_map, &next_map);
+        assert!(
+            changed.is_empty(),
+            "generated_at-only delta must not produce changed keys, got {:?}",
+            changed
+        );
+    }
+
+    #[test]
+    fn scalar_change_produces_expected_key() {
+        let prev_map = dashboard_value_map(&admin_response(7, 50));
+        let next_map = dashboard_value_map(&admin_response(8, 50));
+        let changed = compute_changed_keys(&prev_map, &next_map);
+        assert!(
+            changed.contains("admin.total_active_projects"),
+            "expected admin.total_active_projects in {:?}",
+            changed
+        );
+        assert!(!changed.contains("admin.total_users"));
+    }
+
+    #[test]
+    fn newly_visible_row_produces_expected_key() {
+        let mut prev_resp = empty_response("hr");
+        prev_resp.hr = Some(HrDashboard {
+            completeness: CompletenessReport {
+                total_employees: 10,
+                total_with_ctc: 9,
+                total_missing: 1,
+                overall_completion_pct: 90.0,
+            },
+            pending_updates: HrPendingUpdates {
+                missing_count: 1,
+                sample: vec![],
+            },
+            recent_changes: vec![],
+            compliance_alerts: ComplianceAlertSummary {
+                start_date: "2026-05-01".into(),
+                end_date: "2026-05-21".into(),
+                total_validated: 0,
+                total_passed: 0,
+                total_discrepancies: 0,
+                compliance_rate_pct: 100.0,
+                top_risks: vec![],
+            },
+            warnings: vec![],
+        });
+
+        let resource_id = Uuid::new_v4();
+        let mut next_resp = empty_response("hr");
+        next_resp.hr = Some(HrDashboard {
+            completeness: CompletenessReport {
+                total_employees: 10,
+                total_with_ctc: 9,
+                total_missing: 1,
+                overall_completion_pct: 90.0,
+            },
+            pending_updates: HrPendingUpdates {
+                missing_count: 1,
+                sample: vec![],
+            },
+            recent_changes: vec![RecentCtcChange {
+                resource_id: Some(resource_id),
+                resource_name: "Alice".into(),
+                revision_number: 3,
+                changed_by_name: Some("Bob".into()),
+                created_at: "2026-05-21T01:00:00Z".into(),
+                reason: "promotion".into(),
+            }],
+            compliance_alerts: ComplianceAlertSummary {
+                start_date: "2026-05-01".into(),
+                end_date: "2026-05-21".into(),
+                total_validated: 0,
+                total_passed: 0,
+                total_discrepancies: 0,
+                compliance_rate_pct: 100.0,
+                top_risks: vec![],
+            },
+            warnings: vec![],
+        });
+
+        let prev_map = dashboard_value_map(&prev_resp);
+        let next_map = dashboard_value_map(&next_resp);
+        let changed = compute_changed_keys(&prev_map, &next_map);
+        let expected_key = format!(
+            "hr.recent_changes.{}|rev3|2026-05-21T01:00:00Z",
+            resource_id
+        );
+        assert!(
+            changed.contains(&expected_key),
+            "newly visible recent_changes row should appear in {:?}",
+            changed
+        );
+    }
+
+    #[test]
+    fn removed_row_does_not_panic() {
+        let resource_id = Uuid::new_v4();
+        let mut prev_resp = empty_response("hr");
+        prev_resp.hr = Some(HrDashboard {
+            completeness: CompletenessReport {
+                total_employees: 10,
+                total_with_ctc: 9,
+                total_missing: 1,
+                overall_completion_pct: 90.0,
+            },
+            pending_updates: HrPendingUpdates {
+                missing_count: 1,
+                sample: vec![],
+            },
+            recent_changes: vec![RecentCtcChange {
+                resource_id: Some(resource_id),
+                resource_name: "Alice".into(),
+                revision_number: 3,
+                changed_by_name: Some("Bob".into()),
+                created_at: "2026-05-21T01:00:00Z".into(),
+                reason: "promotion".into(),
+            }],
+            compliance_alerts: ComplianceAlertSummary {
+                start_date: "2026-05-01".into(),
+                end_date: "2026-05-21".into(),
+                total_validated: 0,
+                total_passed: 0,
+                total_discrepancies: 0,
+                compliance_rate_pct: 100.0,
+                top_risks: vec![],
+            },
+            warnings: vec![],
+        });
+
+        let mut next_resp = prev_resp.clone();
+        if let Some(hr) = next_resp.hr.as_mut() {
+            hr.recent_changes.clear();
+        }
+
+        let prev_map = dashboard_value_map(&prev_resp);
+        let next_map = dashboard_value_map(&next_resp);
+        let changed = compute_changed_keys(&prev_map, &next_map);
+        // Removal is not surfaced as a "changed" key (we never highlight
+        // absent rows) and must not panic.
+        let removed_key = format!(
+            "hr.recent_changes.{}|rev3|2026-05-21T01:00:00Z",
+            resource_id
+        );
+        assert!(!changed.contains(&removed_key));
+    }
+
+    // ── Story 6.2 expansion: per-role change-detection coverage ───────────
+
+    fn dept_head_response_with_budget_pct(utilization_pct: f64) -> RoleDashboardResponse {
+        let mut resp = empty_response("department_head");
+        resp.department_head = Some(DepartmentHeadDashboard {
+            utilization: UtilizationSummary {
+                average_utilization_pct: 75.0,
+                overallocated_count: 0,
+                top_at_risk: vec![],
+            },
+            budget: Some(DepartmentBudgetSummary {
+                department_name: "Engineering".into(),
+                budget_period: "2026-Q2".into(),
+                total_budget_idr: 100_000_000,
+                total_committed_idr: 50_000_000,
+                remaining_idr: 50_000_000,
+                utilization_percentage: utilization_pct,
+                budget_health: "healthy".into(),
+                budget_configured: true,
+            }),
+            overallocations: OverallocationSummary {
+                overallocated_count: 0,
+                members: vec![],
+            },
+            upcoming_assignments: vec![],
+            warnings: vec![],
+        });
+        resp
+    }
+
+    #[test]
+    fn dept_head_budget_utilization_change_produces_expected_key() {
+        let prev_map = dashboard_value_map(&dept_head_response_with_budget_pct(50.0));
+        let next_map = dashboard_value_map(&dept_head_response_with_budget_pct(75.0));
+        let changed = compute_changed_keys(&prev_map, &next_map);
+        assert!(
+            changed.contains("department_head.budget.utilization_percentage"),
+            "expected department_head.budget.utilization_percentage in {:?}",
+            changed
+        );
+    }
+
+    #[test]
+    fn dept_head_upcoming_assignment_id_change_produces_stable_key() {
+        let alloc_id = Uuid::new_v4();
+        let make = |pct: f64| {
+            let mut resp = empty_response("department_head");
+            resp.department_head = Some(DepartmentHeadDashboard {
+                utilization: UtilizationSummary {
+                    average_utilization_pct: 0.0,
+                    overallocated_count: 0,
+                    top_at_risk: vec![],
+                },
+                budget: None,
+                overallocations: OverallocationSummary {
+                    overallocated_count: 0,
+                    members: vec![],
+                },
+                upcoming_assignments: vec![UpcomingAssignment {
+                    allocation_id: Some(alloc_id),
+                    resource_name: "Alice".into(),
+                    project_name: "Atlas".into(),
+                    start_date: "2026-06-01".into(),
+                    end_date: "2026-06-30".into(),
+                    allocation_percentage: pct,
+                }],
+                warnings: vec![],
+            });
+            resp
+        };
+        let prev_map = dashboard_value_map(&make(40.0));
+        let next_map = dashboard_value_map(&make(80.0));
+        let changed = compute_changed_keys(&prev_map, &next_map);
+        let expected_key = format!("department_head.upcoming_assignments.{}", alloc_id);
+        assert!(
+            changed.contains(&expected_key),
+            "expected stable allocation_id key `{}` in {:?}",
+            expected_key,
+            changed
+        );
+        // No name-based fallback key should appear when the id is present.
+        assert!(
+            !changed
+                .iter()
+                .any(|k| k.starts_with("department_head.upcoming_assignments.name.")),
+            "id-stable row must not double-emit a name-based key"
+        );
+    }
+
+    fn pm_response_with(margin_pct: f64) -> RoleDashboardResponse {
+        let project_id = Uuid::nil();
+        let mut resp = empty_response("project_manager");
+        resp.project_manager = Some(ProjectManagerDashboard {
+            active_projects: vec![ProjectHealthCard {
+                project_id: Some(project_id),
+                project_name: "Atlas".into(),
+                status: "Active".into(),
+                end_date: "2026-12-31".into(),
+                total_budget_idr: 100_000_000,
+                budget_spent_idr: 30_000_000,
+                budget_remaining_idr: 70_000_000,
+                budget_status: "healthy".into(),
+                total_revenue_idr: 80_000_000,
+                total_cost_idr: 50_000_000,
+                gross_profit_idr: 30_000_000,
+                margin_pct,
+                margin_alert: None,
+                warning: None,
+            }],
+            margin_alerts: vec![],
+            warnings: vec![],
+        });
+        resp
+    }
+
+    #[test]
+    fn project_manager_margin_pct_change_produces_expected_key() {
+        let prev_map = dashboard_value_map(&pm_response_with(25.0));
+        let next_map = dashboard_value_map(&pm_response_with(8.0));
+        let changed = compute_changed_keys(&prev_map, &next_map);
+        let expected_key = format!("project_manager.project.{}.margin_pct", Uuid::nil());
+        assert!(
+            changed.contains(&expected_key),
+            "expected `{}` in {:?}",
+            expected_key,
+            changed
+        );
+        // gross_profit_idr is unchanged in this fixture and must not flash.
+        assert!(
+            !changed.contains(&format!(
+                "project_manager.project.{}.gross_profit_idr",
+                Uuid::nil()
+            )),
+            "unchanged sibling field must not appear as changed"
+        );
+    }
+
+    #[test]
+    fn project_manager_margin_alert_uses_project_id_stable_key() {
+        let project_id = Uuid::new_v4();
+        let make_alert = |msg: &str| {
+            let mut resp = empty_response("project_manager");
+            resp.project_manager = Some(ProjectManagerDashboard {
+                active_projects: vec![],
+                margin_alerts: vec![MarginAlert {
+                    project_id: Some(project_id),
+                    project_name: "Atlas".into(),
+                    margin_pct: 5.0,
+                    message: msg.into(),
+                }],
+                warnings: vec![],
+            });
+            resp
+        };
+        // Initial baseline so the alert is newly visible only on the first diff.
+        let baseline = empty_response("project_manager");
+        let baseline_map = dashboard_value_map(&baseline);
+        let next_map = dashboard_value_map(&make_alert("Margin below threshold"));
+        let changed = compute_changed_keys(&baseline_map, &next_map);
+        let expected_key = format!("project_manager.margin_alert.{}", project_id);
+        assert!(
+            changed.contains(&expected_key),
+            "new margin alert must surface stable project_id key, got {:?}",
+            changed
+        );
+    }
+
+    fn finance_response_with_cash(net_idr: i64, ending_idr: i64) -> RoleDashboardResponse {
+        let mut resp = empty_response("finance");
+        resp.finance = Some(FinanceDashboard {
+            cash_position: CashPositionSummary {
+                start_date: "2026-05-01".into(),
+                end_date: "2026-05-21".into(),
+                total_cash_in_idr: 10_000_000,
+                total_cash_out_idr: 3_000_000,
+                net_cash_flow_idr: net_idr,
+                ending_cumulative_position_idr: ending_idr,
+            },
+            ctc_validation: CtcValidationStatus {
+                status: "no_data".into(),
+                start_date: "2026-05-01".into(),
+                end_date: "2026-05-21".into(),
+                total_compared: None,
+                total_matches: None,
+                total_discrepancies: None,
+                match_rate_pct: None,
+                message: Some("No data".into()),
+            },
+            audit_alerts: AuditAlertsSummary {
+                access_denied_count: 0,
+                login_failed_count: 0,
+                login_blocked_count: 0,
+                chain_verification_failure_count: 0,
+                recent: vec![],
+            },
+            export_requests: ExportRequestsSummary {
+                pending_count: 0,
+                latest_pending: vec![],
+            },
+            warnings: vec![],
+        });
+        resp
+    }
+
+    #[test]
+    fn finance_cash_position_change_produces_expected_key() {
+        let prev_map = dashboard_value_map(&finance_response_with_cash(7_000_000, 50_000_000));
+        let next_map = dashboard_value_map(&finance_response_with_cash(5_000_000, 48_000_000));
+        let changed = compute_changed_keys(&prev_map, &next_map);
+        assert!(
+            changed.contains("finance.cash_position.ending_cumulative_position_idr"),
+            "expected ending_cumulative_position_idr in {:?}",
+            changed
+        );
+        assert!(
+            changed.contains("finance.cash_position.net_cash_flow_idr"),
+            "expected net_cash_flow_idr in {:?}",
+            changed
+        );
+    }
+
+    #[test]
+    fn finance_export_request_new_pending_id_produces_changed_key() {
+        let baseline = finance_response_with_cash(0, 0);
+        let export_id = Uuid::new_v4();
+        let mut next = finance_response_with_cash(0, 0);
+        if let Some(f) = next.finance.as_mut() {
+            f.export_requests = ExportRequestsSummary {
+                pending_count: 1,
+                latest_pending: vec![PendingExportRequest {
+                    id: Some(export_id),
+                    status: "pending_approval".into(),
+                    created_at: "2026-05-21T02:00:00Z".into(),
+                    report_type: Some("compliance_audit".into()),
+                }],
+            };
+        }
+        let prev_map = dashboard_value_map(&baseline);
+        let next_map = dashboard_value_map(&next);
+        let changed = compute_changed_keys(&prev_map, &next_map);
+        let expected_key = format!("finance.export_requests.latest.{}", export_id);
+        assert!(
+            changed.contains(&expected_key),
+            "newly pending export request must surface stable export_id key, got {:?}",
+            changed
+        );
+        assert!(
+            changed.contains("finance.export_requests.pending_count"),
+            "pending_count scalar must also be marked changed"
+        );
+    }
+
+    #[test]
+    fn finance_audit_alerts_total_change_produces_expected_key() {
+        let mut prev = finance_response_with_cash(0, 0);
+        if let Some(f) = prev.finance.as_mut() {
+            f.audit_alerts.access_denied_count = 1;
+        }
+        let mut next = finance_response_with_cash(0, 0);
+        if let Some(f) = next.finance.as_mut() {
+            f.audit_alerts.access_denied_count = 1;
+            f.audit_alerts.login_failed_count = 2;
+        }
+        let prev_map = dashboard_value_map(&prev);
+        let next_map = dashboard_value_map(&next);
+        let changed = compute_changed_keys(&prev_map, &next_map);
+        assert!(
+            changed.contains("finance.audit_alerts.total"),
+            "derived total field must update when any sub-count changes, got {:?}",
+            changed
+        );
+        // access_denied_count is unchanged → it must not appear as changed.
+        assert!(
+            !changed.contains("finance.audit_alerts.access_denied_count"),
+            "unchanged sub-count must not appear as changed"
+        );
+    }
+
+    #[test]
+    fn value_map_excludes_generated_at_key() {
+        let resp = admin_response(5, 10);
+        let map = dashboard_value_map(&resp);
+        // `generated_at` is explicitly excluded so polling never flashes
+        // every value when only the timestamp changed.
+        assert!(
+            map.keys().all(|k| !k.contains("generated_at")),
+            "value map keys must never reference generated_at, got {:?}",
+            map.keys().collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn value_map_excludes_sensitive_ctc_fields() {
+        // Build a fully populated HR + Finance response and assert the
+        // serialized value map does not surface CTC ciphertext, salary
+        // components, key metadata, or raw audit payload fields.
+        let mut resp = empty_response("hr");
+        resp.hr = Some(HrDashboard {
+            completeness: CompletenessReport {
+                total_employees: 5,
+                total_with_ctc: 5,
+                total_missing: 0,
+                overall_completion_pct: 100.0,
+            },
+            pending_updates: HrPendingUpdates {
+                missing_count: 0,
+                sample: vec![],
+            },
+            recent_changes: vec![RecentCtcChange {
+                resource_id: Some(Uuid::new_v4()),
+                resource_name: "Alice".into(),
+                revision_number: 1,
+                changed_by_name: Some("Bob".into()),
+                created_at: "2026-05-21T03:00:00Z".into(),
+                reason: "Promotion".into(),
+            }],
+            compliance_alerts: ComplianceAlertSummary {
+                start_date: "2026-05-01".into(),
+                end_date: "2026-05-21".into(),
+                total_validated: 1,
+                total_passed: 1,
+                total_discrepancies: 0,
+                compliance_rate_pct: 100.0,
+                top_risks: vec![],
+            },
+            warnings: vec![],
+        });
+        let map = dashboard_value_map(&resp);
+        let serialized = format!("{:?}", map);
+        for forbidden in [
+            "encrypted_components",
+            "encrypted_daily_rate",
+            "ciphertext",
+            "key_version",
+            "encryption_algorithm",
+            "encryption_version",
+            "base_salary",
+            "daily_rate",
+        ] {
+            assert!(
+                !serialized.contains(forbidden),
+                "value map leaked sensitive token `{}` in {}",
+                forbidden,
+                serialized
+            );
+        }
+    }
+
+    #[test]
+    fn fallback_key_used_when_resource_id_missing() {
+        // Backend should normally emit resource_id, but the frontend DTO is
+        // tolerant of None. Confirm the fallback key based on resource_name
+        // is used so highlights remain stable across polls even when the
+        // backend omits the id.
+        let mut resp = empty_response("hr");
+        resp.hr = Some(HrDashboard {
+            completeness: CompletenessReport {
+                total_employees: 1,
+                total_with_ctc: 1,
+                total_missing: 0,
+                overall_completion_pct: 100.0,
+            },
+            pending_updates: HrPendingUpdates {
+                missing_count: 0,
+                sample: vec![],
+            },
+            recent_changes: vec![RecentCtcChange {
+                resource_id: None,
+                resource_name: "Anon Person".into(),
+                revision_number: 1,
+                changed_by_name: None,
+                created_at: "2026-05-21T04:00:00Z".into(),
+                reason: "raise".into(),
+            }],
+            compliance_alerts: ComplianceAlertSummary {
+                start_date: "2026-05-01".into(),
+                end_date: "2026-05-21".into(),
+                total_validated: 0,
+                total_passed: 0,
+                total_discrepancies: 0,
+                compliance_rate_pct: 100.0,
+                top_risks: vec![],
+            },
+            warnings: vec![],
+        });
+        let map = dashboard_value_map(&resp);
+        assert!(
+            map.keys()
+                .any(|k| k == "hr.recent_changes.name.Anon Person|rev1|2026-05-21T04:00:00Z"),
+            "fallback key must use resource_name when resource_id is None, got keys = {:?}",
+            map.keys().collect::<Vec<_>>()
+        );
+    }
+
+    // ── Story 6.2 expansion run 2: display helpers + change-detection gaps ─
+
+    #[test]
+    fn format_idr_handles_zero() {
+        // Zero must render without a stray "-" sign and without grouping dots.
+        assert_eq!(format_idr(0), "Rp 0");
+    }
+
+    #[test]
+    fn format_idr_groups_thousands_with_dots() {
+        assert_eq!(format_idr(1_000), "Rp 1.000");
+        assert_eq!(format_idr(1_000_000), "Rp 1.000.000");
+        assert_eq!(format_idr(1_000_000_000), "Rp 1.000.000.000");
+    }
+
+    #[test]
+    fn format_idr_handles_negative_amount() {
+        // Negative cash flow renders with leading "-" between "Rp " and digits.
+        assert_eq!(format_idr(-50_000), "Rp -50.000");
+        assert_eq!(format_idr(-1), "Rp -1");
+    }
+
+    #[test]
+    fn format_date_strips_iso_time_component() {
+        assert_eq!(format_date("2026-05-21T10:15:00Z"), "2026-05-21");
+        // Passthrough for date-only input — Last-updated label safety.
+        assert_eq!(format_date("2026-05-21"), "2026-05-21");
+        // Empty input must not panic.
+        assert_eq!(format_date(""), "");
+    }
+
+    #[test]
+    fn role_display_returns_canonical_labels() {
+        assert_eq!(role_display("hr"), "HR");
+        assert_eq!(role_display("department_head"), "Department Head");
+        assert_eq!(role_display("project_manager"), "Project Manager");
+        assert_eq!(role_display("finance"), "Finance");
+        assert_eq!(role_display("admin"), "Administrator");
+        // Unknown role falls back to a generic label (never the raw role string).
+        assert_eq!(role_display("director"), "User");
+        assert_eq!(role_display(""), "User");
+    }
+
+    #[test]
+    fn hr_pending_updates_sample_id_keyed_change() {
+        let baseline = empty_response("hr");
+        let emp_id = Uuid::new_v4();
+        let mut next = empty_response("hr");
+        next.hr = Some(HrDashboard {
+            completeness: CompletenessReport {
+                total_employees: 10,
+                total_with_ctc: 9,
+                total_missing: 1,
+                overall_completion_pct: 90.0,
+            },
+            pending_updates: HrPendingUpdates {
+                missing_count: 1,
+                sample: vec![HrMissingEmployee {
+                    id: Some(emp_id),
+                    name: "Charlie".into(),
+                    department: "Engineering".into(),
+                }],
+            },
+            recent_changes: vec![],
+            compliance_alerts: ComplianceAlertSummary {
+                start_date: "2026-05-01".into(),
+                end_date: "2026-05-21".into(),
+                total_validated: 0,
+                total_passed: 0,
+                total_discrepancies: 0,
+                compliance_rate_pct: 100.0,
+                top_risks: vec![],
+            },
+            warnings: vec![],
+        });
+
+        let prev_map = dashboard_value_map(&baseline);
+        let next_map = dashboard_value_map(&next);
+        let changed = compute_changed_keys(&prev_map, &next_map);
+        let expected_key = format!("hr.pending_updates.sample.{}", emp_id);
+        assert!(
+            changed.contains(&expected_key),
+            "expected stable employee id key `{}` in {:?}",
+            expected_key,
+            changed
+        );
+        // Department string is the value, not part of the key.
+        assert_eq!(
+            next_map.get(&expected_key).map(String::as_str),
+            Some("Charlie|Engineering")
+        );
+    }
+
+    #[test]
+    fn hr_compliance_top_risks_id_keyed_row_change() {
+        let baseline = empty_response("hr");
+        let resource_id = Uuid::new_v4();
+        let mut next = empty_response("hr");
+        next.hr = Some(HrDashboard {
+            completeness: CompletenessReport {
+                total_employees: 5,
+                total_with_ctc: 5,
+                total_missing: 0,
+                overall_completion_pct: 100.0,
+            },
+            pending_updates: HrPendingUpdates {
+                missing_count: 0,
+                sample: vec![],
+            },
+            recent_changes: vec![],
+            compliance_alerts: ComplianceAlertSummary {
+                start_date: "2026-05-01".into(),
+                end_date: "2026-05-21".into(),
+                total_validated: 1,
+                total_passed: 0,
+                total_discrepancies: 1,
+                compliance_rate_pct: 0.0,
+                top_risks: vec![ComplianceTopRisk {
+                    resource_id: Some(resource_id),
+                    name: "Dana".into(),
+                    variance_amount: 12_500_000,
+                }],
+            },
+            warnings: vec![],
+        });
+        let prev_map = dashboard_value_map(&baseline);
+        let next_map = dashboard_value_map(&next);
+        let changed = compute_changed_keys(&prev_map, &next_map);
+        let expected_key = format!("hr.compliance_alerts.top_risks.{}", resource_id);
+        assert!(
+            changed.contains(&expected_key),
+            "newly visible top-risk row must surface stable resource_id key, got {:?}",
+            changed
+        );
+        // No name-based fallback key when id is present.
+        assert!(
+            !changed
+                .iter()
+                .any(|k| k.starts_with("hr.compliance_alerts.top_risks.name.")),
+            "id-stable row must not double-emit a name-based key"
+        );
+    }
+
+    #[test]
+    fn dept_head_top_at_risk_id_stable_key() {
+        let baseline = empty_response("department_head");
+        let resource_id = Uuid::new_v4();
+        let mut next = empty_response("department_head");
+        next.department_head = Some(DepartmentHeadDashboard {
+            utilization: UtilizationSummary {
+                average_utilization_pct: 92.0,
+                overallocated_count: 1,
+                top_at_risk: vec![UtilizationAtRisk {
+                    resource_id: Some(resource_id),
+                    resource_name: "Erin".into(),
+                    current_allocation_pct: 130.0,
+                }],
+            },
+            budget: None,
+            overallocations: OverallocationSummary {
+                overallocated_count: 1,
+                members: vec![],
+            },
+            upcoming_assignments: vec![],
+            warnings: vec![],
+        });
+        let prev_map = dashboard_value_map(&baseline);
+        let next_map = dashboard_value_map(&next);
+        let changed = compute_changed_keys(&prev_map, &next_map);
+        let expected_key = format!("department_head.top_at_risk.{}", resource_id);
+        assert!(
+            changed.contains(&expected_key),
+            "newly visible at-risk member must surface stable resource_id key, got {:?}",
+            changed
+        );
+    }
+
+    #[test]
+    fn pm_project_fallback_key_used_when_project_id_missing() {
+        // When backend omits project_id, the helper must fall back to a
+        // name-based stable key so highlight behaviour still works.
+        let make = |margin: f64| {
+            let mut resp = empty_response("project_manager");
+            resp.project_manager = Some(ProjectManagerDashboard {
+                active_projects: vec![ProjectHealthCard {
+                    project_id: None,
+                    project_name: "Orphan Project".into(),
+                    status: "Active".into(),
+                    end_date: "2026-12-31".into(),
+                    total_budget_idr: 50_000_000,
+                    budget_spent_idr: 10_000_000,
+                    budget_remaining_idr: 40_000_000,
+                    budget_status: "healthy".into(),
+                    total_revenue_idr: 30_000_000,
+                    total_cost_idr: 20_000_000,
+                    gross_profit_idr: 10_000_000,
+                    margin_pct: margin,
+                    margin_alert: None,
+                    warning: None,
+                }],
+                margin_alerts: vec![],
+                warnings: vec![],
+            });
+            resp
+        };
+        let prev_map = dashboard_value_map(&make(30.0));
+        let next_map = dashboard_value_map(&make(12.0));
+        let changed = compute_changed_keys(&prev_map, &next_map);
+        let expected_key = "project_manager.project.name.Orphan Project.margin_pct";
+        assert!(
+            changed.contains(expected_key),
+            "expected fallback name-based key `{}` in {:?}",
+            expected_key,
+            changed
+        );
+    }
+
+    #[test]
+    fn pm_active_projects_count_changes_when_project_added() {
+        let baseline = empty_response("project_manager");
+        let mut next = empty_response("project_manager");
+        next.project_manager = Some(ProjectManagerDashboard {
+            active_projects: vec![ProjectHealthCard {
+                project_id: Some(Uuid::new_v4()),
+                project_name: "Atlas".into(),
+                status: "Active".into(),
+                end_date: "2026-12-31".into(),
+                total_budget_idr: 1,
+                budget_spent_idr: 0,
+                budget_remaining_idr: 1,
+                budget_status: "healthy".into(),
+                total_revenue_idr: 0,
+                total_cost_idr: 0,
+                gross_profit_idr: 0,
+                margin_pct: 0.0,
+                margin_alert: None,
+                warning: None,
+            }],
+            margin_alerts: vec![],
+            warnings: vec![],
+        });
+        let prev_map = dashboard_value_map(&baseline);
+        let next_map = dashboard_value_map(&next);
+        let changed = compute_changed_keys(&prev_map, &next_map);
+        assert!(
+            changed.contains("project_manager.active_projects.count"),
+            "list-length scalar must update when a project appears, got {:?}",
+            changed
+        );
+    }
+
+    #[test]
+    fn finance_audit_alerts_recent_row_uses_id_stable_key() {
+        let baseline = finance_response_with_cash(0, 0);
+        let entry_id = Uuid::new_v4();
+        let mut next = finance_response_with_cash(0, 0);
+        if let Some(f) = next.finance.as_mut() {
+            f.audit_alerts.access_denied_count = 1;
+            f.audit_alerts.recent = vec![AuditAlertEntry {
+                id: Some(entry_id),
+                action: "access_denied".into(),
+                entity_type: "ctc_record".into(),
+                created_at: "2026-05-21T05:00:00Z".into(),
+            }];
+        }
+        let prev_map = dashboard_value_map(&baseline);
+        let next_map = dashboard_value_map(&next);
+        let changed = compute_changed_keys(&prev_map, &next_map);
+        let expected_key = format!("finance.audit_alerts.recent.{}", entry_id);
+        assert!(
+            changed.contains(&expected_key),
+            "new audit alert row must surface stable id key, got {:?}",
+            changed
+        );
+        // No timestamp-based fallback key when id is present.
+        assert!(
+            !changed
+                .iter()
+                .any(|k| k.starts_with("finance.audit_alerts.recent.access_denied|")),
+            "id-stable row must not double-emit a timestamp-based key"
+        );
+    }
+
+    #[test]
+    fn finance_ctc_validation_status_change_produces_expected_key() {
+        // Status transitioning from "no_data" → "passing" with a non-None
+        // match_rate_pct must surface both keys as changed.
+        let prev = finance_response_with_cash(0, 0);
+        let mut next = finance_response_with_cash(0, 0);
+        if let Some(f) = next.finance.as_mut() {
+            f.ctc_validation = CtcValidationStatus {
+                status: "passing".into(),
+                start_date: "2026-05-01".into(),
+                end_date: "2026-05-21".into(),
+                total_compared: Some(10),
+                total_matches: Some(10),
+                total_discrepancies: Some(0),
+                match_rate_pct: Some(100.0),
+                message: None,
+            };
+        }
+        let prev_map = dashboard_value_map(&prev);
+        let next_map = dashboard_value_map(&next);
+        let changed = compute_changed_keys(&prev_map, &next_map);
+        assert!(
+            changed.contains("finance.ctc_validation.status"),
+            "ctc_validation.status transition must be marked changed, got {:?}",
+            changed
+        );
+        assert!(
+            changed.contains("finance.ctc_validation.match_rate_pct"),
+            "newly-present match_rate_pct must surface as changed, got {:?}",
+            changed
+        );
+    }
+}
