@@ -1,9 +1,11 @@
 use crate::auth::{authenticated_get, logout_user, use_auth};
 
+use chrono::{Datelike, Duration, NaiveDate};
 use gloo_timers::callback::{Interval, Timeout};
-use leptos::either::Either;
+use leptos::either::{Either, EitherOf3};
 use leptos::prelude::*;
 use leptos_router::hooks::*;
+use leptos_router::NavigateOptions;
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
 use std::sync::{
@@ -113,10 +115,72 @@ struct DepartmentHeadDashboard {
     upcoming_assignments: Vec<UpcomingAssignment>,
     #[serde(default)]
     warnings: Vec<String>,
+    // Story 6.4: dense Team Utilization Dashboard surface. `#[serde(default)]`
+    // keeps the DTO tolerant of older backends that have not deployed yet.
+    #[serde(default)]
+    team_members: Vec<TeamUtilizationMember>,
+    #[serde(default)]
+    utilization_trends: Option<TeamUtilizationTrendBundle>,
+    #[serde(default)]
+    underutilized_members: Vec<TeamUtilizationMember>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct TeamUtilizationMember {
+    #[serde(default)]
+    resource_id: Option<Uuid>,
+    resource_name: String,
+    #[serde(default)]
+    role: String,
+    current_utilization_pct: f64,
+    available_capacity_pct: f64,
+    #[serde(default)]
+    is_underutilized: bool,
+    #[serde(default)]
+    is_overallocated: bool,
+    #[serde(default)]
+    ctc_status: String,
+    #[serde(default)]
+    current_projects: Vec<TeamUtilizationCurrentProject>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct TeamUtilizationCurrentProject {
+    project_name: String,
+    allocation_percentage: f64,
+    start_date: String,
+    end_date: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct TeamUtilizationTrendBundle {
+    start_date: String,
+    end_date: String,
+    #[serde(default)]
+    members: Vec<TeamUtilizationTrend>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct TeamUtilizationTrend {
+    #[serde(default)]
+    resource_id: Option<Uuid>,
+    resource_name: String,
+    #[serde(default)]
+    periods: Vec<TeamUtilizationTrendPeriod>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct TeamUtilizationTrendPeriod {
+    period: String,
+    utilization_pct: f64,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 struct UtilizationSummary {
+    #[serde(default)]
+    start_date: String,
+    #[serde(default)]
+    end_date: String,
     average_utilization_pct: f64,
     overallocated_count: i64,
     #[serde(default)]
@@ -137,9 +201,13 @@ struct DepartmentBudgetSummary {
     budget_period: String,
     total_budget_idr: i64,
     total_committed_idr: i64,
+    #[serde(default)]
+    spent_actual_idr: i64,
     remaining_idr: i64,
     utilization_percentage: f64,
     budget_health: String,
+    #[serde(default)]
+    alert_threshold_pct: i32,
     budget_configured: bool,
 }
 
@@ -348,8 +416,84 @@ fn role_display(role: &str) -> &'static str {
     }
 }
 
-async fn fetch_role_dashboard() -> Result<RoleDashboardResponse, String> {
-    let response = authenticated_get("/api/v1/dashboard").await.map_err(|e| {
+/// Department Head trend-range presets. Resolved on the frontend into
+/// concrete `YYYY-MM-DD` boundaries before being sent to the dashboard API.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TrendRangePreset {
+    CurrentMonth,
+    Next30Days,
+    ThreeMonths,
+    SixMonths,
+}
+
+impl TrendRangePreset {
+    fn label(&self) -> &'static str {
+        match self {
+            TrendRangePreset::CurrentMonth => "Current Month",
+            TrendRangePreset::Next30Days => "Next 30 Days",
+            TrendRangePreset::ThreeMonths => "3 Months",
+            TrendRangePreset::SixMonths => "6 Months",
+        }
+    }
+
+    fn resolve(self) -> (String, String) {
+        let now = js_sys::Date::new_0();
+        let today = NaiveDate::from_ymd_opt(
+            now.get_utc_full_year() as i32,
+            now.get_utc_month() + 1,
+            now.get_utc_date(),
+        )
+        .unwrap_or_else(|| NaiveDate::from_ymd_opt(1970, 1, 1).expect("valid fallback date"));
+
+        self.resolve_from_date(today)
+    }
+
+    fn resolve_from_date(self, today: NaiveDate) -> (String, String) {
+        match self {
+            TrendRangePreset::CurrentMonth => {
+                let start = today.with_day(1).unwrap_or(today);
+                let next_month = if start.month() == 12 {
+                    NaiveDate::from_ymd_opt(start.year() + 1, 1, 1).unwrap_or(start)
+                } else {
+                    NaiveDate::from_ymd_opt(start.year(), start.month() + 1, 1).unwrap_or(start)
+                };
+                let end = next_month
+                    .checked_sub_signed(Duration::days(1))
+                    .unwrap_or(start);
+                (format_iso_date(start), format_iso_date(end))
+            }
+            TrendRangePreset::Next30Days => offset_range_iso(today, 30),
+            TrendRangePreset::ThreeMonths => offset_range_iso(today, 90),
+            TrendRangePreset::SixMonths => offset_range_iso(today, 180),
+        }
+    }
+}
+
+fn offset_range_iso(start: NaiveDate, days: i64) -> (String, String) {
+    let end = start
+        .checked_add_signed(Duration::days(days))
+        .unwrap_or(start);
+    (format_iso_date(start), format_iso_date(end))
+}
+
+fn format_iso_date(date: NaiveDate) -> String {
+    date.format("%Y-%m-%d").to_string()
+}
+
+async fn fetch_role_dashboard(
+    range: Option<TrendRangePreset>,
+) -> Result<RoleDashboardResponse, String> {
+    let url = match range {
+        Some(preset) => {
+            let (start, end) = preset.resolve();
+            format!(
+                "/api/v1/dashboard?team_start_date={}&team_end_date={}",
+                start, end
+            )
+        }
+        None => "/api/v1/dashboard".to_string(),
+    };
+    let response = authenticated_get(&url).await.map_err(|e| {
         if e == "SESSION_EXPIRED" {
             e
         } else {
@@ -519,6 +663,22 @@ fn dashboard_value_map(data: &RoleDashboardResponse) -> HashMap<String, String> 
                 ),
             );
         }
+        for member in &dh.overallocations.members {
+            let key = match member.resource_id {
+                Some(id) => format!("department_head.overallocations.member.{}", id),
+                None => format!(
+                    "department_head.overallocations.member.name.{}",
+                    member.resource_name
+                ),
+            };
+            map.insert(
+                key,
+                format!(
+                    "{}|{:.0}",
+                    member.resource_name, member.current_allocation_pct
+                ),
+            );
+        }
         for assignment in &dh.upcoming_assignments {
             let key = match assignment.allocation_id {
                 Some(id) => format!("department_head.upcoming_assignments.{}", id),
@@ -540,6 +700,96 @@ fn dashboard_value_map(data: &RoleDashboardResponse) -> HashMap<String, String> 
                     assignment.start_date,
                     assignment.end_date
                 ),
+            );
+        }
+
+        // Story 6.4 — Team utilization summary keys (visible aggregate stats).
+        map.insert(
+            "department_head.team.member_count".into(),
+            dh.team_members.len().to_string(),
+        );
+        let _backend_reported_underutilized_count = dh.underutilized_members.len();
+        map.insert(
+            "department_head.team.underutilized_count".into(),
+            dh.team_members
+                .iter()
+                .filter(|m| {
+                    m.is_underutilized || is_underutilized_threshold(m.current_utilization_pct)
+                })
+                .count()
+                .to_string(),
+        );
+        let avg_available_pct: f64 = if dh.team_members.is_empty() {
+            0.0
+        } else {
+            dh.team_members
+                .iter()
+                .map(|m| m.available_capacity_pct)
+                .sum::<f64>()
+                / dh.team_members.len() as f64
+        };
+        map.insert(
+            "department_head.team.avg_available_capacity_pct".into(),
+            format!("{:.1}", avg_available_pct),
+        );
+
+        // Per-member rendered values. Keys are stable on resource_id so a
+        // member dropping in/out of the table surfaces as a clean change.
+        for member in &dh.team_members {
+            let row_key = team_member_key(member);
+            map.insert(
+                format!("{}.resource_name", row_key),
+                member.resource_name.clone(),
+            );
+            map.insert(format!("{}.role", row_key), member.role.clone());
+            map.insert(
+                format!("{}.current_utilization_pct", row_key),
+                format!("{:.1}", member.current_utilization_pct),
+            );
+            map.insert(
+                format!("{}.available_capacity_pct", row_key),
+                format!("{:.1}", member.available_capacity_pct),
+            );
+            map.insert(
+                format!("{}.is_underutilized", row_key),
+                (member.is_underutilized
+                    || is_underutilized_threshold(member.current_utilization_pct))
+                .to_string(),
+            );
+            map.insert(
+                format!("{}.is_overallocated", row_key),
+                member.is_overallocated.to_string(),
+            );
+            map.insert(format!("{}.ctc_status", row_key), member.ctc_status.clone());
+            // Collapse current projects into a deterministic visible summary
+            // so changes (additions, removals, % shifts, date shifts) flash.
+            let project_summary = current_projects_change_value(&member.current_projects);
+            map.insert(format!("{}.current_projects", row_key), project_summary);
+        }
+
+        // Per-member trend periods — each period gets its own key so a single
+        // monthly cell can flash without dragging neighboring periods along.
+        if let Some(trend) = &dh.utilization_trends {
+            for member in &trend.members {
+                for period in &member.periods {
+                    map.insert(
+                        trend_period_key(member, &period.period),
+                        format!("{:.0}", period.utilization_pct),
+                    );
+                }
+            }
+        }
+
+        // Budget surface added by Story 6.4 (spent + alert threshold) so the
+        // new gauge values participate in change-highlighting.
+        if let Some(budget) = &dh.budget {
+            map.insert(
+                "department_head.budget.spent_actual_idr".into(),
+                budget.spent_actual_idr.to_string(),
+            );
+            map.insert(
+                "department_head.budget.alert_threshold_pct".into(),
+                budget.alert_threshold_pct.to_string(),
             );
         }
     }
@@ -911,6 +1161,9 @@ pub fn Dashboard() -> impl IntoView {
     let (state, set_state) = signal(DashboardState::initial());
     let (changed_keys, set_changed_keys) = signal::<HashSet<String>>(HashSet::new());
     let (pm_sort_mode, set_pm_sort_mode) = signal(PmSortMode::EndDate);
+    // Department Head trend range. Default Next 30 Days mirrors the backend's
+    // operational window so the initial fetch needs no extra round-trip.
+    let (team_range, set_team_range) = signal(TrendRangePreset::Next30Days);
 
     // Component-scoped, !Send+!Sync handles. Replacing/clearing the inner
     // Option drops the previous Interval/Timeout, preventing leaks and
@@ -956,8 +1209,11 @@ pub fn Dashboard() -> impl IntoView {
 
             let navigate = navigate.clone();
             let dashboard_alive = dashboard_alive.clone();
+            // Capture the current team range without subscribing so that the
+            // polling Interval reads the latest selection on every tick.
+            let range_for_fetch = team_range.get_untracked();
             leptos::task::spawn_local(async move {
-                let result = fetch_role_dashboard().await;
+                let result = fetch_role_dashboard(Some(range_for_fetch)).await;
 
                 if !dashboard_alive.load(Ordering::Relaxed) {
                     return;
@@ -1056,6 +1312,26 @@ pub fn Dashboard() -> impl IntoView {
         });
     }
 
+    // Re-fetch when the user changes the trend range. Skipping the first run
+    // keeps the initial mount on a single load() call instead of two; after
+    // that, any range change triggers a fresh fetch that the polling Interval
+    // will continue to follow because it reads `team_range` lazily.
+    {
+        let load = load_dashboard.clone();
+        let initial_range_run: StoredValue<bool> = StoredValue::new(true);
+        Effect::new(move |_| {
+            let _selected = team_range.get();
+            if initial_range_run.get_value() {
+                initial_range_run.set_value(false);
+                return;
+            }
+            // Reset prev_value_map so a range switch does not light up the
+            // whole panel as "changed" on the next successful response.
+            prev_value_map.set_value(None);
+            load();
+        });
+    }
+
     // Tear down timers and highlight state when the component unmounts.
     on_cleanup(move || {
         dashboard_alive.store(false, Ordering::Relaxed);
@@ -1137,6 +1413,8 @@ pub fn Dashboard() -> impl IntoView {
                                 data=data
                                 pm_sort_mode=pm_sort_mode
                                 set_pm_sort_mode=set_pm_sort_mode
+                                team_range=team_range
+                                set_team_range=set_team_range
                             />
                         }),
                         None if s.loading => Either::Right(view! {
@@ -1167,6 +1445,8 @@ fn DashboardBody(
     data: RoleDashboardResponse,
     pm_sort_mode: ReadSignal<PmSortMode>,
     set_pm_sort_mode: WriteSignal<PmSortMode>,
+    team_range: ReadSignal<TrendRangePreset>,
+    set_team_range: WriteSignal<TrendRangePreset>,
 ) -> impl IntoView {
     let role = data.role.clone();
     let no_widgets = data.hr.is_none()
@@ -1177,7 +1457,13 @@ fn DashboardBody(
     view! {
         <div class="space-y-4">
             {data.hr.map(|hr| view! { <HrPanel hr=hr /> })}
-            {data.department_head.map(|dh| view! { <DepartmentHeadPanel dh=dh /> })}
+            {data.department_head.map(|dh| view! {
+                <DepartmentHeadPanel
+                    dh=dh
+                    team_range=team_range
+                    set_team_range=set_team_range
+                />
+            })}
             {data.project_manager.map(|pm| view! {
                 <ProjectManagerPanel
                     pm=pm
@@ -1425,14 +1711,164 @@ fn HrPanel(hr: HrDashboard) -> impl IntoView {
 
 // ── Department Head Panel ────────────────────────────────────────────────
 
+const DH_UNDERUTILIZED_THRESHOLD_PCT: f64 = 50.0;
+
+fn is_underutilized_threshold(current_utilization_pct: f64) -> bool {
+    current_utilization_pct < DH_UNDERUTILIZED_THRESHOLD_PCT
+}
+
+fn utilization_badge_class(current_pct: f64, is_overallocated: bool) -> &'static str {
+    if is_overallocated || current_pct > 100.0 {
+        "badge-negative"
+    } else if is_underutilized_threshold(current_pct) {
+        "badge-warning"
+    } else if current_pct >= 80.0 {
+        "badge-positive"
+    } else {
+        "badge-neutral"
+    }
+}
+
+fn utilization_badge_label(current_pct: f64, is_overallocated: bool) -> &'static str {
+    if is_overallocated || current_pct > 100.0 {
+        "Overallocated"
+    } else if is_underutilized_threshold(current_pct) {
+        "Underutilized"
+    } else if current_pct >= 80.0 {
+        "Healthy"
+    } else {
+        "Available"
+    }
+}
+
+fn budget_health_class(health: &str) -> &'static str {
+    match health {
+        "critical" => "text-negative-default",
+        "warning" => "text-warning-default",
+        "healthy" => "text-positive-default",
+        _ => "text-huly-muted",
+    }
+}
+
+fn budget_health_label(health: &str) -> &'static str {
+    match health {
+        "critical" => "At risk",
+        "warning" => "Watch",
+        "healthy" => "On track",
+        _ => "Unconfigured",
+    }
+}
+
+/// Clamp utilization to `[0, 100]` for inline bar width. Overallocated
+/// resources still render a full bar; the badge handles the negative signal.
+fn bar_width_pct(value: f64) -> f64 {
+    if value.is_nan() {
+        0.0
+    } else if value < 0.0 {
+        0.0
+    } else if value > 100.0 {
+        100.0
+    } else {
+        value
+    }
+}
+
+/// Stable key for a team utilization member row.
+fn team_member_key(member: &TeamUtilizationMember) -> String {
+    match member.resource_id {
+        Some(id) => format!("department_head.team.{}", id),
+        None => format!("department_head.team.name.{}", member.resource_name),
+    }
+}
+
+/// Stable key for a single trend period belonging to one member.
+fn trend_period_key(member: &TeamUtilizationTrend, period: &str) -> String {
+    match member.resource_id {
+        Some(id) => format!("department_head.trend.{}.{}", id, period),
+        None => format!(
+            "department_head.trend.name.{}.{}",
+            member.resource_name, period
+        ),
+    }
+}
+
+fn current_projects_change_value(projects: &[TeamUtilizationCurrentProject]) -> String {
+    if projects.is_empty() {
+        return "none".to_string();
+    }
+
+    let mut projects = projects.iter().collect::<Vec<_>>();
+    projects.sort_by(|a, b| {
+        a.project_name
+            .to_lowercase()
+            .cmp(&b.project_name.to_lowercase())
+            .then_with(|| a.start_date.cmp(&b.start_date))
+            .then_with(|| a.end_date.cmp(&b.end_date))
+            .then_with(|| {
+                a.allocation_percentage
+                    .partial_cmp(&b.allocation_percentage)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+    });
+
+    let rows = projects
+        .into_iter()
+        .map(|p| {
+            (
+                p.project_name.as_str(),
+                format!("{:.3}", p.allocation_percentage),
+                p.start_date.as_str(),
+                p.end_date.as_str(),
+            )
+        })
+        .collect::<Vec<_>>();
+
+    serde_json::to_string(&rows).unwrap_or_else(|_| "project-summary-unavailable".to_string())
+}
+
+fn trend_period_columns(bundle: &TeamUtilizationTrendBundle) -> Vec<String> {
+    let mut periods = Vec::new();
+    for member in &bundle.members {
+        for period in &member.periods {
+            if !periods.contains(&period.period) {
+                periods.push(period.period.clone());
+            }
+        }
+    }
+    periods.sort();
+    periods
+}
+
 #[component]
-fn DepartmentHeadPanel(dh: DepartmentHeadDashboard) -> impl IntoView {
+fn DepartmentHeadPanel(
+    dh: DepartmentHeadDashboard,
+    team_range: ReadSignal<TrendRangePreset>,
+    set_team_range: WriteSignal<TrendRangePreset>,
+) -> impl IntoView {
     let warnings = dh.warnings.clone();
     let utilization = dh.utilization.clone();
+    let at_risk_members = utilization.top_at_risk.clone();
     let overallocations = dh.overallocations.clone();
     let upcoming = dh.upcoming_assignments.clone();
     let budget = dh.budget.clone();
+    let team_members = dh.team_members.clone();
+    let trend_bundle = dh.utilization_trends.clone();
     let changed = expect_context::<ChangedKeysCtx>();
+
+    let team_member_count = team_members.len();
+    let underutilized_count = team_members
+        .iter()
+        .filter(|m| m.is_underutilized || is_underutilized_threshold(m.current_utilization_pct))
+        .count();
+    let avg_available_pct: f64 = if team_member_count == 0 {
+        0.0
+    } else {
+        team_members
+            .iter()
+            .map(|m| m.available_capacity_pct)
+            .sum::<f64>()
+            / team_member_count as f64
+    };
 
     view! {
         <div class="space-y-4">
@@ -1440,13 +1876,43 @@ fn DepartmentHeadPanel(dh: DepartmentHeadDashboard) -> impl IntoView {
             <div class="stat-grid">
                 <div class="stat-card card-hover">
                     <div>
-                        <p class="stat-label">"Avg Utilization (30d)"</p>
+                        <p class="stat-label">"Avg Utilization"</p>
                         <p
                             class="stat-value"
                             class:dashboard-change-flash=flash_if_changed(changed, "department_head.utilization.average_utilization_pct")
                         >
                             {format!("{:.1}%", utilization.average_utilization_pct)}
                         </p>
+                        <p class="text-xs text-huly-muted">{format!("{} → {}", format_date(&utilization.start_date), format_date(&utilization.end_date))}</p>
+                    </div>
+                </div>
+                <div class="stat-card card-hover">
+                    <div>
+                        <p class="stat-label">"Avg Available Capacity"</p>
+                        <p
+                            class="stat-value"
+                            class:dashboard-change-flash=flash_if_changed(changed, "department_head.team.avg_available_capacity_pct")
+                        >
+                            {format!("{:.1}%", avg_available_pct)}
+                        </p>
+                        <p
+                            class="text-xs text-huly-muted"
+                            class:dashboard-change-flash=flash_if_changed(changed, "department_head.team.member_count")
+                        >
+                            {format!("{} team members", team_member_count)}
+                        </p>
+                    </div>
+                </div>
+                <div class="stat-card card-hover">
+                    <div>
+                        <p class="stat-label">"Underutilized"</p>
+                        <p
+                            class="stat-value"
+                            class:dashboard-change-flash=flash_if_changed(changed, "department_head.team.underutilized_count")
+                        >
+                            {underutilized_count.to_string()}
+                        </p>
+                        <p class="text-xs text-huly-muted">{format!("< {:.0}% utilized", DH_UNDERUTILIZED_THRESHOLD_PCT)}</p>
                     </div>
                 </div>
                 <div class="stat-card card-hover">
@@ -1465,7 +1931,7 @@ fn DepartmentHeadPanel(dh: DepartmentHeadDashboard) -> impl IntoView {
                         <div>
                             <p class="stat-label">{format!("Budget ({})", b.budget_period.clone())}</p>
                             <p
-                                class="stat-value"
+                                class=format!("stat-value {}", budget_health_class(&b.budget_health))
                                 class:dashboard-change-flash=flash_if_changed(changed, "department_head.budget.utilization_percentage")
                             >
                                 {format!("{:.0}%", b.utilization_percentage)}
@@ -1488,51 +1954,33 @@ fn DepartmentHeadPanel(dh: DepartmentHeadDashboard) -> impl IntoView {
             </div>
 
             {budget.clone().map(|b| view! {
-                <div class="panel">
-                    <div class="toolbar flex items-center justify-between">
-                        <h3 class="text-xs font-semibold text-huly-secondary uppercase tracking-wider">"Budget Status"</h3>
-                        <a href="/team" class="text-xs text-primary-400 hover:text-primary-300">"Open team →"</a>
-                    </div>
-                    <div class="p-3 text-sm text-huly-content">
-                        <p>
-                            <span class="text-huly-muted">"Department: "</span>
-                            <span>{b.department_name.clone()}</span>
-                        </p>
-                        <p>
-                            <span class="text-huly-muted">"Remaining: "</span>
-                            <span class:dashboard-change-flash=flash_if_changed(changed, "department_head.budget.remaining_idr")>
-                                {format_idr(b.remaining_idr)}
-                            </span>
-                        </p>
-                        <p>
-                            <span class="text-huly-muted">"Health: "</span>
-                            <span class:dashboard-change-flash=flash_if_changed(changed, "department_head.budget.budget_health")>
-                                {b.budget_health.clone()}
-                            </span>
-                        </p>
-                        {if !b.budget_configured {
-                            Some(view! { <p class="text-xs text-huly-muted mt-1">"(Budget not yet configured for this period.)"</p> })
-                        } else { None }}
-                    </div>
-                </div>
+                <DepartmentBudgetGauge budget=b />
             })}
 
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+            <DepartmentTeamUtilizationTable team_members=team_members />
+
+            <DepartmentUtilizationTrend
+                bundle=trend_bundle
+                team_range=team_range
+                set_team_range=set_team_range
+            />
+
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-3">
                 <div class="panel">
                     <div class="toolbar">
                         <h3 class="text-xs font-semibold text-huly-secondary uppercase tracking-wider">"At-risk Members"</h3>
                     </div>
                     <div class="p-3">
-                        {if utilization.top_at_risk.is_empty() {
+                        {if at_risk_members.is_empty() {
                             Either::Left(view! {
                                 <div class="empty-state py-4">
-                                    <p class="text-huly-muted text-xs">"No members at risk."</p>
+                                    <p class="text-huly-muted text-xs">"No high-utilization members."</p>
                                 </div>
                             })
                         } else {
                             Either::Right(view! {
                                 <div>
-                                    {utilization.top_at_risk.into_iter().map(|m| {
+                                    {at_risk_members.into_iter().map(|m| {
                                         let key = match m.resource_id {
                                             Some(id) => format!("department_head.top_at_risk.{}", id),
                                             None => format!("department_head.top_at_risk.name.{}", m.resource_name),
@@ -1541,7 +1989,43 @@ fn DepartmentHeadPanel(dh: DepartmentHeadDashboard) -> impl IntoView {
                                         view! {
                                             <div class="activity-item" class:dashboard-change-flash=flash>
                                                 <span class="text-sm text-huly-content flex-1">{m.resource_name.clone()}</span>
-                                                <span class="text-xs text-huly-muted whitespace-nowrap">{format!("{:.0}%", m.current_allocation_pct)}</span>
+                                                <span class="text-xs text-warning-default whitespace-nowrap">{format!("{:.0}%", m.current_allocation_pct)}</span>
+                                            </div>
+                                        }
+                                    }).collect_view()}
+                                </div>
+                            })
+                        }}
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <div class="toolbar">
+                        <h3 class="text-xs font-semibold text-huly-secondary uppercase tracking-wider">"Overallocated Members"</h3>
+                    </div>
+                    <div class="p-3">
+                        {if overallocations.members.is_empty() {
+                            Either::Left(view! {
+                                <div class="empty-state py-4">
+                                    <p class="text-huly-muted text-xs">"No overallocated members."</p>
+                                </div>
+                            })
+                        } else {
+                            Either::Right(view! {
+                                <div>
+                                    {overallocations.members.into_iter().map(|m| {
+                                        let key = match m.resource_id {
+                                            Some(id) => format!("department_head.overallocations.member.{}", id),
+                                            None => format!(
+                                                "department_head.overallocations.member.name.{}",
+                                                m.resource_name
+                                            ),
+                                        };
+                                        let flash = flash_if_changed_owned(changed, key);
+                                        view! {
+                                            <div class="activity-item" class:dashboard-change-flash=flash>
+                                                <span class="text-sm text-huly-content flex-1">{m.resource_name.clone()}</span>
+                                                <span class="text-xs text-negative-default whitespace-nowrap">{format!("{:.0}%", m.current_allocation_pct)}</span>
                                             </div>
                                         }
                                     }).collect_view()}
@@ -1588,6 +2072,445 @@ fn DepartmentHeadPanel(dh: DepartmentHeadDashboard) -> impl IntoView {
                         }}
                     </div>
                 </div>
+            </div>
+        </div>
+    }
+}
+
+#[component]
+fn DepartmentBudgetGauge(budget: DepartmentBudgetSummary) -> impl IntoView {
+    let changed = expect_context::<ChangedKeysCtx>();
+    let width_pct = if budget.total_budget_idr > 0 {
+        bar_width_pct(budget.utilization_percentage)
+    } else {
+        0.0
+    };
+    let fill_class = budget_health_class(&budget.budget_health);
+    let bar_fill_color = match budget.budget_health.as_str() {
+        "critical" => "background-color: var(--color-negative-default);",
+        "warning" => "background-color: var(--color-warning-default);",
+        "healthy" => "background-color: var(--color-positive-default);",
+        _ => "background-color: var(--color-huly-ghost);",
+    };
+    let threshold = budget.alert_threshold_pct;
+    view! {
+        <div class="panel">
+            <div class="toolbar flex items-center justify-between">
+                <h3 class="text-xs font-semibold text-huly-secondary uppercase tracking-wider">"Department Budget"</h3>
+                <a href="/team" class="text-xs text-primary-400 hover:text-primary-300">"Open team →"</a>
+            </div>
+            <div class="p-3 space-y-3">
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div>
+                        <p class="stat-label">"Total Budget"</p>
+                        <p
+                            class="text-sm font-mono text-huly-caption"
+                            class:dashboard-change-flash=flash_if_changed(changed, "department_head.budget.total_budget_idr")
+                        >
+                            {format_idr(budget.total_budget_idr)}
+                        </p>
+                    </div>
+                    <div>
+                        <p class="stat-label">"Committed"</p>
+                        <p
+                            class="text-sm font-mono text-huly-caption"
+                            class:dashboard-change-flash=flash_if_changed(changed, "department_head.budget.total_committed_idr")
+                        >
+                            {format_idr(budget.total_committed_idr)}
+                        </p>
+                    </div>
+                    <div>
+                        <p class="stat-label">"Spent"</p>
+                        <p
+                            class="text-sm font-mono text-huly-caption"
+                            class:dashboard-change-flash=flash_if_changed(changed, "department_head.budget.spent_actual_idr")
+                        >
+                            {format_idr(budget.spent_actual_idr)}
+                        </p>
+                    </div>
+                    <div>
+                        <p class="stat-label">"Available"</p>
+                        <p
+                            class="text-sm font-mono text-huly-caption"
+                            class:dashboard-change-flash=flash_if_changed(changed, "department_head.budget.remaining_idr")
+                        >
+                            {format_idr(budget.remaining_idr)}
+                        </p>
+                    </div>
+                </div>
+                <div>
+                    <div class="flex items-center justify-between mb-1">
+                        <span
+                            class=format!("text-xs font-medium {}", fill_class)
+                            class:dashboard-change-flash=flash_if_changed(changed, "department_head.budget.budget_health")
+                        >
+                            {budget_health_label(&budget.budget_health)}
+                        </span>
+                        <span
+                            class="text-xs text-huly-muted"
+                            class:dashboard-change-flash=flash_if_changed(changed, "department_head.budget.utilization_percentage")
+                        >
+                            {format!("{:.0}% used", budget.utilization_percentage)}
+                        </span>
+                    </div>
+                    <div
+                        class="progress-track h-3"
+                        role="progressbar"
+                        aria-valuemin="0"
+                        aria-valuemax="100"
+                        aria-valuenow=format!("{:.0}", width_pct)
+                        aria-label="Department budget utilization"
+                    >
+                        <div
+                            class="h-3 rounded-full transition-all"
+                            style=format!("width: {:.2}%; {}", width_pct, bar_fill_color)
+                        ></div>
+                    </div>
+                    {if threshold > 0 {
+                        Some(view! {
+                            <p
+                                class="text-xs text-huly-muted mt-1"
+                                class:dashboard-change-flash=flash_if_changed(changed, "department_head.budget.alert_threshold_pct")
+                            >
+                                {format!("Alert threshold: {}%", threshold)}
+                            </p>
+                        })
+                    } else { None }}
+                    {if !budget.budget_configured {
+                        Some(view! {
+                            <p class="text-xs text-huly-muted mt-1">"(Budget not yet configured for this period.)"</p>
+                        })
+                    } else { None }}
+                </div>
+            </div>
+        </div>
+    }
+}
+
+#[component]
+fn DepartmentTeamUtilizationTable(team_members: Vec<TeamUtilizationMember>) -> impl IntoView {
+    let changed = expect_context::<ChangedKeysCtx>();
+    let navigate = use_navigate();
+    view! {
+        <div class="panel">
+            <div class="toolbar flex items-center justify-between">
+                <h3 class="text-xs font-semibold text-huly-secondary uppercase tracking-wider">"Team Utilization"</h3>
+                <a href="/team" class="text-xs text-primary-400 hover:text-primary-300">"Open team →"</a>
+            </div>
+            <div class="p-0">
+                {if team_members.is_empty() {
+                    Either::Left(view! {
+                        <div class="empty-state py-6">
+                            <p class="text-huly-muted text-xs">"No team members in scope."</p>
+                        </div>
+                    })
+                } else {
+                    Either::Right(view! {
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-sm">
+                                <thead>
+                                    <tr class="text-xs text-huly-secondary uppercase tracking-wider">
+                                        <th class="text-left p-2">"Member"</th>
+                                        <th class="text-right p-2">"Utilization"</th>
+                                        <th class="text-right p-2">"Available"</th>
+                                        <th class="text-left p-2">"Current Projects"</th>
+                                        <th class="text-center p-2">"Status"</th>
+                                        <th class="text-center p-2">"Action"</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {team_members.into_iter().map(|member| {
+                                        let row_key = team_member_key(&member);
+                                        let name_key = format!("{}.resource_name", row_key);
+                                        let role_key = format!("{}.role", row_key);
+                                        let current_key = format!("{}.current_utilization_pct", row_key);
+                                        let available_key = format!("{}.available_capacity_pct", row_key);
+                                        let projects_key = format!("{}.current_projects", row_key);
+                                        let underutil_key = format!("{}.is_underutilized", row_key);
+                                        let overallocated_key = format!("{}.is_overallocated", row_key);
+
+                                        let badge_class = utilization_badge_class(member.current_utilization_pct, member.is_overallocated);
+                                        let badge_label = utilization_badge_label(member.current_utilization_pct, member.is_overallocated);
+                                        let bar_width = bar_width_pct(member.current_utilization_pct);
+                                        let bar_color = if member.is_overallocated || member.current_utilization_pct > 100.0 {
+                                            "background-color: var(--color-negative-default);"
+                                        } else if is_underutilized_threshold(member.current_utilization_pct) {
+                                            "background-color: var(--color-warning-default);"
+                                        } else {
+                                            "background-color: var(--color-positive-default);"
+                                        };
+
+                                        let projects_summary = if member.current_projects.is_empty() {
+                                            "None".to_string()
+                                        } else {
+                                            member
+                                                .current_projects
+                                                .iter()
+                                                .map(|p| format!("{} ({:.0}%)", p.project_name, p.allocation_percentage))
+                                                .collect::<Vec<_>>()
+                                                .join(", ")
+                                        };
+                                        let projects_title = if member.current_projects.is_empty() {
+                                            String::new()
+                                        } else {
+                                            member
+                                                .current_projects
+                                                .iter()
+                                                .map(|p| {
+                                                    format!(
+                                                        "{} · {:.0}% · {} → {}",
+                                                        p.project_name,
+                                                        p.allocation_percentage,
+                                                        format_date(&p.start_date),
+                                                        format_date(&p.end_date),
+                                                    )
+                                                })
+                                                .collect::<Vec<_>>()
+                                                .join("\n")
+                                        };
+
+                                        let ctc_missing = member.ctc_status != "Active";
+                                        let show_assign = member.is_underutilized
+                                            || is_underutilized_threshold(member.current_utilization_pct);
+                                        let nav = navigate.clone();
+                                        let rid = member.resource_id;
+                                        let assign_click = move |_| {
+                                            if let Some(id) = rid {
+                                                nav(
+                                                    &format!("/team?assign_resource_id={}", id),
+                                                    NavigateOptions::default(),
+                                                );
+                                            }
+                                        };
+                                        let row_flash = {
+                                            let keys = vec![
+                                                name_key.clone(),
+                                                role_key.clone(),
+                                                current_key.clone(),
+                                                available_key.clone(),
+                                                projects_key.clone(),
+                                                underutil_key.clone(),
+                                                overallocated_key.clone(),
+                                                format!("{}.ctc_status", row_key),
+                                            ];
+                                            flash_if_any_changed_owned(changed, keys)
+                                        };
+
+                                        view! {
+                                            <tr class="border-t border-huly-divider" class:dashboard-change-flash=row_flash>
+                                                <td class="p-2 align-top">
+                                                    <div
+                                                        class="text-sm text-huly-content font-medium"
+                                                        class:dashboard-change-flash=flash_if_changed_owned(changed, name_key.clone())
+                                                    >
+                                                        {member.resource_name.clone()}
+                                                    </div>
+                                                    <div
+                                                        class="text-xs text-huly-muted"
+                                                        class:dashboard-change-flash=flash_if_changed_owned(changed, role_key.clone())
+                                                    >
+                                                        {member.role.clone()}
+                                                    </div>
+                                                </td>
+                                                <td class="p-2 align-top text-right">
+                                                    <div
+                                                        class="text-sm font-mono text-huly-caption"
+                                                        class:dashboard-change-flash=flash_if_changed_owned(changed, current_key.clone())
+                                                    >
+                                                        {format!("{:.1}%", member.current_utilization_pct)}
+                                                    </div>
+                                                    <div class="progress-track h-2 mt-1" style="width: 80px; margin-left: auto;">
+                                                        <div
+                                                            class="h-2 rounded-full transition-all"
+                                                            style=format!("width: {:.2}%; {}", bar_width, bar_color)
+                                                        ></div>
+                                                    </div>
+                                                </td>
+                                                <td class="p-2 align-top text-right">
+                                                    <span
+                                                        class="text-sm font-mono text-huly-content"
+                                                        class:dashboard-change-flash=flash_if_changed_owned(changed, available_key.clone())
+                                                    >
+                                                        {format!("{:.1}%", member.available_capacity_pct)}
+                                                    </span>
+                                                </td>
+                                                <td class="p-2 align-top">
+                                                    <div
+                                                        class="text-xs text-huly-content"
+                                                        title=projects_title
+                                                        class:dashboard-change-flash=flash_if_changed_owned(changed, projects_key.clone())
+                                                    >
+                                                        {projects_summary}
+                                                    </div>
+                                                </td>
+                                                <td class="p-2 align-top text-center">
+                                                    <span
+                                                        class=badge_class
+                                                        class:dashboard-change-flash=flash_if_changed_owned(changed, overallocated_key.clone())
+                                                    >
+                                                        {badge_label}
+                                                    </span>
+                                                </td>
+                                                <td class="p-2 align-top text-center">
+                                                    {if show_assign {
+                                                        if ctc_missing {
+                                                            EitherOf3::A(view! {
+                                                                <button
+                                                                    disabled=true
+                                                                    title="CTC data required to assign. Contact HR to complete employee setup."
+                                                                    class="btn-secondary text-xs opacity-50 cursor-not-allowed"
+                                                                >
+                                                                    "Assign"
+                                                                </button>
+                                                            })
+                                                        } else if rid.is_some() {
+                                                            EitherOf3::B(view! {
+                                                                <button
+                                                                    class="btn-primary text-xs"
+                                                                    on:click=assign_click
+                                                                >
+                                                                    "Assign"
+                                                                </button>
+                                                            })
+                                                        } else {
+                                                            EitherOf3::C(view! { <span class="text-xs text-huly-muted">"—"</span> })
+                                                        }
+                                                    } else {
+                                                        EitherOf3::C(view! { <span class="text-xs text-huly-muted">"—"</span> })
+                                                    }}
+                                                </td>
+                                            </tr>
+                                        }
+                                    }).collect_view()}
+                                </tbody>
+                            </table>
+                        </div>
+                    })
+                }}
+            </div>
+        </div>
+    }
+}
+
+#[component]
+fn DepartmentUtilizationTrend(
+    bundle: Option<TeamUtilizationTrendBundle>,
+    team_range: ReadSignal<TrendRangePreset>,
+    set_team_range: WriteSignal<TrendRangePreset>,
+) -> impl IntoView {
+    let changed = expect_context::<ChangedKeysCtx>();
+    let bundle_clone = bundle.clone();
+
+    view! {
+        <div class="panel">
+            <div class="toolbar flex items-center justify-between flex-wrap gap-2">
+                <h3 class="text-xs font-semibold text-huly-secondary uppercase tracking-wider">"Utilization Trend"</h3>
+                <div
+                    class="inline-flex items-center gap-1"
+                    role="group"
+                    aria-label="Select utilization trend range"
+                >
+                    <span class="text-xs text-huly-muted mr-1">"Range"</span>
+                    {[TrendRangePreset::CurrentMonth, TrendRangePreset::Next30Days, TrendRangePreset::ThreeMonths, TrendRangePreset::SixMonths]
+                        .into_iter()
+                        .map(|preset| {
+                            let label = preset.label();
+                            let on_click = move |_| set_team_range.set(preset);
+                            view! {
+                                <button
+                                    type="button"
+                                    class="btn-ghost text-xs"
+                                    aria-pressed=move || (team_range.get() == preset).to_string()
+                                    on:click=on_click
+                                    style=move || if team_range.get() == preset {
+                                        "background-color: var(--color-huly-btn-hover); color: var(--color-huly-caption);"
+                                    } else { "" }
+                                >
+                                    {label}
+                                </button>
+                            }
+                        }).collect_view()}
+                </div>
+            </div>
+            <div class="p-3">
+                {match bundle_clone {
+                    None => EitherOf3::A(view! {
+                        <div class="empty-state py-6">
+                            <p class="text-huly-muted text-xs">"Trend data is not yet available."</p>
+                        </div>
+                    }),
+                    Some(b) if b.members.is_empty() => EitherOf3::B(view! {
+                        <div class="empty-state py-6">
+                            <p class="text-huly-muted text-xs">{format!("No utilization data for {} → {}.", format_date(&b.start_date), format_date(&b.end_date))}</p>
+                        </div>
+                    }),
+                    Some(b) => {
+                        let period_columns = trend_period_columns(&b);
+                        EitherOf3::C(view! {
+                            <div class="overflow-x-auto">
+                                <table class="w-full text-xs">
+                                    <thead>
+                                        <tr class="text-huly-secondary uppercase tracking-wider">
+                                            <th class="text-left p-2">"Member"</th>
+                                            {period_columns.iter().map(|period| view! {
+                                                <th class="text-right p-2">{period.clone()}</th>
+                                            }).collect_view()}
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {b.members.into_iter().map(|member| {
+                                            let resource_name = member.resource_name.clone();
+                                            let row_periods = period_columns.clone();
+                                            view! {
+                                                <tr class="border-t border-huly-divider">
+                                                    <td class="p-2 text-huly-content">{resource_name}</td>
+                                                    {row_periods.into_iter().map(|period_label| {
+                                                        let key = trend_period_key(&member, &period_label);
+                                                        let flash = flash_if_changed_owned(changed, key);
+                                                        let value = member
+                                                            .periods
+                                                            .iter()
+                                                            .find(|p| p.period == period_label)
+                                                            .map(|p| p.utilization_pct);
+                                                        view! {
+                                                            <td class="p-2 text-right" class:dashboard-change-flash=flash>
+                                                                {if let Some(utilization_pct) = value {
+                                                                    let bar_w = bar_width_pct(utilization_pct);
+                                                                    let bar_color = if utilization_pct > 100.0 {
+                                                                        "background-color: var(--color-negative-default);"
+                                                                    } else if is_underutilized_threshold(utilization_pct) {
+                                                                        "background-color: var(--color-warning-default);"
+                                                                    } else {
+                                                                        "background-color: var(--color-positive-default);"
+                                                                    };
+                                                                    Either::Left(view! {
+                                                                        <div class="flex items-center justify-end gap-2">
+                                                                            <div class="progress-track h-2" style="width: 60px;">
+                                                                                <div
+                                                                                    class="h-2 rounded-full transition-all"
+                                                                                    style=format!("width: {:.2}%; {}", bar_w, bar_color)
+                                                                                ></div>
+                                                                            </div>
+                                                                            <span class="font-mono text-huly-content">{format!("{:.0}%", utilization_pct)}</span>
+                                                                        </div>
+                                                                    })
+                                                                } else {
+                                                                    Either::Right(view! {
+                                                                        <span class="font-mono text-huly-muted">"—"</span>
+                                                                    })
+                                                                }}
+                                                            </td>
+                                                        }
+                                                    }).collect_view()}
+                                                </tr>
+                                            }
+                                        }).collect_view()}
+                                    </tbody>
+                                </table>
+                            </div>
+                        })
+                    },
+                }}
             </div>
         </div>
     }
@@ -2659,6 +3582,8 @@ mod tests {
         let mut resp = empty_response("department_head");
         resp.department_head = Some(DepartmentHeadDashboard {
             utilization: UtilizationSummary {
+                start_date: String::new(),
+                end_date: String::new(),
                 average_utilization_pct: 75.0,
                 overallocated_count: 0,
                 top_at_risk: vec![],
@@ -2668,9 +3593,11 @@ mod tests {
                 budget_period: "2026-Q2".into(),
                 total_budget_idr: 100_000_000,
                 total_committed_idr: 50_000_000,
+                spent_actual_idr: 0,
                 remaining_idr: 50_000_000,
                 utilization_percentage: utilization_pct,
                 budget_health: "healthy".into(),
+                alert_threshold_pct: 80,
                 budget_configured: true,
             }),
             overallocations: OverallocationSummary {
@@ -2679,6 +3606,9 @@ mod tests {
             },
             upcoming_assignments: vec![],
             warnings: vec![],
+            team_members: vec![],
+            utilization_trends: None,
+            underutilized_members: vec![],
         });
         resp
     }
@@ -2702,6 +3632,8 @@ mod tests {
             let mut resp = empty_response("department_head");
             resp.department_head = Some(DepartmentHeadDashboard {
                 utilization: UtilizationSummary {
+                    start_date: String::new(),
+                    end_date: String::new(),
                     average_utilization_pct: 0.0,
                     overallocated_count: 0,
                     top_at_risk: vec![],
@@ -2720,6 +3652,9 @@ mod tests {
                     allocation_percentage: pct,
                 }],
                 warnings: vec![],
+                team_members: vec![],
+                utilization_trends: None,
+                underutilized_members: vec![],
             });
             resp
         };
@@ -3215,6 +4150,8 @@ mod tests {
         let mut next = empty_response("department_head");
         next.department_head = Some(DepartmentHeadDashboard {
             utilization: UtilizationSummary {
+                start_date: String::new(),
+                end_date: String::new(),
                 average_utilization_pct: 92.0,
                 overallocated_count: 1,
                 top_at_risk: vec![UtilizationAtRisk {
@@ -3230,6 +4167,9 @@ mod tests {
             },
             upcoming_assignments: vec![],
             warnings: vec![],
+            team_members: vec![],
+            utilization_trends: None,
+            underutilized_members: vec![],
         });
         let prev_map = dashboard_value_map(&baseline);
         let next_map = dashboard_value_map(&next);
@@ -3859,5 +4799,628 @@ mod tests {
         sort_pm_cards(&mut empty, PmSortMode::BudgetUtilization);
         sort_pm_cards(&mut empty, PmSortMode::EndDate);
         assert!(empty.is_empty());
+    }
+
+    // ── Story 6.4 — Team Utilization Dashboard helpers + change keys ───────
+
+    fn dh_response_with(
+        team_members: Vec<TeamUtilizationMember>,
+        trends: Option<TeamUtilizationTrendBundle>,
+        budget: Option<DepartmentBudgetSummary>,
+    ) -> RoleDashboardResponse {
+        let underutilized = team_members
+            .iter()
+            .filter(|m| m.is_underutilized)
+            .cloned()
+            .collect();
+        let mut resp = empty_response("department_head");
+        resp.department_head = Some(DepartmentHeadDashboard {
+            utilization: UtilizationSummary {
+                start_date: "2026-05-22".into(),
+                end_date: "2026-06-21".into(),
+                average_utilization_pct: 60.0,
+                overallocated_count: 0,
+                top_at_risk: vec![],
+            },
+            budget,
+            overallocations: OverallocationSummary {
+                overallocated_count: 0,
+                members: vec![],
+            },
+            upcoming_assignments: vec![],
+            warnings: vec![],
+            team_members,
+            utilization_trends: trends,
+            underutilized_members: underutilized,
+        });
+        resp
+    }
+
+    fn dh_member(
+        id: Option<Uuid>,
+        name: &str,
+        current: f64,
+        projects: Vec<TeamUtilizationCurrentProject>,
+    ) -> TeamUtilizationMember {
+        let available = (100.0 - current).max(0.0);
+        TeamUtilizationMember {
+            resource_id: id,
+            resource_name: name.into(),
+            role: "engineer".into(),
+            current_utilization_pct: current,
+            available_capacity_pct: (available * 10.0).round() / 10.0,
+            is_underutilized: current < DH_UNDERUTILIZED_THRESHOLD_PCT,
+            is_overallocated: current > 100.0,
+            ctc_status: "Active".into(),
+            current_projects: projects,
+        }
+    }
+
+    #[test]
+    fn underutilized_threshold_excludes_50_pct() {
+        // 49.9% is underutilized; 50.0% is not. The threshold is strict <.
+        assert!(is_underutilized_threshold(49.9));
+        assert!(!is_underutilized_threshold(50.0));
+        assert!(!is_underutilized_threshold(75.0));
+        assert!(!is_underutilized_threshold(100.0));
+    }
+
+    #[test]
+    fn utilization_badge_class_branches() {
+        // Overallocated always wins over underutilized when both inputs imply
+        // negative, mirroring backend severity precedence.
+        assert_eq!(
+            utilization_badge_class(150.0, true),
+            "badge-negative",
+            "explicit overallocation flag must yield negative"
+        );
+        assert_eq!(
+            utilization_badge_class(105.0, false),
+            "badge-negative",
+            ">100% utilization must yield negative regardless of flag"
+        );
+        assert_eq!(utilization_badge_class(40.0, false), "badge-warning");
+        assert_eq!(utilization_badge_class(85.0, false), "badge-positive");
+        assert_eq!(utilization_badge_class(60.0, false), "badge-neutral");
+    }
+
+    #[test]
+    fn utilization_badge_label_branches() {
+        assert_eq!(utilization_badge_label(0.0, true), "Overallocated");
+        assert_eq!(utilization_badge_label(110.0, false), "Overallocated");
+        assert_eq!(utilization_badge_label(25.0, false), "Underutilized");
+        assert_eq!(utilization_badge_label(80.0, false), "Healthy");
+        assert_eq!(utilization_badge_label(65.0, false), "Available");
+    }
+
+    #[test]
+    fn bar_width_clamps_negative_and_overflow() {
+        assert_eq!(bar_width_pct(-10.0), 0.0);
+        assert_eq!(bar_width_pct(0.0), 0.0);
+        assert_eq!(bar_width_pct(75.0), 75.0);
+        assert_eq!(bar_width_pct(150.0), 100.0);
+        assert_eq!(bar_width_pct(f64::NAN), 0.0);
+    }
+
+    #[test]
+    fn budget_health_class_and_label_branches() {
+        assert_eq!(budget_health_class("critical"), "text-negative-default");
+        assert_eq!(budget_health_class("warning"), "text-warning-default");
+        assert_eq!(budget_health_class("healthy"), "text-positive-default");
+        assert_eq!(budget_health_class("unknown"), "text-huly-muted");
+
+        assert_eq!(budget_health_label("critical"), "At risk");
+        assert_eq!(budget_health_label("warning"), "Watch");
+        assert_eq!(budget_health_label("healthy"), "On track");
+        assert_eq!(budget_health_label("bogus"), "Unconfigured");
+    }
+
+    #[test]
+    fn team_member_key_uses_resource_id_when_present_else_name() {
+        let id = Uuid::new_v4();
+        let with_id = dh_member(Some(id), "Alice", 40.0, vec![]);
+        let no_id = dh_member(None, "Anon Person", 40.0, vec![]);
+        assert_eq!(
+            team_member_key(&with_id),
+            format!("department_head.team.{}", id)
+        );
+        assert_eq!(
+            team_member_key(&no_id),
+            "department_head.team.name.Anon Person"
+        );
+    }
+
+    #[test]
+    fn trend_period_key_uses_resource_id_when_present_else_name() {
+        let id = Uuid::new_v4();
+        let with_id = TeamUtilizationTrend {
+            resource_id: Some(id),
+            resource_name: "Alice".into(),
+            periods: vec![],
+        };
+        let no_id = TeamUtilizationTrend {
+            resource_id: None,
+            resource_name: "Anon".into(),
+            periods: vec![],
+        };
+        assert_eq!(
+            trend_period_key(&with_id, "2026-05"),
+            format!("department_head.trend.{}.2026-05", id)
+        );
+        assert_eq!(
+            trend_period_key(&no_id, "2026-05"),
+            "department_head.trend.name.Anon.2026-05"
+        );
+    }
+
+    #[test]
+    fn dh_team_utilization_change_produces_expected_keys() {
+        let id = Uuid::new_v4();
+        let mk = |pct: f64| {
+            dh_response_with(vec![dh_member(Some(id), "Alice", pct, vec![])], None, None)
+        };
+        let prev_map = dashboard_value_map(&mk(40.0));
+        let next_map = dashboard_value_map(&mk(70.0));
+        let changed = compute_changed_keys(&prev_map, &next_map);
+
+        let row = format!("department_head.team.{}", id);
+        for suffix in [
+            "current_utilization_pct",
+            "available_capacity_pct",
+            "is_underutilized",
+        ] {
+            let key = format!("{}.{}", row, suffix);
+            assert!(
+                changed.contains(&key),
+                "expected `{}` in {:?}",
+                key,
+                changed
+            );
+        }
+        // Aggregate stats should also flash.
+        assert!(changed.contains("department_head.team.avg_available_capacity_pct"));
+        assert!(changed.contains("department_head.team.underutilized_count"));
+    }
+
+    #[test]
+    fn dh_current_projects_change_produces_stable_key() {
+        let id = Uuid::new_v4();
+        let mk = |projects: Vec<TeamUtilizationCurrentProject>| {
+            dh_response_with(
+                vec![dh_member(Some(id), "Alice", 40.0, projects)],
+                None,
+                None,
+            )
+        };
+        let prev_map = dashboard_value_map(&mk(vec![TeamUtilizationCurrentProject {
+            project_name: "Atlas".into(),
+            allocation_percentage: 40.0,
+            start_date: "2026-05-01".into(),
+            end_date: "2026-06-01".into(),
+        }]));
+        let next_map = dashboard_value_map(&mk(vec![
+            TeamUtilizationCurrentProject {
+                project_name: "Atlas".into(),
+                allocation_percentage: 40.0,
+                start_date: "2026-05-01".into(),
+                end_date: "2026-06-01".into(),
+            },
+            TeamUtilizationCurrentProject {
+                project_name: "Beacon".into(),
+                allocation_percentage: 20.0,
+                start_date: "2026-05-15".into(),
+                end_date: "2026-06-15".into(),
+            },
+        ]));
+        let changed = compute_changed_keys(&prev_map, &next_map);
+        let projects_key = format!("department_head.team.{}.current_projects", id);
+        assert!(
+            changed.contains(&projects_key),
+            "expected `{}` in {:?}",
+            projects_key,
+            changed
+        );
+    }
+
+    #[test]
+    fn dh_team_name_and_role_changes_are_tracked() {
+        let id = Uuid::new_v4();
+        let mut renamed = dh_member(Some(id), "Alice Renamed", 40.0, vec![]);
+        renamed.role = "lead engineer".into();
+        let prev_map = dashboard_value_map(&dh_response_with(
+            vec![dh_member(Some(id), "Alice", 40.0, vec![])],
+            None,
+            None,
+        ));
+        let next_map = dashboard_value_map(&dh_response_with(vec![renamed], None, None));
+        let changed = compute_changed_keys(&prev_map, &next_map);
+        assert!(changed.contains(&format!("department_head.team.{}.resource_name", id)));
+        assert!(changed.contains(&format!("department_head.team.{}.role", id)));
+    }
+
+    #[test]
+    fn dh_current_projects_change_value_distinguishes_delimiters() {
+        let first = current_projects_change_value(&[
+            TeamUtilizationCurrentProject {
+                project_name: "A|B".into(),
+                allocation_percentage: 20.0,
+                start_date: "2026-05-01".into(),
+                end_date: "2026-05-31".into(),
+            },
+            TeamUtilizationCurrentProject {
+                project_name: "C".into(),
+                allocation_percentage: 30.0,
+                start_date: "2026-06-01".into(),
+                end_date: "2026-06-30".into(),
+            },
+        ]);
+        let second = current_projects_change_value(&[
+            TeamUtilizationCurrentProject {
+                project_name: "A".into(),
+                allocation_percentage: 20.0,
+                start_date: "B".into(),
+                end_date: "2026-05-31".into(),
+            },
+            TeamUtilizationCurrentProject {
+                project_name: "C".into(),
+                allocation_percentage: 30.0,
+                start_date: "2026-06-01".into(),
+                end_date: "2026-06-30".into(),
+            },
+        ]);
+
+        assert_ne!(first, second);
+    }
+
+    #[test]
+    fn dh_trend_period_change_produces_expected_key() {
+        let id = Uuid::new_v4();
+        let mk = |pct: f64| {
+            let trend = TeamUtilizationTrendBundle {
+                start_date: "2026-05-01".into(),
+                end_date: "2026-07-31".into(),
+                members: vec![TeamUtilizationTrend {
+                    resource_id: Some(id),
+                    resource_name: "Alice".into(),
+                    periods: vec![
+                        TeamUtilizationTrendPeriod {
+                            period: "2026-05".into(),
+                            utilization_pct: 60.0,
+                        },
+                        TeamUtilizationTrendPeriod {
+                            period: "2026-06".into(),
+                            utilization_pct: pct,
+                        },
+                    ],
+                }],
+            };
+            dh_response_with(vec![], Some(trend), None)
+        };
+        let prev_map = dashboard_value_map(&mk(50.0));
+        let next_map = dashboard_value_map(&mk(80.0));
+        let changed = compute_changed_keys(&prev_map, &next_map);
+        let key = format!("department_head.trend.{}.2026-06", id);
+        assert!(
+            changed.contains(&key),
+            "expected `{}` in {:?}",
+            key,
+            changed
+        );
+        // The unchanged earlier period must not also appear.
+        assert!(
+            !changed.contains(&format!("department_head.trend.{}.2026-05", id)),
+            "stable period must not flash"
+        );
+    }
+
+    #[test]
+    fn trend_period_columns_union_sparse_member_periods() {
+        let bundle = TeamUtilizationTrendBundle {
+            start_date: "2026-05-01".into(),
+            end_date: "2026-07-31".into(),
+            members: vec![
+                TeamUtilizationTrend {
+                    resource_id: Some(Uuid::new_v4()),
+                    resource_name: "Alice".into(),
+                    periods: vec![TeamUtilizationTrendPeriod {
+                        period: "2026-06".into(),
+                        utilization_pct: 60.0,
+                    }],
+                },
+                TeamUtilizationTrend {
+                    resource_id: Some(Uuid::new_v4()),
+                    resource_name: "Bob".into(),
+                    periods: vec![
+                        TeamUtilizationTrendPeriod {
+                            period: "2026-05".into(),
+                            utilization_pct: 10.0,
+                        },
+                        TeamUtilizationTrendPeriod {
+                            period: "2026-07".into(),
+                            utilization_pct: 30.0,
+                        },
+                    ],
+                },
+            ],
+        };
+
+        assert_eq!(
+            trend_period_columns(&bundle),
+            vec![
+                "2026-05".to_string(),
+                "2026-06".to_string(),
+                "2026-07".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn dh_budget_spent_actual_and_threshold_keys_present() {
+        let budget = DepartmentBudgetSummary {
+            department_name: "Engineering".into(),
+            budget_period: "2026-05".into(),
+            total_budget_idr: 50_000_000,
+            total_committed_idr: 20_000_000,
+            spent_actual_idr: 12_500_000,
+            remaining_idr: 30_000_000,
+            utilization_percentage: 40.0,
+            budget_health: "healthy".into(),
+            alert_threshold_pct: 80,
+            budget_configured: true,
+        };
+        let resp = dh_response_with(vec![], None, Some(budget));
+        let map = dashboard_value_map(&resp);
+        assert!(map.contains_key("department_head.budget.spent_actual_idr"));
+        assert!(map.contains_key("department_head.budget.alert_threshold_pct"));
+        assert_eq!(
+            map.get("department_head.budget.spent_actual_idr")
+                .map(String::as_str),
+            Some("12500000")
+        );
+        assert_eq!(
+            map.get("department_head.budget.alert_threshold_pct")
+                .map(String::as_str),
+            Some("80")
+        );
+    }
+
+    #[test]
+    fn dh_team_value_map_excludes_sensitive_ctc_fields() {
+        // Even when CTC status is exposed, no ciphertext/key/salary leakage.
+        let member = dh_member(Some(Uuid::new_v4()), "Alice", 40.0, vec![]);
+        let resp = dh_response_with(vec![member], None, None);
+        let serialized = format!("{:?}", dashboard_value_map(&resp));
+        for forbidden in [
+            "encrypted_components",
+            "encrypted_daily_rate",
+            "ciphertext",
+            "key_version",
+            "encryption_algorithm",
+            "encryption_version",
+            "base_salary",
+            "daily_rate",
+        ] {
+            assert!(
+                !serialized.contains(forbidden),
+                "DH team value map leaked sensitive token `{}`",
+                forbidden
+            );
+        }
+    }
+
+    #[test]
+    fn trend_range_preset_labels_stable() {
+        assert_eq!(TrendRangePreset::CurrentMonth.label(), "Current Month");
+        assert_eq!(TrendRangePreset::Next30Days.label(), "Next 30 Days");
+        assert_eq!(TrendRangePreset::ThreeMonths.label(), "3 Months");
+        assert_eq!(TrendRangePreset::SixMonths.label(), "6 Months");
+    }
+
+    #[test]
+    fn trend_range_preset_uses_utc_calendar_date_boundaries() {
+        let today = NaiveDate::from_ymd_opt(2026, 5, 22).unwrap();
+        assert_eq!(
+            TrendRangePreset::CurrentMonth.resolve_from_date(today),
+            ("2026-05-01".to_string(), "2026-05-31".to_string())
+        );
+        assert_eq!(
+            TrendRangePreset::Next30Days.resolve_from_date(today),
+            ("2026-05-22".to_string(), "2026-06-21".to_string())
+        );
+        assert_eq!(
+            TrendRangePreset::ThreeMonths.resolve_from_date(today),
+            ("2026-05-22".to_string(), "2026-08-20".to_string())
+        );
+        assert_eq!(
+            TrendRangePreset::SixMonths.resolve_from_date(today),
+            ("2026-05-22".to_string(), "2026-11-18".to_string())
+        );
+    }
+
+    #[test]
+    fn trend_range_current_month_handles_year_boundary() {
+        let today = NaiveDate::from_ymd_opt(2026, 12, 22).unwrap();
+        assert_eq!(
+            TrendRangePreset::CurrentMonth.resolve_from_date(today),
+            ("2026-12-01".to_string(), "2026-12-31".to_string())
+        );
+    }
+
+    // ── Story 6.4 expansion (Master Test Architect):
+    // bar-width edge values, badge boundary at 50%/100%, and change-detection
+    // for aggregate / row-removed / project-pct-only mutations.
+    // ─────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn bar_width_pct_clamps_infinities() {
+        // Both infinities must clamp to a finite bar width so a corrupt
+        // backend value cannot break layout via inline width style.
+        assert_eq!(bar_width_pct(f64::INFINITY), 100.0);
+        assert_eq!(bar_width_pct(f64::NEG_INFINITY), 0.0);
+    }
+
+    #[test]
+    fn utilization_badge_at_exactly_50_pct_is_neutral_available() {
+        // Strict threshold parity with the backend: 50.0% is neither
+        // underutilized nor (yet) the "Healthy" >= 80 band.
+        assert_eq!(utilization_badge_class(50.0, false), "badge-neutral");
+        assert_eq!(utilization_badge_label(50.0, false), "Available");
+    }
+
+    #[test]
+    fn utilization_badge_at_100_pct_is_healthy_not_overallocated() {
+        // 100.0% is the upper boundary of the Healthy band. The
+        // "Overallocated" branch must fire only above 100% (or when the
+        // explicit flag is set).
+        assert_eq!(utilization_badge_class(100.0, false), "badge-positive");
+        assert_eq!(utilization_badge_label(100.0, false), "Healthy");
+    }
+
+    #[test]
+    fn dh_member_count_flashes_when_row_removed() {
+        // Removing a member from the team table must surface as a change on
+        // the visible aggregate so the count tile flashes.
+        let kept_id = Uuid::new_v4();
+        let removed_id = Uuid::new_v4();
+        let prev = dh_response_with(
+            vec![
+                dh_member(Some(kept_id), "Alice", 40.0, vec![]),
+                dh_member(Some(removed_id), "Bob", 70.0, vec![]),
+            ],
+            None,
+            None,
+        );
+        let next = dh_response_with(
+            vec![dh_member(Some(kept_id), "Alice", 40.0, vec![])],
+            None,
+            None,
+        );
+        let prev_map = dashboard_value_map(&prev);
+        let next_map = dashboard_value_map(&next);
+        let changed = compute_changed_keys(&prev_map, &next_map);
+        assert!(
+            changed.contains("department_head.team.member_count"),
+            "removing a member must flash the aggregate count, got {:?}",
+            changed
+        );
+        // The removed row's per-member keys are no longer present in `next`
+        // and the differ does not emit removed-only keys — guards against a
+        // future regression that would double-flash on absence.
+        let removed_util_key = format!(
+            "department_head.team.{}.current_utilization_pct",
+            removed_id
+        );
+        assert!(
+            !changed.contains(&removed_util_key),
+            "removed-only keys must not appear in the changed set"
+        );
+    }
+
+    #[test]
+    fn dh_underutilized_count_flashes_when_member_crosses_threshold() {
+        // Same member id, utilization moves from 40% (underutilized) → 60%
+        // (not underutilized). The aggregate underutilized_count must flash
+        // alongside the per-member is_underutilized key.
+        let id = Uuid::new_v4();
+        let prev_map = dashboard_value_map(&dh_response_with(
+            vec![dh_member(Some(id), "Alice", 40.0, vec![])],
+            None,
+            None,
+        ));
+        let next_map = dashboard_value_map(&dh_response_with(
+            vec![dh_member(Some(id), "Alice", 60.0, vec![])],
+            None,
+            None,
+        ));
+        let changed = compute_changed_keys(&prev_map, &next_map);
+        assert!(
+            changed.contains("department_head.team.underutilized_count"),
+            "underutilized_count must flash when a member crosses the 50% threshold, got {:?}",
+            changed
+        );
+        let per_member_key = format!("department_head.team.{}.is_underutilized", id);
+        assert!(
+            changed.contains(&per_member_key),
+            "per-member is_underutilized must also flash, got {:?}",
+            changed
+        );
+    }
+
+    #[test]
+    fn dh_overallocated_flag_flashes_independently() {
+        let id = Uuid::new_v4();
+        let make = |overallocated: bool| {
+            let mut member = dh_member(Some(id), "Alice", 100.0, vec![]);
+            member.is_overallocated = overallocated;
+            dh_response_with(vec![member], None, None)
+        };
+        let prev_map = dashboard_value_map(&make(false));
+        let next_map = dashboard_value_map(&make(true));
+        let changed = compute_changed_keys(&prev_map, &next_map);
+        let key = format!("department_head.team.{}.is_overallocated", id);
+        assert!(
+            changed.contains(&key),
+            "overallocated flag must have an independent change key, got {:?}",
+            changed
+        );
+    }
+
+    #[test]
+    fn dh_current_projects_flashes_on_allocation_pct_change_only() {
+        // Same project name and dates, only the allocation percentage moves.
+        // The bundled current_projects summary must still mark the row's
+        // current_projects key as changed (the value embeds the % so a
+        // single-field shift surfaces as a row-level change).
+        let id = Uuid::new_v4();
+        let mk = |pct: f64| {
+            dh_response_with(
+                vec![dh_member(
+                    Some(id),
+                    "Alice",
+                    40.0,
+                    vec![TeamUtilizationCurrentProject {
+                        project_name: "Atlas".into(),
+                        allocation_percentage: pct,
+                        start_date: "2026-05-01".into(),
+                        end_date: "2026-06-01".into(),
+                    }],
+                )],
+                None,
+                None,
+            )
+        };
+        let prev_map = dashboard_value_map(&mk(20.0));
+        let next_map = dashboard_value_map(&mk(35.0));
+        let changed = compute_changed_keys(&prev_map, &next_map);
+        let projects_key = format!("department_head.team.{}.current_projects", id);
+        assert!(
+            changed.contains(&projects_key),
+            "current_projects key must flash on percentage change of an existing project, got {:?}",
+            changed
+        );
+    }
+
+    #[test]
+    fn dh_avg_available_capacity_is_zero_when_team_is_empty() {
+        // Pure aggregate guard: a Department Head with an empty team renders
+        // "0.0" rather than a NaN/Inf division-by-zero artifact.
+        let resp = dh_response_with(vec![], None, None);
+        let map = dashboard_value_map(&resp);
+        assert_eq!(
+            map.get("department_head.team.avg_available_capacity_pct")
+                .map(String::as_str),
+            Some("0.0"),
+            "empty team must surface avg_available_capacity_pct=0.0 (never NaN)"
+        );
+        assert_eq!(
+            map.get("department_head.team.member_count")
+                .map(String::as_str),
+            Some("0")
+        );
+        assert_eq!(
+            map.get("department_head.team.underutilized_count")
+                .map(String::as_str),
+            Some("0")
+        );
     }
 }

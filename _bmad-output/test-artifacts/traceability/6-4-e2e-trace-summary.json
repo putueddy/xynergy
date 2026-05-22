@@ -1,0 +1,287 @@
+{
+  "schema_version": "0.1.0",
+  "snapshot_at": "2026-05-22T00:00:00Z",
+  "resnapshot_at": "2026-05-22T11:00:00Z",
+  "repo": "xynergy",
+  "collection_mode": "contract_static_plus_local_execution_plus_manual_browser",
+  "collection_status": "COLLECTED",
+  "inventory_basis": "acceptance_criteria",
+  "gate_basis": "priority_thresholds_plus_manual_verification_executed_then_review_patched",
+  "target": {
+    "type": "story",
+    "id": "6.4",
+    "label": "Team Utilization Dashboard"
+  },
+  "decision_mode": "deterministic_plus_manual_reverify_required",
+  "evaluator": "Putu",
+  "confidence": "high",
+  "gate_status": "CONCERNS",
+  "previous_gate_status": "CONCERNS",
+  "gate_criteria": {
+    "p0_coverage_required": "100%",
+    "p0_static_logic_coverage_actual": "100%",
+    "p0_runtime_verification_status": "review_patched_reverify_required",
+    "p0_status": "PASS_WITH_REVERIFY_REQUIRED",
+    "p1_coverage_target": "90%",
+    "p1_coverage_minimum": "80%",
+    "p1_static_logic_coverage_actual": "100%",
+    "p1_runtime_verification_status": "review_patched_reverify_required",
+    "p1_status": "PASS_WITH_REVERIFY_REQUIRED",
+    "overall_coverage_minimum": "80%",
+    "overall_static_logic_coverage_actual": "100%",
+    "overall_status": "REVIEW_PATCHED",
+    "frontend_unit_execution_status": "executed_native (77/77)",
+    "backend_integration_execution_status": "executed_live_database (dashboard_tests 57/57)",
+    "regression_execution_status": "executed_live_database (team_tests 10/10; budget_tests 18/18; overallocation_tests 7/7)",
+    "manual_browser_status": "review_patched_reverify_required",
+    "wasm_compile_status": "clean (9 pre-existing unrelated warnings)"
+  },
+  "coverage": {
+    "inventory": {
+      "static_logic_covered": 4,
+      "total_acceptance_criteria": 4,
+      "static_logic_pct": 100,
+    "runtime_verified": 2,
+    "runtime_pending": 2
+    },
+    "priority_breakdown": {
+      "P0": { "total": 2, "static_logic_covered": 2, "runtime_verified": 1 },
+      "P1": { "total": 2, "static_logic_covered": 2, "runtime_verified": 1 },
+      "P2": { "total": 0, "static_logic_covered": 0, "runtime_verified": 0 },
+      "P3": { "total": 0, "static_logic_covered": 0, "runtime_verified": 0 }
+    },
+    "by_level": {
+      "e2e":       { "tests": 0,  "criteria_covered": 0, "execution": "no_repeatable_harness" },
+      "api":       { "tests": 20, "criteria_covered": 4, "execution": "passed_live_database" },
+      "component": { "tests": 0,  "criteria_covered": 0, "execution": "no_component_harness" },
+      "unit_be":   { "tests": 6,  "criteria_covered": 1, "execution": "passed_native" },
+      "unit_fe":   { "tests": 27, "criteria_covered": 4, "execution": "passed_native" },
+      "manual":    { "checks": 4, "criteria_covered": 2, "execution": "review_patched_reverify_required" }
+    }
+  },
+  "tests": {
+    "files": 3,
+    "cases": 53,
+    "skipped_cases": 0,
+    "fixme_cases": 0,
+    "pending_cases": 0
+  },
+  "risk_summary": {
+    "critical_open": 0,
+    "high_open": 0,
+    "medium_advisory": 1,
+    "low_open": 1
+  },
+  "heuristics": {
+    "endpoint_gaps": "none_dashboard_route_fully_covered",
+    "auth_negative_path_status": "present_via_cross_dept_exclusion_and_inherited_6_1_regression",
+    "error_path_status": "present_invalid_and_excessive_range_and_partial_range_branches_covered",
+    "data_isolation_status": "passed_live_sqlx_tests",
+    "list_bound_status": "passed_current_projects_capped_at_10",
+    "sensitive_field_guard_status": "present_ctc_ciphertext_excluded_from_change_map",
+    "ui_journey_status": "review_patched_reverify_required_no_repeatable_harness",
+    "ui_state_status": "review_patched_reverify_required_no_component_harness",
+    "sort_helper_status": "n/a_no_sort_in_this_story",
+    "visual_state_helper_status": "present_badge_class_label_branches_unit_passed",
+    "deep_link_routing_status": "review_patched_reverify_required_no_automated_dom_coverage"
+  },
+  "manual_browser_verification": {
+    "status": "review_patched_reverify_required",
+    "executed_at": "2026-05-22T10:51:00Z",
+    "executed_by": "Putu (Master Test Architect, driven headlessly via Claude /browse)",
+    "evidence_report": "_bmad-output/test-artifacts/manual-verification-6-4.md",
+    "fixture_sql": "_bmad-output/test-artifacts/dh-fixture-6-4.sql",
+    "screenshots_dir": "_bmad-output/test-artifacts/screenshots-6-4/",
+    "per_ac_results": {
+      "AC1": "PASS",
+      "AC2": "REVERIFY_REQUIRED",
+      "AC3": "REVERIFY_REQUIRED",
+      "AC4": "PASS"
+    },
+    "key_observations": [
+      "AC#1: 4 team rows render with util %, available %, current projects (with allocation %), status badge; overallocated Sari clamps available_capacity_pct to 0.0",
+      "AC#2: initial manual pass covered range presets; code-review patch changed range parsing and requires reverify for malformed non-DH params / Next 30 Days evidence",
+      "AC#3: code-review patch changed deep-link timing/error behavior; rerun dashboard click, direct URL, malformed, unknown, CTC-missing, and cross-department guarded cases",
+      "AC#4: Total/Committed/Spent/Available rendered with green 'On track' health bar, 6% vs 80% threshold"
+    ],
+    "non_blocking_observation": "Superseded by code-review patch; patched AC#2/AC#3 browser paths must be rerun before clean promotion.",
+    "blocking_for_done_promotion": true,
+    "recommended_coverage": [
+      "Department Head /dashboard renders team utilization table with current utilization %, current projects, available capacity, and status badge",
+      "Trend preset segmented control (Current Month / Next 30 Days / 3 Months / 6 Months) refreshes data without stacking polling intervals",
+      "Underutilized member Assign deep-link routes to /team?assign_resource_id=<uuid> and opens the existing assignment modal",
+      "CTC-missing underutilized member shows disabled/guarded state and cannot be assigned from dashboard",
+      "Out-of-scope or malformed assign_resource_id is cleared from the URL with a bounded error and without opening the modal",
+      "Closing/refreshing after the modal opens does not reopen the modal (replace navigation, not push)",
+      "Budget gauge displays Total / Committed / Spent / Available with the correct health color (alert_threshold_pct)",
+      "30-second polling and manual Refresh apply dashboard-change-flash to the new Department Head values"
+    ],
+    "environment_recommendation": "Local Postgres + xynergy-server at http://127.0.0.1:3000; Department Head fixture with one CTC-Active underutilized resource, one CTC-missing resource, one overallocated resource, and a configured department budget"
+  },
+  "ac_to_tests": [
+    {
+      "ac": 1,
+      "title": "Team Dashboard shows Team members, Current Utilization %, Current Projects, Available Capacity",
+      "priority": "P0",
+      "coverage": "FULL",
+      "tests": [
+        "dept_head_team_members_include_utilization_projects_capacity",
+        "dept_head_team_excludes_other_department_resources",
+        "dept_head_current_projects_capped_at_limit",
+        "dept_head_with_empty_team_returns_structured_empty_lists",
+        "dept_head_overallocated_member_clamps_available_capacity",
+        "utilization_badge_class_branches",
+        "utilization_badge_label_branches",
+        "utilization_badge_at_100_pct_is_healthy_not_overallocated",
+        "bar_width_clamps_negative_and_overflow",
+        "bar_width_pct_clamps_infinities",
+        "team_member_key_uses_resource_id_when_present_else_name",
+        "dh_team_utilization_change_produces_expected_keys",
+        "dh_current_projects_change_produces_stable_key",
+        "dh_member_count_flashes_when_row_removed",
+        "dh_avg_available_capacity_is_zero_when_team_is_empty",
+        "dh_team_value_map_excludes_sensitive_ctc_fields"
+      ]
+    },
+    {
+      "ac": 2,
+      "title": "Utilization trends per member for selected time range",
+      "priority": "P1",
+      "coverage": "FULL",
+      "tests": [
+        "dept_head_trend_range_query_expands_periods",
+        "dept_head_invalid_trend_range_returns_validation_error",
+        "dept_head_excessive_trend_range_returns_validation_error",
+        "dashboard_range_query_does_not_affect_admin_response",
+        "dashboard_malformed_range_query_is_ignored_for_admin",
+        "dept_head_trend_bundle_echoes_start_and_end_dates",
+        "dept_head_partial_range_only_start_date_uses_default_end",
+        "resolve_team_range_defaults_when_both_none",
+        "resolve_team_range_rejects_start_after_end",
+        "resolve_team_range_rejects_range_above_cap",
+        "resolve_team_range_accepts_exactly_max_span",
+        "trend_period_key_uses_resource_id_when_present_else_name",
+        "dh_trend_period_change_produces_expected_key",
+        "trend_range_preset_labels_stable"
+      ]
+    },
+    {
+      "ac": 3,
+      "title": "Underutilized resources (current utilization < 50%) → click to assign via /team",
+      "priority": "P0",
+      "coverage": "FULL",
+      "tests": [
+        "dept_head_under_50_pct_surfaces_underutilized",
+        "dept_head_underutilized_boundary_excludes_exactly_50_pct",
+        "dept_head_missing_ctc_member_surfaced_with_non_active_status",
+        "underutilized_threshold_excludes_50_pct",
+        "utilization_badge_at_exactly_50_pct_is_neutral_available",
+        "dh_underutilized_count_flashes_when_member_crosses_threshold",
+        "dh_current_projects_flashes_on_allocation_pct_change_only"
+      ],
+      "advisory": "Deep-link round-trip (/dashboard → /team?assign_resource_id=<uuid> → modal open → query-param clean) was initially manually verified on 2026-05-22, but subsequent code-review patches changed direct deep-link and guarded-error behavior; rerun AC#3 browser verification. Automated DOM/router coverage remains a shared harness backlog item with Story 6.3."
+    },
+    {
+      "ac": 4,
+      "title": "Department budget summary with gauge: Total / Committed / Spent / Available",
+      "priority": "P1",
+      "coverage": "FULL",
+      "tests": [
+        "dept_head_budget_payload_has_gauge_fields",
+        "dh_budget_spent_actual_and_threshold_keys_present",
+        "budget_health_class_and_label_branches",
+        "format_idr_handles_zero",
+        "format_idr_groups_thousands_with_dots",
+        "format_idr_handles_negative_amount"
+      ],
+      "regression_supports": [
+        "dept_head_response_has_utilization_and_overallocation (6.1 regression)"
+      ]
+    }
+  ],
+  "supporting_tests": {
+    "regression_auth_security_inherited_from_6_1": [
+      "dept_head_only_sees_own_department",
+      "dept_head_without_department_returns_403",
+      "dept_head_dashboard_uses_current_department_not_stale_token",
+      "dept_head_upcoming_excludes_past_allocations",
+      "dept_head_upcoming_limited_and_ordered_by_start"
+    ],
+    "regression_change_detection_for_6_4_keys": [
+      "dh_team_utilization_change_produces_expected_keys",
+      "dh_current_projects_change_produces_stable_key",
+      "dh_trend_period_change_produces_expected_key",
+      "dh_budget_spent_actual_and_threshold_keys_present",
+      "dh_team_value_map_excludes_sensitive_ctc_fields"
+    ]
+  },
+  "non_ac_regression": {
+    "compiled_suites": {
+      "dashboard_tests_backend": 57,
+      "team_tests_backend": 10,
+      "budget_tests_backend": 18,
+      "overallocation_tests_backend": 7,
+      "frontend_dashboard_unit_tests": 77
+    },
+    "executed_suites": {
+      "dashboard_tests_backend": 57,
+      "team_tests_backend": 10,
+      "budget_tests_backend": 18,
+      "overallocation_tests_backend": 7,
+      "frontend_dashboard_unit_tests": 77
+    },
+    "failed_setup_suites": {}
+  },
+  "totals": {
+    "story_scoped_tests": 53,
+    "regression_tests_passing": 169,
+    "total_tests_considered": 169
+  },
+  "blockers": [],
+  "advisory_gaps": [
+    "/dashboard → /team?assign_resource_id=<uuid> deep-link click flow (AC#3) has no automated DOM/router coverage; initial manual pass is superseded for patched direct deep-link / guarded-error behavior.",
+    "AC#2 selected-range browser evidence needs a fresh pass after code-review patches changed dashboard range handling."
+  ],
+  "resolved_advisory_gaps": [
+    "Initial manual browser verification executed 2026-05-22 as DH against xynergy-server with dh-fixture-6-4.sql seed; AC1 and AC4 remain PASS, while AC2 and AC3 evidence is superseded by later review patches."
+  ],
+  "oracle": {
+    "resolution_mode": "formal_requirements",
+    "confidence": "high",
+    "sources": [
+      "_bmad-output/implementation-artifacts/6-4-team-utilization-dashboard.md",
+      "_bmad-output/planning-artifacts/epics.md",
+      "_bmad-output/planning-artifacts/prd.md",
+      "_bmad-output/planning-artifacts/ux-design-specification.md",
+      "_bmad-output/test-artifacts/automation-summary-6-4.md"
+    ],
+    "external_pointer_status": "not_used",
+    "synthetic": false
+  },
+  "recommendations": [
+    {
+      "priority": "MEDIUM",
+      "action": "Introduce a frontend test harness (Playwright + cargo-leptos serve, or wasm-bindgen-test) so the Assign deep-link click flow, trend preset accessibility, and dashboard-change-flash CSS transitions can be automated. Shared backlog item with Story 6.3.",
+      "requirements": ["AC#3"]
+    },
+    {
+      "priority": "LOW",
+      "action": "Rerun browser verification for patched AC#3 direct deep-link and bounded-error behavior, including malformed, unknown, CTC-missing, and duplicate assign_resource_id query cases.",
+      "requirements": ["AC#3"]
+    }
+  ],
+  "resolved_recommendations": [
+    {
+      "priority": "URGENT",
+      "action": "Run manual browser verification of AC#1–AC#4 as a Department Head before promoting story review → done.",
+      "requirements": ["AC#1", "AC#2", "AC#3", "AC#4"],
+      "resolved_at": "2026-05-22T10:51:00Z",
+      "resolution": "Initial live pass executed; AC1/AC4 remain PASS, AC2/AC3 require reverify after code-review patches; see manual-verification-6-4.md"
+    }
+  ],
+  "links": {
+    "trace_report_path": "_bmad-output/test-artifacts/traceability/6-4-team-utilization-dashboard-traceability.md",
+    "gate_decision_path": "_bmad-output/test-artifacts/traceability/6-4-gate-decision.json",
+    "manual_verification_report_path": "_bmad-output/test-artifacts/manual-verification-6-4.md"
+  }
+}

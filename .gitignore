@@ -19,6 +19,8 @@ build/
 *.zip
 db_data/
 *.png
+!_bmad-output/test-artifacts/screenshots-6-4/
+!_bmad-output/test-artifacts/screenshots-6-4/*.png
 nohup.out
 .sisyphus/
 
@@ -44,3 +46,4 @@ _bmad-output/automation-runs/
 _bmad-output/pending-decisions/
 _bmad-output/bmad-automation-handoff.md
 bmad-automate.sh*
+.gstack/

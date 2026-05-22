@@ -1,0 +1,56 @@
+{
+  "schema_version": "0.1.0",
+  "evaluated_at": "2026-05-22T00:00:00Z",
+  "reevaluated_at": "2026-05-22T11:00:00Z",
+  "repo": "xynergy",
+  "target": {
+    "type": "story",
+    "id": "6.4",
+    "label": "Team Utilization Dashboard"
+  },
+  "collection_status": "COLLECTED",
+  "gate_basis": "priority_thresholds_plus_manual_verification_executed_then_review_patched",
+  "gate_status": "CONCERNS",
+  "previous_gate_status": "CONCERNS",
+  "rationale": "All four ACs reached static coverage in the initial implementation run, but code-review patches were applied afterward. The patches changed AC#3 deep-link timing/error behavior and non-DH team-range query validation, so the prior manual browser PASS is superseded for those paths. Keep Story 6.4 in review and rerun Department Head browser verification before promoting to done.",
+  "p0_status": "PASS_WITH_REVERIFY_REQUIRED",
+  "p1_status": "PASS_WITH_REVERIFY_REQUIRED",
+  "overall_status": "REVIEW_PATCHED",
+  "p0_coverage_actual": "100%",
+  "p1_coverage_actual": "100%",
+  "overall_coverage_actual": "100%",
+  "critical_open": 0,
+  "high_open": 0,
+  "medium_advisory": 1,
+  "low_open": 1,
+  "test_totals": {
+    "story_scoped_tests_passing": 53,
+    "regression_tests_passing": 169,
+    "skipped_or_pending_or_fixme": 0
+  },
+  "manual_browser_status": "review_patched_reverify_required",
+  "manual_browser_evidence": {
+    "report_path": "_bmad-output/test-artifacts/manual-verification-6-4.md",
+    "fixture_sql_path": "_bmad-output/test-artifacts/dh-fixture-6-4.sql",
+    "screenshots_dir": "_bmad-output/test-artifacts/screenshots-6-4/",
+    "executed_at": "2026-05-22T10:51:00Z",
+    "executed_by": "Putu (Master Test Architect, driven headlessly via Claude /browse)",
+    "ac1_status": "PASS",
+    "ac2_status": "REVERIFY_REQUIRED",
+    "ac3_status": "REVERIFY_REQUIRED",
+    "ac4_status": "PASS",
+    "non_blocking_observations": [
+      "Superseded by code-review patch: direct address-bar navigation and guarded deep-link errors now wait for auth/team data and show bounded errors. Rerun AC#3 browser verification before clean promotion."
+    ]
+  },
+  "next_steps": [
+    "Keep Story 6.4 in review after REVIEW_PATCHED",
+    "Rerun Department Head browser verification for AC#2 and AC#3 patched paths",
+    "Backlog: introduce a Leptos frontend test harness so the AC#3 deep-link click flow can be automated (shared advisory with Story 6.3 — not Story 6.4 specific)"
+  ],
+  "links": {
+    "trace_report_path": "_bmad-output/test-artifacts/traceability/6-4-team-utilization-dashboard-traceability.md",
+    "trace_summary_path": "_bmad-output/test-artifacts/traceability/6-4-e2e-trace-summary.json",
+    "manual_verification_report_path": "_bmad-output/test-artifacts/manual-verification-6-4.md"
+  }
+}

@@ -736,6 +736,29 @@ async fn dept_head_without_department_returns_403(pool: PgPool) {
     assert_eq!(body["error"]["code"], "FORBIDDEN_ERROR");
 }
 
+#[sqlx::test(migrations = "../../migrations")]
+async fn dept_head_must_be_department_head_record(pool: PgPool) {
+    set_test_env();
+    let app = xynergy_backend::create_app(pool.clone());
+
+    let dh_email = test_email("dh-not-head");
+    let dh_id = create_user_with_role(&pool, &dh_email, "department_head").await;
+    let real_head_id =
+        create_user_with_role(&pool, &test_email("dh-real-head"), "department_head").await;
+    let dept_id = create_department(&pool, "Protected Dept", Some(real_head_id)).await;
+    assign_user_to_department(&pool, dh_id, dept_id).await;
+
+    let token = login_token(&app, &dh_email).await;
+    let (status, body) = get_dashboard(&app, Some(&token)).await;
+
+    assert_eq!(
+        status,
+        StatusCode::FORBIDDEN,
+        "department_head role plus department_id is insufficient without departments.head_id"
+    );
+    assert_eq!(body["error"]["code"], "FORBIDDEN_ERROR");
+}
+
 // ── 6.1-INT-011B Security: DH dashboard uses current DB department, not stale JWT ─
 #[sqlx::test(migrations = "../../migrations")]
 async fn dept_head_dashboard_uses_current_department_not_stale_token(pool: PgPool) {
@@ -1929,5 +1952,862 @@ async fn project_manager_card_health_status_unconfigured_when_no_budget_and_no_a
     assert!(
         card["margin_alert"].is_null(),
         "no-revenue card must not trigger a margin_alert"
+    );
+}
+
+// ── Story 6.4: Team Utilization Dashboard ──────────────────────────────────
+//
+// Verifies the deepened Department Head dashboard surface: team_members,
+// utilization_trends (range-aware), underutilized_members threshold, budget
+// gauge fields, cross-department scoping, and trend-range validation.
+
+async fn get_dashboard_with_query(
+    app: &axum::Router,
+    token: Option<&str>,
+    query: &str,
+) -> (StatusCode, Value) {
+    let uri = if query.is_empty() {
+        "/api/v1/dashboard".to_string()
+    } else {
+        format!("/api/v1/dashboard?{}", query)
+    };
+    let mut req_builder = Request::builder().method("GET").uri(uri);
+    if let Some(t) = token {
+        req_builder = req_builder.header("Authorization", format!("Bearer {}", t));
+    }
+    let req = req_builder.body(Body::empty()).expect("dashboard request");
+    let resp = app.clone().oneshot(req).await.expect("dashboard response");
+    let status = resp.status();
+    let bytes = to_bytes(resp.into_body(), usize::MAX).await.expect("body");
+    let body: Value = if bytes.is_empty() {
+        Value::Null
+    } else {
+        serde_json::from_slice(&bytes).unwrap_or(Value::Null)
+    };
+    (status, body)
+}
+
+// 6.4-INT-001 — Team members include current utilization, current projects,
+// and available capacity.
+#[sqlx::test(migrations = "../../migrations")]
+async fn dept_head_team_members_include_utilization_projects_capacity(pool: PgPool) {
+    set_test_env();
+    let app = xynergy_backend::create_app(pool.clone());
+
+    let dept_id = create_department(&pool, "Engineering", None).await;
+    let dh_email = test_email("dh-team-members");
+    let dh_id = create_user_with_role(&pool, &dh_email, "department_head").await;
+    assign_user_to_department(&pool, dh_id, dept_id).await;
+    set_department_head(&pool, dept_id, dh_id).await;
+
+    let alice = create_resource_in_dept(&pool, "Alice Engineer", dept_id).await;
+    create_ctc_for_resource(&pool, alice, dh_id).await;
+
+    let pm_id = create_user_with_role(&pool, &test_email("pm-tm"), "project_manager").await;
+    let project_id = create_project_with_pm(&pool, "Atlas", pm_id).await;
+    // 40% current allocation — covers today.
+    create_allocation(&pool, alice, project_id, 40.0, -1, 60).await;
+
+    let token = login_token(&app, &dh_email).await;
+    let (status, body) = get_dashboard(&app, Some(&token)).await;
+    assert_eq!(status, StatusCode::OK);
+
+    let team_members = body["department_head"]["team_members"]
+        .as_array()
+        .expect("team_members array present");
+    assert!(
+        !team_members.is_empty(),
+        "team_members must include department employees"
+    );
+    let alice_row = team_members
+        .iter()
+        .find(|m| m["resource_name"].as_str() == Some("Alice Engineer"))
+        .expect("alice present");
+
+    assert!(
+        (alice_row["current_utilization_pct"].as_f64().unwrap() - 40.0).abs() < 0.01,
+        "current utilization must reflect active allocation"
+    );
+    assert!(
+        (alice_row["available_capacity_pct"].as_f64().unwrap() - 60.0).abs() < 0.01,
+        "available capacity must be 100 - current"
+    );
+    let projects = alice_row["current_projects"]
+        .as_array()
+        .expect("current_projects array");
+    assert!(
+        projects.iter().any(|p| p["project_name"] == "Atlas"),
+        "current_projects must include the active project"
+    );
+}
+
+// 6.4-INT-002 — Capacity below 50% surfaces underutilized_members.
+#[sqlx::test(migrations = "../../migrations")]
+async fn dept_head_under_50_pct_surfaces_underutilized(pool: PgPool) {
+    set_test_env();
+    let app = xynergy_backend::create_app(pool.clone());
+
+    let dept_id = create_department(&pool, "Engineering", None).await;
+    let dh_email = test_email("dh-under");
+    let dh_id = create_user_with_role(&pool, &dh_email, "department_head").await;
+    assign_user_to_department(&pool, dh_id, dept_id).await;
+    set_department_head(&pool, dept_id, dh_id).await;
+
+    let low = create_resource_in_dept(&pool, "Low Alloc", dept_id).await;
+    let mid = create_resource_in_dept(&pool, "Mid Alloc", dept_id).await;
+    let high = create_resource_in_dept(&pool, "High Alloc", dept_id).await;
+    create_ctc_for_resource(&pool, low, dh_id).await;
+    create_ctc_for_resource(&pool, mid, dh_id).await;
+    create_ctc_for_resource(&pool, high, dh_id).await;
+
+    let pm_id = create_user_with_role(&pool, &test_email("pm-under"), "project_manager").await;
+    let project_id = create_project_with_pm(&pool, "Triage", pm_id).await;
+    create_allocation(&pool, low, project_id, 25.0, -1, 30).await;
+    create_allocation(&pool, mid, project_id, 70.0, -1, 30).await;
+    create_allocation(&pool, high, project_id, 90.0, -1, 30).await;
+
+    let token = login_token(&app, &dh_email).await;
+    let (status, body) = get_dashboard(&app, Some(&token)).await;
+    assert_eq!(status, StatusCode::OK);
+
+    let under = body["department_head"]["underutilized_members"]
+        .as_array()
+        .expect("underutilized_members array");
+    let names: Vec<&str> = under
+        .iter()
+        .map(|m| m["resource_name"].as_str().unwrap_or(""))
+        .collect();
+    assert!(names.contains(&"Low Alloc"));
+    assert!(
+        !names.contains(&"Mid Alloc"),
+        "70% is not underutilized: {:?}",
+        names
+    );
+    assert!(
+        !names.contains(&"High Alloc"),
+        "90% is not underutilized: {:?}",
+        names
+    );
+
+    // Every underutilized member must carry the matching boolean.
+    for m in under {
+        assert!(
+            m["is_underutilized"].as_bool().unwrap_or(false),
+            "underutilized_members must have is_underutilized=true: {:?}",
+            m
+        );
+    }
+}
+
+// 6.4-INT-003 — Trend date range expands utilization trends while preserving
+// department scoping.
+#[sqlx::test(migrations = "../../migrations")]
+async fn dept_head_trend_range_query_expands_periods(pool: PgPool) {
+    set_test_env();
+    let app = xynergy_backend::create_app(pool.clone());
+
+    let dept_id = create_department(&pool, "Engineering", None).await;
+    let dh_email = test_email("dh-trend");
+    let dh_id = create_user_with_role(&pool, &dh_email, "department_head").await;
+    assign_user_to_department(&pool, dh_id, dept_id).await;
+    set_department_head(&pool, dept_id, dh_id).await;
+
+    let resource_id = create_resource_in_dept(&pool, "Anchor", dept_id).await;
+    create_ctc_for_resource(&pool, resource_id, dh_id).await;
+
+    let pm_id = create_user_with_role(&pool, &test_email("pm-trend"), "project_manager").await;
+    let project_id = create_project_with_pm(&pool, "Long Project", pm_id).await;
+    // Allocation spanning several months.
+    create_allocation(&pool, resource_id, project_id, 50.0, -10, 150).await;
+
+    let token = login_token(&app, &dh_email).await;
+    let today = chrono::Utc::now().date_naive();
+    let far_end = today + chrono::Duration::days(180);
+    let query = format!("team_start_date={}&team_end_date={}", today, far_end);
+
+    let (status, body) = get_dashboard_with_query(&app, Some(&token), &query).await;
+    assert_eq!(status, StatusCode::OK);
+
+    let trends = body["department_head"]["utilization_trends"]
+        .as_object()
+        .expect("utilization_trends object");
+    let members = trends["members"].as_array().expect("trend members array");
+    assert!(!members.is_empty(), "trend members must include department");
+    let anchor = members
+        .iter()
+        .find(|m| m["resource_name"].as_str() == Some("Anchor"))
+        .expect("anchor row present");
+    let periods = anchor["periods"].as_array().expect("trend periods array");
+    assert!(
+        periods.len() >= 4,
+        "6-month range must yield multiple monthly periods, got {}",
+        periods.len()
+    );
+
+    // Range echoed back on the bundle for clarity / change detection.
+    assert_eq!(trends["end_date"].as_str().unwrap(), far_end.to_string());
+}
+
+// 6.4-INT-004 — Budget payload includes total, committed, spent, remaining,
+// health, and threshold for the dashboard gauge.
+#[sqlx::test(migrations = "../../migrations")]
+async fn dept_head_budget_payload_has_gauge_fields(pool: PgPool) {
+    set_test_env();
+    let app = xynergy_backend::create_app(pool.clone());
+
+    let dept_id = create_department(&pool, "Engineering", None).await;
+    let dh_email = test_email("dh-budget-gauge");
+    let dh_id = create_user_with_role(&pool, &dh_email, "department_head").await;
+    assign_user_to_department(&pool, dh_id, dept_id).await;
+    set_department_head(&pool, dept_id, dh_id).await;
+
+    // Seed a configured budget for the current period via direct insert
+    // (mirrors what the upsert endpoint produces).
+    let today = chrono::Utc::now().date_naive();
+    let period = format!("{:04}-{:02}", today.format("%Y"), today.format("%m"));
+    sqlx::query(
+        "INSERT INTO department_budgets (department_id, budget_period, total_budget_idr, alert_threshold_pct)
+         VALUES ($1, $2, 50000000, 80)",
+    )
+    .bind(dept_id)
+    .bind(&period)
+    .execute(&pool)
+    .await
+    .expect("budget seed");
+    // Suppress unused variable warning — dh_id is only used as the user.
+    let _ = dh_id;
+
+    let token = login_token(&app, &dh_email).await;
+    let (status, body) = get_dashboard(&app, Some(&token)).await;
+    assert_eq!(status, StatusCode::OK);
+
+    let budget = &body["department_head"]["budget"];
+    assert!(budget.is_object(), "budget object present");
+    for field in [
+        "total_budget_idr",
+        "total_committed_idr",
+        "spent_actual_idr",
+        "remaining_idr",
+        "utilization_percentage",
+        "budget_health",
+        "alert_threshold_pct",
+        "budget_configured",
+    ] {
+        assert!(
+            budget.get(field).is_some(),
+            "budget must include `{}` field for gauge, got {:?}",
+            field,
+            budget
+        );
+    }
+    assert!(budget["budget_configured"].as_bool().unwrap_or(false));
+    assert!(budget["total_budget_idr"].as_i64().unwrap() >= 50_000_000);
+}
+
+// 6.4-INT-005 — Cross-department resources stay excluded even when range
+// query params widen the trend window. Confirms scoping is anchored to the
+// session/RLS department, not the query.
+#[sqlx::test(migrations = "../../migrations")]
+async fn dept_head_team_excludes_other_department_resources(pool: PgPool) {
+    set_test_env();
+    let app = xynergy_backend::create_app(pool.clone());
+
+    let eng_id = create_department(&pool, "Engineering", None).await;
+    let mkt_id = create_department(&pool, "Marketing", None).await;
+
+    let dh_email = test_email("dh-scope");
+    let dh_id = create_user_with_role(&pool, &dh_email, "department_head").await;
+    assign_user_to_department(&pool, dh_id, eng_id).await;
+    set_department_head(&pool, eng_id, dh_id).await;
+
+    let eng_member = create_resource_in_dept(&pool, "Eng Member", eng_id).await;
+    let mkt_member = create_resource_in_dept(&pool, "Mkt Member", mkt_id).await;
+    create_ctc_for_resource(&pool, eng_member, dh_id).await;
+    create_ctc_for_resource(&pool, mkt_member, dh_id).await;
+
+    let pm_id = create_user_with_role(&pool, &test_email("pm-scope"), "project_manager").await;
+    let project_id = create_project_with_pm(&pool, "Cross", pm_id).await;
+    create_allocation(&pool, eng_member, project_id, 30.0, -1, 60).await;
+    create_allocation(&pool, mkt_member, project_id, 20.0, -1, 60).await;
+
+    let token = login_token(&app, &dh_email).await;
+    // Widening the range must not pull cross-department resources in.
+    let today = chrono::Utc::now().date_naive();
+    let end = today + chrono::Duration::days(180);
+    let query = format!("team_start_date={}&team_end_date={}", today, end);
+    let (status, body) = get_dashboard_with_query(&app, Some(&token), &query).await;
+    assert_eq!(status, StatusCode::OK);
+
+    let team_members = body["department_head"]["team_members"]
+        .as_array()
+        .expect("team_members array");
+    let names: Vec<&str> = team_members
+        .iter()
+        .map(|m| m["resource_name"].as_str().unwrap_or(""))
+        .collect();
+    assert!(names.contains(&"Eng Member"));
+    assert!(
+        !names.contains(&"Mkt Member"),
+        "marketing resource must not leak into engineering dashboard: {:?}",
+        names
+    );
+
+    let trends = body["department_head"]["utilization_trends"]["members"]
+        .as_array()
+        .expect("trend members array");
+    let trend_names: Vec<&str> = trends
+        .iter()
+        .map(|m| m["resource_name"].as_str().unwrap_or(""))
+        .collect();
+    assert!(
+        !trend_names.contains(&"Mkt Member"),
+        "trend bundle must not leak cross-department resource: {:?}",
+        trend_names
+    );
+
+    let under = body["department_head"]["underutilized_members"]
+        .as_array()
+        .expect("underutilized_members array");
+    let under_names: Vec<&str> = under
+        .iter()
+        .map(|m| m["resource_name"].as_str().unwrap_or(""))
+        .collect();
+    assert!(
+        !under_names.contains(&"Mkt Member"),
+        "underutilized list must not leak cross-department resource"
+    );
+}
+
+// 6.4-INT-006 — Invalid trend range (start > end) returns a 400 validation
+// error rather than silently swapping or running with a degenerate window.
+#[sqlx::test(migrations = "../../migrations")]
+async fn dept_head_invalid_trend_range_returns_validation_error(pool: PgPool) {
+    set_test_env();
+    let app = xynergy_backend::create_app(pool.clone());
+
+    let dept_id = create_department(&pool, "Engineering", None).await;
+    let dh_email = test_email("dh-bad-range");
+    let dh_id = create_user_with_role(&pool, &dh_email, "department_head").await;
+    assign_user_to_department(&pool, dh_id, dept_id).await;
+    set_department_head(&pool, dept_id, dh_id).await;
+
+    let token = login_token(&app, &dh_email).await;
+    let (status, body) = get_dashboard_with_query(
+        &app,
+        Some(&token),
+        "team_start_date=2026-12-01&team_end_date=2026-06-01",
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(
+        body["error"]["message"]
+            .as_str()
+            .unwrap_or("")
+            .contains("team_start_date"),
+        "validation error must reference team_start_date, got {:?}",
+        body
+    );
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn dept_head_malformed_trend_range_returns_validation_error(pool: PgPool) {
+    set_test_env();
+    let app = xynergy_backend::create_app(pool.clone());
+
+    let dept_id = create_department(&pool, "Engineering", None).await;
+    let dh_email = test_email("dh-malformed-range");
+    let dh_id = create_user_with_role(&pool, &dh_email, "department_head").await;
+    assign_user_to_department(&pool, dh_id, dept_id).await;
+    set_department_head(&pool, dept_id, dh_id).await;
+
+    let token = login_token(&app, &dh_email).await;
+    let (status, body) =
+        get_dashboard_with_query(&app, Some(&token), "team_start_date=not-a-date").await;
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["error"]["code"], "VALIDATION_ERROR");
+    assert!(
+        body["error"]["message"]
+            .as_str()
+            .unwrap_or("")
+            .contains("team_start_date"),
+        "validation error must identify malformed field, got {:?}",
+        body
+    );
+}
+
+// 6.4-INT-007 — Overly large range is rejected (cap protects the dashboard
+// from unbounded period fan-out).
+#[sqlx::test(migrations = "../../migrations")]
+async fn dept_head_excessive_trend_range_returns_validation_error(pool: PgPool) {
+    set_test_env();
+    let app = xynergy_backend::create_app(pool.clone());
+
+    let dept_id = create_department(&pool, "Engineering", None).await;
+    let dh_email = test_email("dh-too-big");
+    let dh_id = create_user_with_role(&pool, &dh_email, "department_head").await;
+    assign_user_to_department(&pool, dh_id, dept_id).await;
+    set_department_head(&pool, dept_id, dh_id).await;
+
+    let token = login_token(&app, &dh_email).await;
+    let today = chrono::Utc::now().date_naive();
+    let far_end = today + chrono::Duration::days(800);
+    let query = format!("team_start_date={}&team_end_date={}", today, far_end);
+    let (status, body) = get_dashboard_with_query(&app, Some(&token), &query).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(
+        body["error"]["message"]
+            .as_str()
+            .unwrap_or("")
+            .contains("range"),
+        "validation error must mention range cap, got {:?}",
+        body
+    );
+}
+
+// 6.4-INT-008 — Range query params on non-DH roles do not break the
+// response or alter scoping (the team range fields are simply ignored).
+#[sqlx::test(migrations = "../../migrations")]
+async fn dashboard_range_query_does_not_affect_admin_response(pool: PgPool) {
+    set_test_env();
+    let app = xynergy_backend::create_app(pool.clone());
+
+    let admin_email = test_email("admin-range");
+    let _ = create_user_with_role(&pool, &admin_email, "admin").await;
+
+    let token = login_token(&app, &admin_email).await;
+    let today = chrono::Utc::now().date_naive();
+    let end = today + chrono::Duration::days(90);
+    let query = format!("team_start_date={}&team_end_date={}", today, end);
+    let (status, body) = get_dashboard_with_query(&app, Some(&token), &query).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["role"], "admin");
+    assert!(
+        body["admin"].is_object(),
+        "admin section must be present even when DH range params are sent"
+    );
+    assert!(body["department_head"].is_null());
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn dashboard_malformed_range_query_is_ignored_for_admin(pool: PgPool) {
+    set_test_env();
+    let app = xynergy_backend::create_app(pool.clone());
+
+    let admin_email = test_email("admin-range-malformed");
+    let _ = create_user_with_role(&pool, &admin_email, "admin").await;
+
+    let token = login_token(&app, &admin_email).await;
+    let (status, body) = get_dashboard_with_query(
+        &app,
+        Some(&token),
+        "team_start_date=not-a-date&team_end_date=also-bad",
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["role"], "admin");
+    assert!(body["admin"].is_object());
+    assert!(body["department_head"].is_null());
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn dashboard_duplicate_range_query_is_ignored_for_admin(pool: PgPool) {
+    set_test_env();
+    let app = xynergy_backend::create_app(pool.clone());
+
+    let admin_email = test_email("admin-range-duplicate");
+    let _ = create_user_with_role(&pool, &admin_email, "admin").await;
+
+    let token = login_token(&app, &admin_email).await;
+    let (status, body) = get_dashboard_with_query(
+        &app,
+        Some(&token),
+        "team_start_date=2026-05-01&team_start_date=2026-06-01&team_end_date=2026-07-01",
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["role"], "admin");
+    assert!(body["admin"].is_object());
+    assert!(body["department_head"].is_null());
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn dept_head_duplicate_trend_range_returns_validation_error(pool: PgPool) {
+    set_test_env();
+    let app = xynergy_backend::create_app(pool.clone());
+
+    let dh_email = test_email("dh-duplicate-range");
+    let dh_id = create_user_with_role(&pool, &dh_email, "department_head").await;
+    let dept_id = create_department(&pool, "Duplicate Range Dept", Some(dh_id)).await;
+    assign_user_to_department(&pool, dh_id, dept_id).await;
+    set_department_head(&pool, dept_id, dh_id).await;
+
+    let token = login_token(&app, &dh_email).await;
+    let (status, body) = get_dashboard_with_query(
+        &app,
+        Some(&token),
+        "team_start_date=2026-05-01&team_start_date=2026-06-01",
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(
+        body["error"]["message"]
+            .as_str()
+            .unwrap_or("")
+            .contains("team_start_date"),
+        "validation error must identify duplicate field, got {:?}",
+        body
+    );
+}
+
+// ───────────────────────────────────────────────────────────────────────
+// Story 6.4 expansion (Master Test Architect): per-member project cap,
+// strict 50% boundary, Missing-CTC surface, trend bundle start_date echo,
+// empty department, single-bound range parameter.
+// ───────────────────────────────────────────────────────────────────────
+
+// 6.4-INT-010 — current_projects per member is capped at the documented
+// DH_CURRENT_PROJECTS_PER_MEMBER_LIMIT (10). Verifies the dashboard does not
+// fan out unbounded nested rows when a single resource has many concurrent
+// active assignments.
+#[sqlx::test(migrations = "../../migrations")]
+async fn dept_head_current_projects_capped_at_limit(pool: PgPool) {
+    set_test_env();
+    let app = xynergy_backend::create_app(pool.clone());
+
+    let dept_id = create_department(&pool, "Engineering", None).await;
+    let dh_email = test_email("dh-projects-cap");
+    let dh_id = create_user_with_role(&pool, &dh_email, "department_head").await;
+    assign_user_to_department(&pool, dh_id, dept_id).await;
+    set_department_head(&pool, dept_id, dh_id).await;
+
+    let resource_id = create_resource_in_dept(&pool, "Polymath", dept_id).await;
+    create_ctc_for_resource(&pool, resource_id, dh_id).await;
+
+    let pm_id = create_user_with_role(&pool, &test_email("pm-cap"), "project_manager").await;
+    // Twelve distinct active projects, all overlapping today. The total
+    // utilization is intentionally low (12 × 1%) so the member stays
+    // underutilized; this test isolates the project-list cap from the
+    // overallocation branch.
+    for i in 0..12 {
+        let project_id =
+            create_project_with_pm(&pool, &format!("Concurrent {:02}", i), pm_id).await;
+        create_allocation(&pool, resource_id, project_id, 1.0, -1, 60).await;
+    }
+
+    let token = login_token(&app, &dh_email).await;
+    let (status, body) = get_dashboard(&app, Some(&token)).await;
+    assert_eq!(status, StatusCode::OK);
+
+    let team_members = body["department_head"]["team_members"]
+        .as_array()
+        .expect("team_members array");
+    let row = team_members
+        .iter()
+        .find(|m| m["resource_name"].as_str() == Some("Polymath"))
+        .expect("polymath row present");
+    let projects = row["current_projects"]
+        .as_array()
+        .expect("current_projects array");
+    assert_eq!(
+        projects.len(),
+        10,
+        "current_projects must be capped at DH_CURRENT_PROJECTS_PER_MEMBER_LIMIT=10, got {}",
+        projects.len()
+    );
+}
+
+// 6.4-INT-011 — Strict <50% boundary. A member at exactly 50.0% must not
+// appear in underutilized_members; a member at 49.x% must. The threshold is
+// strict, mirroring the frontend `is_underutilized_threshold` helper.
+#[sqlx::test(migrations = "../../migrations")]
+async fn dept_head_underutilized_boundary_excludes_exactly_50_pct(pool: PgPool) {
+    set_test_env();
+    let app = xynergy_backend::create_app(pool.clone());
+
+    let dept_id = create_department(&pool, "Engineering", None).await;
+    let dh_email = test_email("dh-boundary");
+    let dh_id = create_user_with_role(&pool, &dh_email, "department_head").await;
+    assign_user_to_department(&pool, dh_id, dept_id).await;
+    set_department_head(&pool, dept_id, dh_id).await;
+
+    let exactly_fifty = create_resource_in_dept(&pool, "Exactly Fifty", dept_id).await;
+    let just_under = create_resource_in_dept(&pool, "Just Under", dept_id).await;
+    create_ctc_for_resource(&pool, exactly_fifty, dh_id).await;
+    create_ctc_for_resource(&pool, just_under, dh_id).await;
+
+    let pm_id = create_user_with_role(&pool, &test_email("pm-boundary"), "project_manager").await;
+    let project_id = create_project_with_pm(&pool, "Boundary", pm_id).await;
+    create_allocation(&pool, exactly_fifty, project_id, 50.0, -1, 30).await;
+    create_allocation(&pool, just_under, project_id, 49.9, -1, 30).await;
+
+    let token = login_token(&app, &dh_email).await;
+    let (status, body) = get_dashboard(&app, Some(&token)).await;
+    assert_eq!(status, StatusCode::OK);
+
+    let under = body["department_head"]["underutilized_members"]
+        .as_array()
+        .expect("underutilized_members array");
+    let names: Vec<&str> = under
+        .iter()
+        .map(|m| m["resource_name"].as_str().unwrap_or(""))
+        .collect();
+    assert!(
+        names.contains(&"Just Under"),
+        "49.9% must surface as underutilized: {:?}",
+        names
+    );
+    assert!(
+        !names.contains(&"Exactly Fifty"),
+        "exactly 50.0% must NOT surface as underutilized (strict < 50): {:?}",
+        names
+    );
+
+    // Cross-check the boolean on the wider team_members payload too.
+    let team_members = body["department_head"]["team_members"]
+        .as_array()
+        .expect("team_members array");
+    let fifty_row = team_members
+        .iter()
+        .find(|m| m["resource_name"].as_str() == Some("Exactly Fifty"))
+        .expect("exactly fifty row");
+    assert_eq!(
+        fifty_row["is_underutilized"].as_bool().unwrap_or(true),
+        false,
+        "is_underutilized must be false at exactly 50.0%"
+    );
+}
+
+// 6.4-INT-012 — Missing-CTC underutilized member stays visible on the
+// dashboard but carries a non-Active ctc_status so the frontend assignment
+// action renders disabled. The dashboard must surface them so the
+// Department Head can act; it must not silently hide a missing-CTC row.
+#[sqlx::test(migrations = "../../migrations")]
+async fn dept_head_missing_ctc_member_surfaced_with_non_active_status(pool: PgPool) {
+    set_test_env();
+    let app = xynergy_backend::create_app(pool.clone());
+
+    let dept_id = create_department(&pool, "Engineering", None).await;
+    let dh_email = test_email("dh-missing-ctc");
+    let dh_id = create_user_with_role(&pool, &dh_email, "department_head").await;
+    assign_user_to_department(&pool, dh_id, dept_id).await;
+    set_department_head(&pool, dept_id, dh_id).await;
+
+    // Intentionally do NOT call create_ctc_for_resource — Missing CTC.
+    let missing_ctc_member = create_resource_in_dept(&pool, "Needs CTC", dept_id).await;
+    let _ = missing_ctc_member;
+
+    let token = login_token(&app, &dh_email).await;
+    let (status, body) = get_dashboard(&app, Some(&token)).await;
+    assert_eq!(status, StatusCode::OK);
+
+    let team_members = body["department_head"]["team_members"]
+        .as_array()
+        .expect("team_members array");
+    let row = team_members
+        .iter()
+        .find(|m| m["resource_name"].as_str() == Some("Needs CTC"))
+        .expect("missing-CTC member must still be surfaced on the dashboard");
+    let ctc_status = row["ctc_status"].as_str().unwrap_or("");
+    assert_ne!(
+        ctc_status, "Active",
+        "missing-CTC member must NOT report ctc_status=Active (frontend guard relies on this)"
+    );
+
+    // Underutilized (0% allocated) but assignment guard depends on ctc_status,
+    // not on is_underutilized — both should be true.
+    assert!(
+        row["is_underutilized"].as_bool().unwrap_or(false),
+        "0% allocated member must be underutilized"
+    );
+}
+
+// 6.4-INT-013 — Trend bundle echoes BOTH start_date and end_date when an
+// explicit range is supplied. Story 6.4 documents these fields so the
+// frontend can label the range and detect range-change for highlight reset.
+#[sqlx::test(migrations = "../../migrations")]
+async fn dept_head_trend_bundle_echoes_start_and_end_dates(pool: PgPool) {
+    set_test_env();
+    let app = xynergy_backend::create_app(pool.clone());
+
+    let dept_id = create_department(&pool, "Engineering", None).await;
+    let dh_email = test_email("dh-trend-echo");
+    let dh_id = create_user_with_role(&pool, &dh_email, "department_head").await;
+    assign_user_to_department(&pool, dh_id, dept_id).await;
+    set_department_head(&pool, dept_id, dh_id).await;
+
+    let token = login_token(&app, &dh_email).await;
+    let start = chrono::NaiveDate::from_ymd_opt(2026, 6, 1).expect("start date");
+    let end = chrono::NaiveDate::from_ymd_opt(2026, 8, 31).expect("end date");
+    let query = format!("team_start_date={}&team_end_date={}", start, end);
+    let (status, body) = get_dashboard_with_query(&app, Some(&token), &query).await;
+    assert_eq!(status, StatusCode::OK);
+
+    let trends = body["department_head"]["utilization_trends"]
+        .as_object()
+        .expect("utilization_trends object");
+    assert_eq!(
+        trends["start_date"].as_str().unwrap_or(""),
+        start.to_string(),
+        "trend bundle must echo the resolved start_date for the frontend label"
+    );
+    assert_eq!(
+        trends["end_date"].as_str().unwrap_or(""),
+        end.to_string(),
+        "trend bundle must echo the resolved end_date for the frontend label"
+    );
+}
+
+// 6.4-INT-014 — Department Head with an empty department renders without
+// panicking and with structurally valid empty arrays/lists. Guards against
+// regressions where empty inputs short-circuit a critical field with null.
+#[sqlx::test(migrations = "../../migrations")]
+async fn dept_head_with_empty_team_returns_structured_empty_lists(pool: PgPool) {
+    set_test_env();
+    let app = xynergy_backend::create_app(pool.clone());
+
+    let dept_id = create_department(&pool, "Empty Dept", None).await;
+    let dh_email = test_email("dh-empty");
+    let dh_id = create_user_with_role(&pool, &dh_email, "department_head").await;
+    assign_user_to_department(&pool, dh_id, dept_id).await;
+    set_department_head(&pool, dept_id, dh_id).await;
+
+    let token = login_token(&app, &dh_email).await;
+    let (status, body) = get_dashboard(&app, Some(&token)).await;
+    assert_eq!(status, StatusCode::OK);
+
+    let dh = &body["department_head"];
+    assert!(dh.is_object(), "department_head section must still render");
+
+    let team_members = dh["team_members"]
+        .as_array()
+        .expect("team_members array even when empty");
+    assert!(
+        team_members.is_empty(),
+        "empty department must yield an empty team_members list"
+    );
+
+    let underutilized = dh["underutilized_members"]
+        .as_array()
+        .expect("underutilized_members array even when empty");
+    assert!(
+        underutilized.is_empty(),
+        "empty department must yield an empty underutilized_members list"
+    );
+
+    let trends = dh["utilization_trends"]
+        .as_object()
+        .expect("utilization_trends object even when empty");
+    let members = trends["members"]
+        .as_array()
+        .expect("trend bundle members array even when empty");
+    assert!(
+        members.is_empty(),
+        "empty department must yield an empty trend members list"
+    );
+
+    // Aggregate scalars must stay numeric, not null, so the frontend can
+    // render `0` without an Option fallback.
+    let utilization = &dh["utilization"];
+    assert!(
+        utilization["average_utilization_pct"].is_number(),
+        "average_utilization_pct must be a number even with no team"
+    );
+    assert_eq!(
+        utilization["overallocated_count"].as_i64().unwrap_or(-1),
+        0,
+        "overallocated_count must be 0 for empty team"
+    );
+}
+
+// 6.4-INT-015 — Supplying only team_start_date (no team_end_date) is
+// accepted: the route applies the default end and returns a coherent
+// response. Covers the partial-query branch of the resolver that the
+// existing INT tests do not exercise.
+#[sqlx::test(migrations = "../../migrations")]
+async fn dept_head_partial_range_only_start_date_uses_default_end(pool: PgPool) {
+    set_test_env();
+    let app = xynergy_backend::create_app(pool.clone());
+
+    let dept_id = create_department(&pool, "Engineering", None).await;
+    let dh_email = test_email("dh-partial-range");
+    let dh_id = create_user_with_role(&pool, &dh_email, "department_head").await;
+    assign_user_to_department(&pool, dh_id, dept_id).await;
+    set_department_head(&pool, dept_id, dh_id).await;
+
+    let token = login_token(&app, &dh_email).await;
+    let today = chrono::Utc::now().date_naive();
+    let query = format!("team_start_date={}", today);
+    let (status, body) = get_dashboard_with_query(&app, Some(&token), &query).await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "partial range with only start_date must be accepted, got body {:?}",
+        body
+    );
+
+    let trends = body["department_head"]["utilization_trends"]
+        .as_object()
+        .expect("utilization_trends object");
+    let echoed_start = trends["start_date"].as_str().unwrap_or("");
+    assert_eq!(
+        echoed_start,
+        today.to_string(),
+        "supplied start_date must be honored when end_date is omitted"
+    );
+    // Default end should fall after today; just ensure it parses to a real date.
+    let echoed_end = trends["end_date"].as_str().unwrap_or("");
+    assert!(
+        chrono::NaiveDate::parse_from_str(echoed_end, "%Y-%m-%d").is_ok(),
+        "default end_date must be a valid ISO date, got `{}`",
+        echoed_end
+    );
+}
+
+// 6.4-INT-009 — Available capacity is clamped to non-negative when a
+// resource is overallocated; the dashboard never surfaces negative capacity.
+#[sqlx::test(migrations = "../../migrations")]
+async fn dept_head_overallocated_member_clamps_available_capacity(pool: PgPool) {
+    set_test_env();
+    let app = xynergy_backend::create_app(pool.clone());
+
+    let dept_id = create_department(&pool, "Engineering", None).await;
+    let dh_email = test_email("dh-clamp");
+    let dh_id = create_user_with_role(&pool, &dh_email, "department_head").await;
+    assign_user_to_department(&pool, dh_id, dept_id).await;
+    set_department_head(&pool, dept_id, dh_id).await;
+
+    let busy = create_resource_in_dept(&pool, "Busy", dept_id).await;
+    create_ctc_for_resource(&pool, busy, dh_id).await;
+    let pm_id = create_user_with_role(&pool, &test_email("pm-clamp"), "project_manager").await;
+    let project_id = create_project_with_pm(&pool, "Overcapacity", pm_id).await;
+    create_allocation(&pool, busy, project_id, 80.0, -1, 30).await;
+    create_allocation(&pool, busy, project_id, 60.0, -1, 30).await;
+
+    let token = login_token(&app, &dh_email).await;
+    let (status, body) = get_dashboard(&app, Some(&token)).await;
+    assert_eq!(status, StatusCode::OK);
+
+    let team_members = body["department_head"]["team_members"]
+        .as_array()
+        .expect("team_members array");
+    let busy_row = team_members
+        .iter()
+        .find(|m| m["resource_name"].as_str() == Some("Busy"))
+        .expect("busy member present");
+
+    let available = busy_row["available_capacity_pct"].as_f64().unwrap();
+    assert!(
+        available >= 0.0,
+        "available_capacity_pct must never be negative, got {}",
+        available
+    );
+    assert!(
+        busy_row["is_overallocated"].as_bool().unwrap_or(false),
+        "overallocated flag must be true for >100% combined allocation"
+    );
+    assert!(
+        !busy_row["is_underutilized"].as_bool().unwrap_or(true),
+        "overallocated member must never be tagged as underutilized"
     );
 }

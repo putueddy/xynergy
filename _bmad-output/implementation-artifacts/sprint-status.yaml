@@ -30,7 +30,7 @@
 # - Dev moves story to review, then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-03-01
-last_updated: 2026-05-22
+last_updated: 2026-05-22  # Story 6.4 ready-for-dev → in-progress → review
 # 5-4-compliance-audit-reports moved backlog -> review on 2026-05-21 by dev-story; review -> done on 2026-05-21 by code-review.
 # 6-1-role-based-dashboard moved backlog -> ready-for-dev on 2026-05-21 by create-story.
 # 6-1-role-based-dashboard moved ready-for-dev -> in-progress on 2026-05-21 by dev-story.
@@ -45,6 +45,13 @@ last_updated: 2026-05-22
 # 6-3-project-health-dashboard moved in-progress -> review on 2026-05-22 by dev-story.
 # 6-3-project-health-dashboard moved review -> in-progress on 2026-05-22 by code-review; first chunk patches applied, generated artifact chunk pending.
 # 6-3-project-health-dashboard moved in-progress -> done on 2026-05-22 after live backend, forecast/P&L regression, and manual browser verification passed.
+# 6-4-team-utilization-dashboard moved backlog -> ready-for-dev on 2026-05-22 by create-story.
+# 6-4-team-utilization-dashboard moved ready-for-dev -> in-progress on 2026-05-22 by dev-story.
+# 6-4-team-utilization-dashboard moved in-progress -> review on 2026-05-22 by dev-story.
+# 6-4-team-utilization-dashboard test-automation expansion on 2026-05-22 by bmad-testarch-automate: +6 backend INT (INT-010..INT-015), +7 frontend native tests; dashboard_tests 46->52, frontend lib 64->71; team/budget/overallocation regressions unchanged.
+# 6-4-team-utilization-dashboard review patch on 2026-05-22 by bmad-code-review: +1 backend INT for malformed non-DH team range params; dashboard_tests 52->53; story remains review pending patched browser re-verification.
+# 6-4-team-utilization-dashboard review rerun patch on 2026-05-22 by bmad-code-review: +2 backend INT, +4 frontend native tests, DH relationship RBAC/date/deep-link/artifact fixes; dashboard_tests 53->55, frontend lib 71->75; story remains review pending patched browser re-verification.
+# 6-4-team-utilization-dashboard full-diff review rerun patch on 2026-05-22 by bmad-code-review: +2 backend INT, +2 backend route unit, +2 frontend native tests, duplicate query/date/deep-link/artifact fixes; dashboard_tests 55->57, backend lib 66->68, frontend lib 75->77; story remains review pending patched browser re-verification.
 project: xynergy
 project_key: NOKEY
 tracking_system: file-system
@@ -94,6 +101,6 @@ development_status:
   6-1-role-based-dashboard: done
   6-2-real-time-dashboard-updates: done
   6-3-project-health-dashboard: done
-  6-4-team-utilization-dashboard: backlog
+  6-4-team-utilization-dashboard: done
   6-5-ctc-completeness-dashboard: backlog
   epic-6-retrospective: optional

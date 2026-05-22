@@ -27,7 +27,8 @@ use crate::services::ctc_validation_report::{generate_validation_report, Validat
 use crate::services::project_pl_service::{get_project_pl_dashboard, get_project_pl_forecast};
 use crate::services::rls_context::begin_rls_transaction;
 use crate::services::team_service::{
-    get_capacity_report_in_transaction, get_team_members_in_transaction,
+    get_capacity_report_in_transaction, get_team_members_in_transaction, CapacityReportResponse,
+    TeamMemberResponse,
 };
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -114,7 +115,71 @@ pub struct DepartmentHeadDashboard {
     pub overallocations: OverallocationSummary,
     pub upcoming_assignments: Vec<UpcomingAssignment>,
     pub warnings: Vec<String>,
+    // Story 6.4: deeper Team Utilization Dashboard surface.
+    pub team_members: Vec<TeamUtilizationMember>,
+    pub utilization_trends: TeamUtilizationTrendBundle,
+    pub underutilized_members: Vec<TeamUtilizationMember>,
 }
+
+#[derive(Debug, Serialize, Clone)]
+pub struct TeamUtilizationMember {
+    pub resource_id: Uuid,
+    pub resource_name: String,
+    pub role: String,
+    pub current_utilization_pct: f64,
+    pub available_capacity_pct: f64,
+    pub is_underutilized: bool,
+    pub is_overallocated: bool,
+    pub ctc_status: String,
+    pub current_projects: Vec<TeamUtilizationCurrentProject>,
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct TeamUtilizationCurrentProject {
+    pub project_name: String,
+    pub allocation_percentage: f64,
+    pub start_date: String,
+    pub end_date: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct TeamUtilizationTrendBundle {
+    pub start_date: NaiveDate,
+    pub end_date: NaiveDate,
+    pub members: Vec<TeamUtilizationTrend>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct TeamUtilizationTrend {
+    pub resource_id: Uuid,
+    pub resource_name: String,
+    pub periods: Vec<TeamUtilizationTrendPeriod>,
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct TeamUtilizationTrendPeriod {
+    pub period: String,
+    pub utilization_pct: f64,
+}
+
+/// Caller-resolved team trend range for the Department Head dashboard.
+///
+/// Validated at the route boundary so the service can assume `start_date <=
+/// end_date` and that the span is within `DH_TEAM_RANGE_MAX_DAYS`.
+#[derive(Debug, Clone, Copy)]
+pub struct DepartmentHeadTeamRange {
+    pub start_date: NaiveDate,
+    pub end_date: NaiveDate,
+}
+
+/// Bounded cap on the number of nested current-project rows surfaced for one
+/// team member. Story 6.4 calls for "bounded current_projects" to avoid
+/// unbounded fan-out when one resource has many concurrent assignments.
+pub const DH_CURRENT_PROJECTS_PER_MEMBER_LIMIT: usize = 10;
+
+pub const DH_TEAM_RANGE_DEFAULT_DAYS: i64 = 30;
+pub const DH_TEAM_RANGE_MAX_DAYS: i64 = 366;
+pub const DH_UNDERUTILIZED_THRESHOLD_PCT: f64 = 50.0;
 
 #[derive(Debug, Serialize)]
 pub struct UtilizationSummary {
@@ -303,6 +368,8 @@ pub async fn build_dashboard(
     pool: &PgPool,
     headers: &HeaderMap,
     claims: &Claims,
+    team_range: DepartmentHeadTeamRange,
+    dashboard_date: NaiveDate,
 ) -> Result<RoleDashboardResponse> {
     let role = claims.role.clone();
     let user_id = Uuid::parse_str(&claims.sub)
@@ -331,8 +398,11 @@ pub async fn build_dashboard(
         "department_head" => {
             let mut tx = begin_rls_transaction(pool, headers).await?;
             let department_id = current_department_id(&mut tx).await?;
-            response.department_head =
-                Some(build_department_head_dashboard(&mut tx, department_id).await?);
+            ensure_department_head_relationship(&mut tx, user_id, department_id).await?;
+            response.department_head = Some(
+                build_department_head_dashboard(&mut tx, department_id, team_range, dashboard_date)
+                    .await?,
+            );
             tx.commit()
                 .await
                 .map_err(|e| AppError::Database(e.to_string()))?;
@@ -374,6 +444,34 @@ async fn current_department_id(tx: &mut Transaction<'_, Postgres>) -> Result<Uui
         .map_err(|_| AppError::Internal("Invalid department_id in session".to_string()))
 }
 
+async fn ensure_department_head_relationship(
+    tx: &mut Transaction<'_, Postgres>,
+    user_id: Uuid,
+    department_id: Uuid,
+) -> Result<()> {
+    let is_head = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(
+            SELECT 1
+            FROM departments
+            WHERE id = $1
+              AND head_id = $2
+        )",
+    )
+    .bind(department_id)
+    .bind(user_id)
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(|e| AppError::Database(e.to_string()))?;
+
+    if !is_head {
+        return Err(AppError::Forbidden(
+            "Department head is not assigned to this department".to_string(),
+        ));
+    }
+
+    Ok(())
+}
+
 async fn savepoint(tx: &mut Transaction<'_, Postgres>, name: &str) -> Result<()> {
     sqlx::query(&format!("SAVEPOINT {}", name))
         .execute(&mut **tx)
@@ -390,12 +488,12 @@ async fn release_savepoint(tx: &mut Transaction<'_, Postgres>, name: &str) -> Re
         .map_err(|e| AppError::Database(e.to_string()))
 }
 
-async fn rollback_savepoint(tx: &mut Transaction<'_, Postgres>, name: &str) {
+async fn rollback_savepoint(tx: &mut Transaction<'_, Postgres>, name: &str) -> Result<()> {
     sqlx::query(&format!("ROLLBACK TO SAVEPOINT {}", name))
         .execute(&mut **tx)
         .await
-        .ok();
-    release_savepoint(tx, name).await.ok();
+        .map_err(|e| AppError::Database(e.to_string()))?;
+    release_savepoint(tx, name).await
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -424,7 +522,7 @@ async fn build_hr_dashboard(tx: &mut Transaction<'_, Postgres>) -> Result<HrDash
         Ok(changes) => changes,
         Err(e) => {
             recent_changes_unavailable = true;
-            rollback_savepoint(&mut *tx, "dashboard_recent_ctc").await;
+            rollback_savepoint(&mut *tx, "dashboard_recent_ctc").await?;
             tracing::warn!("dashboard recent CTC changes unavailable: {}", e);
             warnings.push("Recent CTC changes are temporarily unavailable.".to_string());
             Vec::new()
@@ -445,7 +543,7 @@ async fn build_hr_dashboard(tx: &mut Transaction<'_, Postgres>) -> Result<HrDash
             Ok(report) => report,
             Err(e) => {
                 compliance_unavailable = true;
-                rollback_savepoint(&mut *tx, "dashboard_compliance").await;
+                rollback_savepoint(&mut *tx, "dashboard_compliance").await?;
                 tracing::warn!("dashboard compliance summary unavailable: {}", e);
                 warnings.push("Compliance alerts are temporarily unavailable.".to_string());
                 crate::services::compliance_report::ComplianceReport {
@@ -587,16 +685,63 @@ async fn load_recent_ctc_changes(
 async fn build_department_head_dashboard(
     tx: &mut Transaction<'_, Postgres>,
     department_id: Uuid,
+    team_range: DepartmentHeadTeamRange,
+    today: NaiveDate,
 ) -> Result<DepartmentHeadDashboard> {
     let mut warnings = Vec::new();
-    let today = Utc::now().date_naive();
-    let window_end = today
-        .checked_add_signed(chrono::Duration::days(30))
+    // `today` anchors the budget period and the upcoming-assignment scan, both
+    // of which intentionally remain bound to the calendar regardless of the
+    // user-selected trend range (Story 6.4 only widens the trend window).
+    let summary_start = today;
+    let summary_end = today
+        .checked_add_signed(chrono::Duration::days(DH_TEAM_RANGE_DEFAULT_DAYS))
         .unwrap_or(today);
+    let trend_start = team_range.start_date;
+    let trend_end = team_range.end_date;
 
-    let capacity =
-        get_capacity_report_in_transaction(&mut *tx, Some(department_id), today, window_end)
-            .await?;
+    let summary_capacity = get_capacity_report_in_transaction(
+        &mut *tx,
+        Some(department_id),
+        summary_start,
+        summary_end,
+    )
+    .await?;
+
+    let trend_capacity = if trend_start == summary_start && trend_end == summary_end {
+        None
+    } else {
+        savepoint(&mut *tx, "dashboard_team_capacity").await?;
+        let capacity = match get_capacity_report_in_transaction(
+            &mut *tx,
+            Some(department_id),
+            trend_start,
+            trend_end,
+        )
+        .await
+        {
+            Ok(capacity) => {
+                release_savepoint(&mut *tx, "dashboard_team_capacity").await?;
+                capacity
+            }
+            Err(e) => match e {
+                AppError::Authentication(_) | AppError::Forbidden(_) | AppError::Validation(_) => {
+                    return Err(e);
+                }
+                other => {
+                    rollback_savepoint(&mut *tx, "dashboard_team_capacity").await?;
+                    tracing::warn!("dashboard utilization trends unavailable: {}", other);
+                    warnings.push("Utilization trend data is temporarily unavailable.".to_string());
+                    CapacityReportResponse {
+                        start_date: trend_start.to_string(),
+                        end_date: trend_end.to_string(),
+                        employees: Vec::new(),
+                    }
+                }
+            },
+        };
+        Some(capacity)
+    };
+    let capacity_for_trends = trend_capacity.as_ref().unwrap_or(&summary_capacity);
 
     let team_members =
         get_team_members_in_transaction(&mut *tx, Some(department_id), "department_head").await?;
@@ -607,7 +752,7 @@ async fn build_department_head_dashboard(
         Ok(assignments) => assignments,
         Err(e) => {
             upcoming_unavailable = true;
-            rollback_savepoint(&mut *tx, "dashboard_upcoming").await;
+            rollback_savepoint(&mut *tx, "dashboard_upcoming").await?;
             tracing::warn!("dashboard upcoming assignments unavailable: {}", e);
             warnings.push("Upcoming assignments are temporarily unavailable.".to_string());
             Vec::new()
@@ -626,12 +771,12 @@ async fn build_department_head_dashboard(
     {
         Ok(summary) => Some(summary),
         Err(AppError::NotFound(_)) => {
-            rollback_savepoint(&mut *tx, "dashboard_budget").await;
+            rollback_savepoint(&mut *tx, "dashboard_budget").await?;
             budget_savepoint_open = false;
             None
         }
         Err(e) => {
-            rollback_savepoint(&mut *tx, "dashboard_budget").await;
+            rollback_savepoint(&mut *tx, "dashboard_budget").await?;
             budget_savepoint_open = false;
             tracing::warn!("dashboard department budget unavailable: {}", e);
             warnings.push("Budget status is temporarily unavailable.".to_string());
@@ -645,7 +790,7 @@ async fn build_department_head_dashboard(
     let mut avg_total = 0.0_f64;
     let mut avg_count = 0_usize;
     let mut at_risk: Vec<UtilizationAtRisk> = Vec::new();
-    for emp in &capacity.employees {
+    for emp in &summary_capacity.employees {
         for p in &emp.periods {
             avg_total += p.total_allocation_percentage;
             avg_count += 1;
@@ -683,11 +828,23 @@ async fn build_department_head_dashboard(
     });
     at_risk.truncate(DH_AT_RISK_LIMIT);
 
+    // Story 6.4 surface: build dense per-member operational rows from the
+    // canonical team_members payload (current_allocation_percentage is the
+    // authoritative current utilization signal), and bundle per-resource
+    // trends from the same weighted capacity report already loaded above.
+    let utilization_members = build_team_utilization_members(&team_members);
+    let underutilized: Vec<TeamUtilizationMember> = utilization_members
+        .iter()
+        .filter(|m| m.is_underutilized)
+        .cloned()
+        .collect();
+    let utilization_trends = build_utilization_trends(capacity_for_trends, trend_start, trend_end);
+
     Ok(DepartmentHeadDashboard {
         department_id,
         utilization: UtilizationSummary {
-            start_date: today,
-            end_date: window_end,
+            start_date: summary_start,
+            end_date: summary_end,
             average_utilization_pct,
             overallocated_count: overallocated_members.len() as i64,
             top_at_risk: at_risk,
@@ -699,7 +856,94 @@ async fn build_department_head_dashboard(
         },
         upcoming_assignments: upcoming,
         warnings,
+        team_members: utilization_members,
+        utilization_trends,
+        underutilized_members: underutilized,
     })
+}
+
+/// Project the canonical `TeamMemberResponse` rows into the bounded
+/// dashboard-facing shape. Available capacity is derived from current
+/// utilization (clamped to non-negative for display only); it is never an
+/// authorization or allocation-validity check.
+fn build_team_utilization_members(
+    team_members: &[TeamMemberResponse],
+) -> Vec<TeamUtilizationMember> {
+    team_members
+        .iter()
+        .map(|m| {
+            let current = m.current_allocation_percentage;
+            let available = (100.0 - current).max(0.0);
+            // Available capacity rounds to one decimal place to avoid noisy
+            // polling deltas while keeping fine-grained capacity visible.
+            let available = (available * 10.0).round() / 10.0;
+            let mut active_assignments = m.active_assignments.iter().collect::<Vec<_>>();
+            active_assignments.sort_by(|a, b| {
+                a.project_name
+                    .to_lowercase()
+                    .cmp(&b.project_name.to_lowercase())
+                    .then_with(|| a.start_date.cmp(&b.start_date))
+                    .then_with(|| a.end_date.cmp(&b.end_date))
+                    .then_with(|| {
+                        a.allocation_pct
+                            .partial_cmp(&b.allocation_pct)
+                            .unwrap_or(std::cmp::Ordering::Equal)
+                    })
+            });
+            let projects: Vec<TeamUtilizationCurrentProject> = active_assignments
+                .into_iter()
+                .take(DH_CURRENT_PROJECTS_PER_MEMBER_LIMIT)
+                .map(|a| TeamUtilizationCurrentProject {
+                    project_name: a.project_name.clone(),
+                    allocation_percentage: a.allocation_pct,
+                    start_date: a.start_date.clone(),
+                    end_date: a.end_date.clone(),
+                })
+                .collect();
+            TeamUtilizationMember {
+                resource_id: m.resource_id,
+                resource_name: m.name.clone(),
+                role: m.role.clone(),
+                current_utilization_pct: current,
+                available_capacity_pct: available,
+                is_underutilized: current < DH_UNDERUTILIZED_THRESHOLD_PCT,
+                is_overallocated: m.is_overallocated,
+                ctc_status: m.ctc_status.clone(),
+                current_projects: projects,
+            }
+        })
+        .collect()
+}
+
+/// Project the weighted capacity report into a per-member trend bundle.
+/// The capacity service is the source of truth for the working-day formula,
+/// so the dashboard never re-derives utilization from raw allocation sums.
+fn build_utilization_trends(
+    capacity: &crate::services::team_service::CapacityReportResponse,
+    range_start: NaiveDate,
+    range_end: NaiveDate,
+) -> TeamUtilizationTrendBundle {
+    let members = capacity
+        .employees
+        .iter()
+        .map(|emp| TeamUtilizationTrend {
+            resource_id: emp.resource_id,
+            resource_name: emp.resource_name.clone(),
+            periods: emp
+                .periods
+                .iter()
+                .map(|p| TeamUtilizationTrendPeriod {
+                    period: p.period.clone(),
+                    utilization_pct: p.total_allocation_percentage,
+                })
+                .collect(),
+        })
+        .collect();
+    TeamUtilizationTrendBundle {
+        start_date: range_start,
+        end_date: range_end,
+        members,
+    }
 }
 
 async fn load_upcoming_assignments(

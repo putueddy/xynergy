@@ -9,6 +9,7 @@ use js_sys::Date;
 use leptos::either::{Either, EitherOf3, EitherOf4};
 use leptos::prelude::*;
 use leptos_router::hooks::*;
+use leptos_router::NavigateOptions;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::cell::RefCell;
@@ -664,6 +665,8 @@ pub fn TeamPage() -> impl IntoView {
     let (auth_check_in_progress, set_auth_check_in_progress) = signal(false);
 
     let (team_members, set_team_members) = signal(Vec::<TeamMember>::new());
+    let (team_members_loaded, set_team_members_loaded) = signal(false);
+    let (team_members_load_failed, set_team_members_load_failed) = signal(false);
     let (loading, set_loading) = signal(false);
     let (error, set_error) = signal(None::<String>);
     let (sort_by, set_sort_by) = signal("name".to_string());
@@ -976,14 +979,23 @@ pub fn TeamPage() -> impl IntoView {
                 set_capacity_end_date.set(end);
             }
 
+            set_team_members_loaded.set(false);
+            set_team_members_load_failed.set(false);
             set_loading.set(true);
             leptos::task::spawn_local(async move {
                 match fetch_team_members().await {
                     Ok(members) => {
                         set_team_members.set(members);
+                        set_team_members_loaded.set(true);
+                        set_team_members_load_failed.set(false);
                         set_error.set(None);
                     }
-                    Err(e) => set_error.set(Some(e)),
+                    Err(e) => {
+                        set_team_members.set(Vec::new());
+                        set_team_members_loaded.set(false);
+                        set_team_members_load_failed.set(true);
+                        set_error.set(Some(e));
+                    }
                 }
                 set_loading.set(false);
             });
@@ -1086,6 +1098,134 @@ pub fn TeamPage() -> impl IntoView {
             }
         });
     };
+
+    // Story 6.4 deep-link: when navigated from the dashboard with
+    // `?assign_resource_id=<uuid>`, find the matching loaded team member and
+    // open the existing assignment modal. The query param is cleared with a
+    // replace navigation so refresh/back/forward never reopens the modal.
+    let assign_query_navigate = navigate.clone();
+    let assign_link_open_modal = open_assign_modal.clone();
+    {
+        let query_params = use_query_map();
+        let query_params_for_clear = query_params.clone();
+        let location = use_location();
+        let clear_assign_query = {
+            let assign_query_navigate = assign_query_navigate.clone();
+            move || {
+                let path = location.pathname.get_untracked();
+                let hash = location.hash.get_untracked();
+                let query = query_params_for_clear.with(|params| {
+                    let mut next = params.clone();
+                    next.remove("assign_resource_id");
+                    next.to_query_string()
+                });
+                assign_query_navigate(
+                    &format!("{}{}{}", path, query, hash),
+                    NavigateOptions {
+                        replace: true,
+                        ..Default::default()
+                    },
+                );
+            }
+        };
+        let applied_resource_id: StoredValue<Option<String>> = StoredValue::new(None);
+        Effect::new(move |_| {
+            let (assign_values, has_assign_param) = query_params.with(|p| {
+                let values = p.get_all("assign_resource_id").unwrap_or_default();
+                let has_param = !values.is_empty();
+                (values, has_param)
+            });
+            if assign_values.len() > 1 {
+                applied_resource_id.set_value(Some("multiple".to_string()));
+                set_error.set(Some(
+                    "Assignment link can only target one resource.".to_string(),
+                ));
+                clear_assign_query();
+                return;
+            }
+            let raw_id = assign_values.first().cloned().unwrap_or_default();
+            let raw_id = raw_id.trim().to_string();
+            if raw_id.is_empty() {
+                applied_resource_id.set_value(None);
+                if has_assign_param {
+                    set_error.set(Some(
+                        "Assignment link is missing a resource id.".to_string(),
+                    ));
+                    clear_assign_query();
+                }
+                return;
+            }
+            // Validate as UUID without trusting display formatting; rejecting
+            // malformed input keeps the deep-link from acting as a free-form
+            // selector into the table.
+            let normalized_id = match uuid::Uuid::parse_str(&raw_id) {
+                Ok(id) => id.to_string(),
+                Err(_) => {
+                    applied_resource_id.set_value(Some(raw_id));
+                    set_error.set(Some("Assignment link is invalid.".to_string()));
+                    clear_assign_query();
+                    return;
+                }
+            };
+            if applied_resource_id.get_value().as_deref() == Some(normalized_id.as_str()) {
+                return;
+            }
+            if !auth_checked.get() || auth_check_in_progress.get() {
+                return;
+            }
+            if !is_authorized.get() || !can_assign.get() {
+                applied_resource_id.set_value(Some(raw_id));
+                set_error.set(Some(
+                    "You are not allowed to create assignments.".to_string(),
+                ));
+                clear_assign_query();
+                return;
+            }
+            if team_members_load_failed.get() {
+                applied_resource_id.set_value(Some(normalized_id));
+                clear_assign_query();
+                return;
+            }
+            if !team_members_loaded.get() {
+                return;
+            }
+            let members = team_members.get();
+            if members.is_empty() {
+                applied_resource_id.set_value(Some(normalized_id));
+                set_error.set(Some(
+                    "No team members are available for assignment.".to_string(),
+                ));
+                clear_assign_query();
+                return;
+            }
+            let Some(member) = members.iter().find(|m| m.resource_id == normalized_id) else {
+                // Resource not in this user's scoped team (different
+                // department or filtered out by RLS). Clear the param
+                // without revealing whether it exists elsewhere.
+                applied_resource_id.set_value(Some(normalized_id));
+                set_error.set(Some(
+                    "Requested team member is not available for assignment.".to_string(),
+                ));
+                clear_assign_query();
+                return;
+            };
+            if member.ctc_status != "Active" {
+                // Mirror the table's CTC-required guard: do not open the
+                // assignment modal for resources that the existing table
+                // shows as disabled.
+                applied_resource_id.set_value(Some(normalized_id));
+                set_error.set(Some(
+                    "Requested team member is missing CTC data and cannot be assigned.".to_string(),
+                ));
+                clear_assign_query();
+                return;
+            }
+            set_error.set(None);
+            applied_resource_id.set_value(Some(normalized_id));
+            assign_link_open_modal(member.resource_id.clone(), member.name.clone());
+            clear_assign_query();
+        });
+    }
 
     // Submit assignment
     let submit_assignment = move |_| {
