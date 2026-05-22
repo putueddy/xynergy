@@ -184,14 +184,40 @@ struct ProjectHealthCard {
     budget_spent_idr: i64,
     budget_remaining_idr: i64,
     budget_status: String,
+    #[serde(default)]
+    budget_utilization_pct: f64,
+    #[serde(default)]
+    is_over_budget: bool,
+    #[serde(default)]
+    budget_overrun_idr: i64,
     total_revenue_idr: i64,
     total_cost_idr: i64,
     gross_profit_idr: i64,
     margin_pct: f64,
     #[serde(default)]
+    target_margin_pct: f64,
+    #[serde(default)]
+    margin_alert_threshold_pct: f64,
+    #[serde(default)]
     margin_alert: Option<String>,
     #[serde(default)]
+    forecast_margin_pct: f64,
+    #[serde(default)]
+    forecast_variance_from_target_pct: f64,
+    #[serde(default)]
+    projected_total_cost_idr: i64,
+    #[serde(default)]
+    forecast_unavailable: bool,
+    #[serde(default)]
+    forecast_has_revenue_signal: bool,
+    #[serde(default = "default_health_status")]
+    health_status: String,
+    #[serde(default)]
     warning: Option<String>,
+}
+
+fn default_health_status() -> String {
+    "unconfigured".to_string()
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -584,6 +610,62 @@ fn dashboard_value_map(data: &RoleDashboardResponse) -> HashMap<String, String> 
                 format!("project_manager.project.{}.margin_alert", id_key),
                 project.margin_alert.clone().unwrap_or_default(),
             );
+            map.insert(
+                format!("project_manager.project.{}.budget_utilization_pct", id_key),
+                format!("{:.1}", project.budget_utilization_pct),
+            );
+            map.insert(
+                format!("project_manager.project.{}.is_over_budget", id_key),
+                project.is_over_budget.to_string(),
+            );
+            map.insert(
+                format!("project_manager.project.{}.budget_overrun_idr", id_key),
+                project.budget_overrun_idr.to_string(),
+            );
+            map.insert(
+                format!("project_manager.project.{}.forecast_margin_pct", id_key),
+                format!("{:.1}", project.forecast_margin_pct),
+            );
+            map.insert(
+                format!(
+                    "project_manager.project.{}.forecast_variance_from_target_pct",
+                    id_key
+                ),
+                format!("{:.1}", project.forecast_variance_from_target_pct),
+            );
+            map.insert(
+                format!(
+                    "project_manager.project.{}.projected_total_cost_idr",
+                    id_key
+                ),
+                project.projected_total_cost_idr.to_string(),
+            );
+            map.insert(
+                format!("project_manager.project.{}.forecast_unavailable", id_key),
+                project.forecast_unavailable.to_string(),
+            );
+            map.insert(
+                format!(
+                    "project_manager.project.{}.forecast_has_revenue_signal",
+                    id_key
+                ),
+                project.forecast_has_revenue_signal.to_string(),
+            );
+            map.insert(
+                format!("project_manager.project.{}.health_status", id_key),
+                project.health_status.clone(),
+            );
+            map.insert(
+                format!("project_manager.project.{}.target_margin_pct", id_key),
+                format!("{:.1}", project.target_margin_pct),
+            );
+            map.insert(
+                format!(
+                    "project_manager.project.{}.margin_alert_threshold_pct",
+                    id_key
+                ),
+                format!("{:.1}", project.margin_alert_threshold_pct),
+            );
         }
         for alert in &pm.margin_alerts {
             let id_key = match alert.project_id {
@@ -828,6 +910,7 @@ pub fn Dashboard() -> impl IntoView {
     let user = auth.user;
     let (state, set_state) = signal(DashboardState::initial());
     let (changed_keys, set_changed_keys) = signal::<HashSet<String>>(HashSet::new());
+    let (pm_sort_mode, set_pm_sort_mode) = signal(PmSortMode::EndDate);
 
     // Component-scoped, !Send+!Sync handles. Replacing/clearing the inner
     // Option drops the previous Interval/Timeout, preventing leaks and
@@ -1049,7 +1132,13 @@ pub fn Dashboard() -> impl IntoView {
                 {move || {
                     let s = state.get();
                     match s.data {
-                        Some(data) => Either::Left(view! { <DashboardBody data=data /> }),
+                        Some(data) => Either::Left(view! {
+                            <DashboardBody
+                                data=data
+                                pm_sort_mode=pm_sort_mode
+                                set_pm_sort_mode=set_pm_sort_mode
+                            />
+                        }),
                         None if s.loading => Either::Right(view! {
                             <div class="panel p-6 text-center text-huly-muted text-sm">
                                 "Loading dashboard…"
@@ -1074,7 +1163,11 @@ fn format_datetime(value: &str) -> String {
 }
 
 #[component]
-fn DashboardBody(data: RoleDashboardResponse) -> impl IntoView {
+fn DashboardBody(
+    data: RoleDashboardResponse,
+    pm_sort_mode: ReadSignal<PmSortMode>,
+    set_pm_sort_mode: WriteSignal<PmSortMode>,
+) -> impl IntoView {
     let role = data.role.clone();
     let no_widgets = data.hr.is_none()
         && data.department_head.is_none()
@@ -1085,7 +1178,13 @@ fn DashboardBody(data: RoleDashboardResponse) -> impl IntoView {
         <div class="space-y-4">
             {data.hr.map(|hr| view! { <HrPanel hr=hr /> })}
             {data.department_head.map(|dh| view! { <DepartmentHeadPanel dh=dh /> })}
-            {data.project_manager.map(|pm| view! { <ProjectManagerPanel pm=pm /> })}
+            {data.project_manager.map(|pm| view! {
+                <ProjectManagerPanel
+                    pm=pm
+                    sort_mode=pm_sort_mode
+                    set_sort_mode=set_pm_sort_mode
+                />
+            })}
             {data.finance.map(|f| view! { <FinancePanel finance=f /> })}
             {data.admin.map(|a| view! { <AdminPanel admin=a /> })}
             {if no_widgets {
@@ -1496,12 +1595,176 @@ fn DepartmentHeadPanel(dh: DepartmentHeadDashboard) -> impl IntoView {
 
 // ── Project Manager Panel ────────────────────────────────────────────────
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PmSortMode {
+    Margin,
+    BudgetUtilization,
+    EndDate,
+}
+
+impl PmSortMode {
+    fn label(&self) -> &'static str {
+        match self {
+            PmSortMode::Margin => "Margin",
+            PmSortMode::BudgetUtilization => "Budget Utilization",
+            PmSortMode::EndDate => "End Date",
+        }
+    }
+}
+
+/// Sort PM cards client-side from already-loaded data. Sort modes:
+/// - `Margin`: lowest current margin first, then project name (ascending).
+/// - `BudgetUtilization`: highest utilization (over-budget first) first, then project name.
+/// - `EndDate`: soonest end date first, then project name.
+fn sort_pm_cards(cards: &mut [ProjectHealthCard], mode: PmSortMode) {
+    match mode {
+        PmSortMode::Margin => {
+            cards.sort_by(|a, b| {
+                a.margin_pct
+                    .partial_cmp(&b.margin_pct)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then_with(|| a.project_name.cmp(&b.project_name))
+            });
+        }
+        PmSortMode::BudgetUtilization => {
+            cards.sort_by(|a, b| {
+                let a_score = pm_utilization_score(a);
+                let b_score = pm_utilization_score(b);
+                b_score
+                    .partial_cmp(&a_score)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then_with(|| a.project_name.cmp(&b.project_name))
+            });
+        }
+        PmSortMode::EndDate => {
+            cards.sort_by(|a, b| {
+                a.end_date
+                    .cmp(&b.end_date)
+                    .then_with(|| a.project_name.cmp(&b.project_name))
+            });
+        }
+    }
+}
+
+fn pm_utilization_score(card: &ProjectHealthCard) -> f64 {
+    if card.is_over_budget && card.budget_overrun_idr > 0 {
+        let overrun_pct = if card.total_budget_idr > 0 {
+            (card.budget_overrun_idr as f64 / card.total_budget_idr as f64) * 100.0
+        } else {
+            0.0
+        };
+        card.budget_utilization_pct.max(100.0) + overrun_pct
+    } else if card.is_over_budget {
+        card.budget_utilization_pct.max(100.0)
+    } else if card.total_budget_idr <= 0 {
+        -1.0
+    } else {
+        card.budget_utilization_pct
+    }
+}
+
+fn budget_badge_class(budget_status: &str, is_over_budget: bool) -> &'static str {
+    if is_over_budget {
+        return "badge-negative";
+    }
+    match budget_status {
+        "critical" => "badge-negative",
+        "warning" => "badge-warning",
+        "healthy" => "badge-positive",
+        _ => "badge-neutral",
+    }
+}
+
+fn budget_badge_label(budget_status: &str, is_over_budget: bool) -> &'static str {
+    if is_over_budget {
+        return "Over budget";
+    }
+    match budget_status {
+        "critical" => "At risk",
+        "warning" => "Watch",
+        "healthy" => "On track",
+        _ => "Unconfigured",
+    }
+}
+
+fn health_status_class(health_status: &str) -> &'static str {
+    match health_status {
+        "critical" => "text-negative-default",
+        "warning" => "text-warning-default",
+        "healthy" => "text-positive-default",
+        _ => "text-huly-muted",
+    }
+}
+
+fn health_status_label(health_status: &str) -> &'static str {
+    match health_status {
+        "critical" => "At risk",
+        "warning" => "Watch",
+        "healthy" => "Healthy",
+        _ => "Unconfigured",
+    }
+}
+
+fn margin_status_class(
+    margin_pct: f64,
+    target_margin_pct: f64,
+    alert_threshold_pct: f64,
+    margin_alert_present: bool,
+    has_revenue_signal: bool,
+) -> &'static str {
+    if !has_revenue_signal && !margin_alert_present {
+        return "text-huly-muted";
+    }
+    if margin_alert_present || margin_pct < 0.0 {
+        return "text-negative-default";
+    }
+    let margin_gap = target_margin_pct - margin_pct;
+    if margin_gap > 0.0 && alert_threshold_pct > 0.0 && margin_gap > alert_threshold_pct {
+        return "text-negative-default";
+    }
+    if margin_gap > 0.0 {
+        return "text-warning-default";
+    }
+    "text-positive-default"
+}
+
+fn forecast_status_class(
+    variance_from_target_pct: f64,
+    alert_threshold_pct: f64,
+    forecast_unavailable: bool,
+    has_revenue_signal: bool,
+) -> &'static str {
+    if forecast_unavailable || !has_revenue_signal {
+        return "text-huly-muted";
+    }
+    if variance_from_target_pct < 0.0
+        && variance_from_target_pct.abs() > alert_threshold_pct.max(0.0)
+    {
+        return "text-negative-default";
+    }
+    if variance_from_target_pct < 0.0 {
+        return "text-warning-default";
+    }
+    "text-positive-default"
+}
+
 #[component]
-fn ProjectManagerPanel(pm: ProjectManagerDashboard) -> impl IntoView {
+fn ProjectManagerPanel(
+    pm: ProjectManagerDashboard,
+    sort_mode: ReadSignal<PmSortMode>,
+    set_sort_mode: WriteSignal<PmSortMode>,
+) -> impl IntoView {
     let warnings = pm.warnings.clone();
     let alerts = pm.margin_alerts.clone();
     let projects = pm.active_projects.clone();
     let changed = expect_context::<ChangedKeysCtx>();
+    let navigate = use_navigate();
+
+    let sorted_projects = Signal::derive(move || {
+        let mut copy = projects.clone();
+        sort_pm_cards(&mut copy, sort_mode.get());
+        copy
+    });
 
     view! {
         <div class="space-y-4">
@@ -1514,7 +1777,7 @@ fn ProjectManagerPanel(pm: ProjectManagerDashboard) -> impl IntoView {
                             class="stat-value"
                             class:dashboard-change-flash=flash_if_changed(changed, "project_manager.active_projects.count")
                         >
-                            {projects.len().to_string()}
+                            {move || sorted_projects.with(|p| p.len().to_string())}
                         </p>
                     </div>
                 </div>
@@ -1558,118 +1821,331 @@ fn ProjectManagerPanel(pm: ProjectManagerDashboard) -> impl IntoView {
             } else { None }}
 
             <div class="panel">
-                <div class="toolbar flex items-center justify-between">
+                <div class="toolbar flex items-center justify-between flex-wrap gap-2">
                     <h3 class="text-xs font-semibold text-huly-secondary uppercase tracking-wider">"Project Health"</h3>
-                    <a href="/projects" class="text-xs text-primary-400 hover:text-primary-300">"Open projects →"</a>
+                    <div class="flex items-center gap-2">
+                        <div
+                            class="inline-flex items-center gap-1"
+                            role="group"
+                            aria-label="Sort projects by"
+                        >
+                            <span class="text-xs text-huly-muted mr-1">"Sort by"</span>
+                            {[PmSortMode::Margin, PmSortMode::BudgetUtilization, PmSortMode::EndDate].into_iter().map(|mode| {
+                                let label = mode.label();
+                                let on_click = move |_| set_sort_mode.set(mode);
+                                view! {
+                                    <button
+                                        type="button"
+                                        class="btn-ghost text-xs"
+                                        aria-pressed=move || (sort_mode.get() == mode).to_string()
+                                        on:click=on_click
+                                        style=move || if sort_mode.get() == mode {
+                                            "background-color: var(--color-huly-btn-hover); color: var(--color-huly-caption);"
+                                        } else { "" }
+                                    >
+                                        {label}
+                                    </button>
+                                }
+                            }).collect_view()}
+                        </div>
+                        <a href="/projects" class="text-xs text-primary-400 hover:text-primary-300">"Open projects →"</a>
+                    </div>
                 </div>
                 <div class="p-3">
-                    {if projects.is_empty() {
-                        Either::Left(view! {
-                            <div class="empty-state py-4">
-                                <p class="text-huly-muted text-xs">"No active projects assigned."</p>
-                            </div>
-                        })
-                    } else {
-                        Either::Right(view! {
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
-                                {projects.into_iter().map(|p| {
-                                    let id_key = match p.project_id {
-                                        Some(id) => id.to_string(),
-                                        None => format!("name.{}", p.project_name),
-                                    };
-                                    let name_key = format!("project_manager.project.{}.project_name", id_key);
-                                    let project_status_key = format!("project_manager.project.{}.status", id_key);
-                                    let end_date_key = format!("project_manager.project.{}.end_date", id_key);
-                                    let margin_key = format!("project_manager.project.{}.margin_pct", id_key);
-                                    let profit_key = format!("project_manager.project.{}.gross_profit_idr", id_key);
-                                    let budget_status_key = format!("project_manager.project.{}.budget_status", id_key);
-                                    let total_budget_key = format!("project_manager.project.{}.total_budget_idr", id_key);
-                                    let spent_key = format!("project_manager.project.{}.budget_spent_idr", id_key);
-                                    let remaining_key = format!("project_manager.project.{}.budget_remaining_idr", id_key);
-                                    let revenue_key = format!("project_manager.project.{}.total_revenue_idr", id_key);
-                                    let cost_key = format!("project_manager.project.{}.total_cost_idr", id_key);
-                                    let warning_key = format!("project_manager.project.{}.warning", id_key);
-                                    let margin_alert_key = format!("project_manager.project.{}.margin_alert", id_key);
-                                    let flash_card = {
-                                        let any_change_keys = [
-                                            name_key.clone(),
-                                            project_status_key.clone(),
-                                            end_date_key.clone(),
-                                            margin_key.clone(),
-                                            profit_key.clone(),
-                                            budget_status_key.clone(),
-                                            total_budget_key.clone(),
-                                            spent_key.clone(),
-                                            remaining_key.clone(),
-                                            revenue_key.clone(),
-                                            cost_key.clone(),
-                                            warning_key.clone(),
-                                            margin_alert_key.clone(),
-                                        ];
-                                        move || changed.0.with(|set| any_change_keys.iter().any(|k| set.contains(k)))
-                                    };
-                                    view! {
-                                        <div class="panel p-3" class:dashboard-change-flash=flash_card>
-                                            <div class="flex items-center justify-between mb-1">
-                                                <span
-                                                    class="text-sm font-medium text-huly-caption"
-                                                    class:dashboard-change-flash=flash_if_changed_owned(changed, name_key.clone())
-                                                >
-                                                    {p.project_name.clone()}
-                                                </span>
-                                                <span
-                                                    class="text-xs text-huly-muted"
-                                                    class:dashboard-change-flash=flash_if_changed_owned(changed, project_status_key.clone())
-                                                >
-                                                    {p.status.clone()}
-                                                </span>
-                                            </div>
-                                            <p
-                                                class="text-xs text-huly-muted"
-                                                class:dashboard-change-flash=flash_if_changed_owned(changed, end_date_key.clone())
-                                            >
-                                                {format!("Ends {}", format_date(&p.end_date))}
-                                            </p>
-                                            <div class="mt-2 text-xs text-huly-content space-y-0.5">
-                                                <p class:dashboard-change-flash=flash_if_any_changed_owned(changed, vec![budget_status_key.clone(), total_budget_key.clone()])>
-                                                    {format!("Budget: {} · {}", p.budget_status, format_idr(p.total_budget_idr))}
-                                                </p>
-                                                <p class:dashboard-change-flash=flash_if_any_changed_owned(changed, vec![spent_key.clone(), remaining_key.clone()])>
-                                                    {format!("Budget spent: {} · remaining {}", format_idr(p.budget_spent_idr), format_idr(p.budget_remaining_idr))}
-                                                </p>
-                                                <p class:dashboard-change-flash=flash_if_changed_owned(changed, revenue_key.clone())>
-                                                    {format!("Revenue: {}", format_idr(p.total_revenue_idr))}
-                                                </p>
-                                                <p class:dashboard-change-flash=flash_if_changed_owned(changed, cost_key.clone())>
-                                                    {format!("Cost: {}", format_idr(p.total_cost_idr))}
-                                                </p>
-                                                <p
-                                                    class:dashboard-change-flash=flash_if_any_changed_owned(changed, vec![profit_key.clone(), margin_key.clone()])
-                                                >
-                                                    {format!("Profit: {} ({:.1}%)", format_idr(p.gross_profit_idr), p.margin_pct)}
-                                                </p>
-                                                {p.warning.as_ref().map(|w| view! {
-                                                    <p
-                                                        class="text-xs text-negative-default"
-                                                        class:dashboard-change-flash=flash_if_changed_owned(changed, warning_key.clone())
+                    {move || {
+                        let projects = sorted_projects.get();
+                        if projects.is_empty() {
+                            Either::Left(view! {
+                                <div class="empty-state py-4">
+                                    <p class="text-huly-muted text-xs">"No active projects assigned."</p>
+                                </div>
+                            })
+                        } else {
+                            let navigate = navigate.clone();
+                            Either::Right(view! {
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                    {projects.into_iter().map(|p| {
+                                        let id_key = match p.project_id {
+                                            Some(id) => id.to_string(),
+                                            None => format!("name.{}", p.project_name),
+                                        };
+                                        let name_key = format!("project_manager.project.{}.project_name", id_key);
+                                        let project_status_key = format!("project_manager.project.{}.status", id_key);
+                                        let end_date_key = format!("project_manager.project.{}.end_date", id_key);
+                                        let margin_key = format!("project_manager.project.{}.margin_pct", id_key);
+                                        let profit_key = format!("project_manager.project.{}.gross_profit_idr", id_key);
+                                        let budget_status_key = format!("project_manager.project.{}.budget_status", id_key);
+                                        let total_budget_key = format!("project_manager.project.{}.total_budget_idr", id_key);
+                                        let spent_key = format!("project_manager.project.{}.budget_spent_idr", id_key);
+                                        let remaining_key = format!("project_manager.project.{}.budget_remaining_idr", id_key);
+                                        let revenue_key = format!("project_manager.project.{}.total_revenue_idr", id_key);
+                                        let cost_key = format!("project_manager.project.{}.total_cost_idr", id_key);
+                                        let warning_key = format!("project_manager.project.{}.warning", id_key);
+                                        let margin_alert_key = format!("project_manager.project.{}.margin_alert", id_key);
+                                        let budget_utilization_key = format!("project_manager.project.{}.budget_utilization_pct", id_key);
+                                        let is_over_budget_key = format!("project_manager.project.{}.is_over_budget", id_key);
+                                        let budget_overrun_key = format!("project_manager.project.{}.budget_overrun_idr", id_key);
+                                        let forecast_margin_key = format!("project_manager.project.{}.forecast_margin_pct", id_key);
+                                        let forecast_variance_key = format!("project_manager.project.{}.forecast_variance_from_target_pct", id_key);
+                                        let projected_total_cost_key = format!("project_manager.project.{}.projected_total_cost_idr", id_key);
+                                        let forecast_unavailable_key = format!("project_manager.project.{}.forecast_unavailable", id_key);
+                                        let forecast_revenue_signal_key = format!("project_manager.project.{}.forecast_has_revenue_signal", id_key);
+                                        let health_status_key = format!("project_manager.project.{}.health_status", id_key);
+                                        let target_margin_key = format!("project_manager.project.{}.target_margin_pct", id_key);
+                                        let margin_alert_threshold_key = format!("project_manager.project.{}.margin_alert_threshold_pct", id_key);
+
+                                        let flash_card = {
+                                            let any_change_keys = [
+                                                name_key.clone(),
+                                                project_status_key.clone(),
+                                                end_date_key.clone(),
+                                                margin_key.clone(),
+                                                profit_key.clone(),
+                                                budget_status_key.clone(),
+                                                total_budget_key.clone(),
+                                                spent_key.clone(),
+                                                remaining_key.clone(),
+                                                revenue_key.clone(),
+                                                cost_key.clone(),
+                                                warning_key.clone(),
+                                                margin_alert_key.clone(),
+                                                budget_utilization_key.clone(),
+                                                is_over_budget_key.clone(),
+                                                budget_overrun_key.clone(),
+                                                forecast_margin_key.clone(),
+                                                forecast_variance_key.clone(),
+                                                projected_total_cost_key.clone(),
+                                                forecast_unavailable_key.clone(),
+                                                forecast_revenue_signal_key.clone(),
+                                                health_status_key.clone(),
+                                                target_margin_key.clone(),
+                                                margin_alert_threshold_key.clone(),
+                                            ];
+                                            move || changed.0.with(|set| any_change_keys.iter().any(|k| set.contains(k)))
+                                        };
+
+                                        let is_budget_overrun = p.is_over_budget
+                                            || (p.total_budget_idr > 0 && p.budget_spent_idr > p.total_budget_idr);
+                                        let effective_overrun_idr = if p.budget_overrun_idr > 0 {
+                                            p.budget_overrun_idr
+                                        } else if p.total_budget_idr > 0 && p.budget_spent_idr > p.total_budget_idr {
+                                            p.budget_spent_idr - p.total_budget_idr
+                                        } else {
+                                            0
+                                        };
+                                        let forecast_unavailable = p.forecast_unavailable;
+                                        let has_revenue_signal = p.total_revenue_idr > 0;
+                                        let has_forecast_revenue_signal = p.forecast_has_revenue_signal;
+                                        let margin_alert_present = p.margin_alert.is_some();
+                                        let margin_class = margin_status_class(
+                                            p.margin_pct,
+                                            p.target_margin_pct,
+                                            p.margin_alert_threshold_pct,
+                                            margin_alert_present,
+                                            has_revenue_signal,
+                                        );
+                                        let forecast_class = forecast_status_class(
+                                            p.forecast_variance_from_target_pct,
+                                            p.margin_alert_threshold_pct,
+                                            forecast_unavailable,
+                                            has_forecast_revenue_signal,
+                                        );
+                                        let badge_class = budget_badge_class(&p.budget_status, is_budget_overrun);
+                                        let badge_label = budget_badge_label(&p.budget_status, is_budget_overrun);
+                                        let health_class = health_status_class(&p.health_status);
+                                        let health_label = health_status_label(&p.health_status);
+                                        let pid = p.project_id;
+                                        let project_name = p.project_name.clone();
+                                        let nav = navigate.clone();
+                                        let pnl_click = move |_| {
+                                            if let Some(id) = pid {
+                                                nav(&format!("/projects?view=pnl&project_id={}", id), Default::default());
+                                            }
+                                        };
+                                        let over_budget_aria = if is_budget_overrun {
+                                            format!("Over budget by {}", format_idr(effective_overrun_idr))
+                                        } else { String::new() };
+                                        let pnl_aria_label = format!("View P&L for {}", project_name);
+
+                                        view! {
+                                            <div class="panel p-3" class:dashboard-change-flash=flash_card>
+                                                <div class="flex items-center justify-between mb-1 gap-2">
+                                                    <span
+                                                        class="text-sm font-medium text-huly-caption truncate"
+                                                        class:dashboard-change-flash=flash_if_changed_owned(changed, name_key.clone())
                                                     >
-                                                        {w.clone()}
-                                                    </p>
-                                                })}
-                                                {p.margin_alert.as_ref().map(|a| view! {
+                                                        {p.project_name.clone()}
+                                                    </span>
+                                                    <div class="flex items-center gap-1.5 whitespace-nowrap">
+                                                        {is_budget_overrun.then(|| view! {
+                                                            <span
+                                                                class="text-negative-default"
+                                                                aria-label=over_budget_aria.clone()
+                                                                title=over_budget_aria.clone()
+                                                            >
+                                                                <svg
+                                                                    xmlns="http://www.w3.org/2000/svg"
+                                                                    width="14"
+                                                                    height="14"
+                                                                    viewBox="0 0 24 24"
+                                                                    fill="none"
+                                                                    stroke="currentColor"
+                                                                    stroke-width="2"
+                                                                    stroke-linecap="round"
+                                                                    stroke-linejoin="round"
+                                                                    aria-hidden="true"
+                                                                    focusable="false"
+                                                                >
+                                                                    <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                                                                    <line x1="12" y1="9" x2="12" y2="13" />
+                                                                    <line x1="12" y1="17" x2="12.01" y2="17" />
+                                                                </svg>
+                                                            </span>
+                                                        })}
+                                                        <span
+                                                            class=badge_class
+                                                            class:dashboard-change-flash=flash_if_any_changed_owned(
+                                                                changed,
+                                                                vec![is_over_budget_key.clone(), budget_status_key.clone(), spent_key.clone(), total_budget_key.clone()],
+                                                            )
+                                                        >
+                                                            {badge_label}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                                <div class="flex items-center justify-between gap-2 mb-2">
                                                     <p
-                                                        class="text-xs text-negative-default"
-                                                        class:dashboard-change-flash=flash_if_changed_owned(changed, margin_alert_key.clone())
+                                                        class="text-xs text-huly-muted"
+                                                        class:dashboard-change-flash=flash_if_changed_owned(changed, end_date_key.clone())
                                                     >
-                                                        {a.clone()}
+                                                        {format!("Ends {}", format_date(&p.end_date))}
                                                     </p>
-                                                })}
+                                                    <span
+                                                        class="text-xs text-huly-muted"
+                                                        class:dashboard-change-flash=flash_if_changed_owned(changed, project_status_key.clone())
+                                                    >
+                                                        {p.status.clone()}
+                                                    </span>
+                                                </div>
+                                                <div class="text-xs text-huly-content space-y-0.5">
+                                                    <p class:dashboard-change-flash=flash_if_any_changed_owned(changed, vec![budget_status_key.clone(), total_budget_key.clone(), budget_utilization_key.clone()])>
+                                                        {format!(
+                                                            "Budget: {} ({:.0}% used)",
+                                                            format_idr(p.total_budget_idr),
+                                                            p.budget_utilization_pct,
+                                                        )}
+                                                    </p>
+                                                    <p
+                                                        class=health_class
+                                                        class:dashboard-change-flash=flash_if_changed_owned(changed, health_status_key.clone())
+                                                    >
+                                                        {format!("Health: {}", health_label)}
+                                                    </p>
+                                                    <p class:dashboard-change-flash=flash_if_any_changed_owned(changed, vec![spent_key.clone(), remaining_key.clone(), budget_overrun_key.clone()])>
+                                                        {if is_budget_overrun {
+                                                            format!(
+                                                                "Spent: {} · Overrun: {}",
+                                                                format_idr(p.budget_spent_idr),
+                                                                format_idr(effective_overrun_idr),
+                                                            )
+                                                        } else {
+                                                            format!(
+                                                                "Spent: {} · Remaining: {}",
+                                                                format_idr(p.budget_spent_idr),
+                                                                format_idr(p.budget_remaining_idr),
+                                                            )
+                                                        }}
+                                                    </p>
+                                                    <p class:dashboard-change-flash=flash_if_changed_owned(changed, revenue_key.clone())>
+                                                        {format!("Revenue: {}", format_idr(p.total_revenue_idr))}
+                                                    </p>
+                                                    <p class:dashboard-change-flash=flash_if_changed_owned(changed, cost_key.clone())>
+                                                        {format!("Cost: {}", format_idr(p.total_cost_idr))}
+                                                    </p>
+                                                    <p
+                                                        class=margin_class
+                                                        class:dashboard-change-flash=flash_if_any_changed_owned(
+                                                            changed,
+                                                            vec![
+                                                                margin_key.clone(),
+                                                                target_margin_key.clone(),
+                                                                margin_alert_threshold_key.clone(),
+                                                                profit_key.clone(),
+                                                            ],
+                                                        )
+                                                    >
+                                                        {format!(
+                                                            "Margin: {:.1}% (target {:.1}%) · profit {}",
+                                                            p.margin_pct,
+                                                            p.target_margin_pct,
+                                                            format_idr(p.gross_profit_idr),
+                                                        )}
+                                                    </p>
+                                                    <p
+                                                        class=forecast_class
+                                                        class:dashboard-change-flash=flash_if_any_changed_owned(
+                                                            changed,
+                                                            vec![
+                                                                forecast_margin_key.clone(),
+                                                                forecast_variance_key.clone(),
+                                                                projected_total_cost_key.clone(),
+                                                                forecast_unavailable_key.clone(),
+                                                                forecast_revenue_signal_key.clone(),
+                                                                margin_alert_threshold_key.clone(),
+                                                            ],
+                                                        )
+                                                    >
+                                                        {if forecast_unavailable {
+                                                            "Forecast: unavailable".to_string()
+                                                        } else if !has_forecast_revenue_signal {
+                                                            format!(
+                                                                "Forecast: no revenue data · projected cost {}",
+                                                                format_idr(p.projected_total_cost_idr),
+                                                            )
+                                                        } else {
+                                                            format!(
+                                                                "Forecast: {:.1}% (Δ {:+.1}% vs target) · projected cost {}",
+                                                                p.forecast_margin_pct,
+                                                                p.forecast_variance_from_target_pct,
+                                                                format_idr(p.projected_total_cost_idr),
+                                                            )
+                                                        }}
+                                                    </p>
+                                                    {p.warning.as_ref().map(|w| view! {
+                                                        <p
+                                                            class="text-xs text-negative-default"
+                                                            class:dashboard-change-flash=flash_if_changed_owned(changed, warning_key.clone())
+                                                        >
+                                                            {w.clone()}
+                                                        </p>
+                                                    })}
+                                                    {p.margin_alert.as_ref().map(|a| view! {
+                                                        <p
+                                                            class="text-xs text-negative-default"
+                                                            class:dashboard-change-flash=flash_if_changed_owned(changed, margin_alert_key.clone())
+                                                        >
+                                                            {a.clone()}
+                                                        </p>
+                                                    })}
+                                                </div>
+                                                <div class="mt-2 flex items-center justify-end">
+                                                    {pid.map(|_| view! {
+                                                        <button
+                                                            type="button"
+                                                            class="btn-ghost text-xs"
+                                                            on:click=pnl_click
+                                                            aria-label=pnl_aria_label
+                                                        >
+                                                            "View P&L →"
+                                                        </button>
+                                                    })}
+                                                </div>
                                             </div>
-                                        </div>
-                                    }
-                                }).collect_view()}
-                            </div>
-                        })
+                                        }
+                                    }).collect_view()}
+                                </div>
+                            })
+                        }
                     }}
                 </div>
             </div>
@@ -2266,25 +2742,43 @@ mod tests {
         );
     }
 
+    fn pm_card_default(project_id: Option<Uuid>, project_name: &str) -> ProjectHealthCard {
+        ProjectHealthCard {
+            project_id,
+            project_name: project_name.into(),
+            status: "Active".into(),
+            end_date: "2026-12-31".into(),
+            total_budget_idr: 100_000_000,
+            budget_spent_idr: 30_000_000,
+            budget_remaining_idr: 70_000_000,
+            budget_status: "healthy".into(),
+            budget_utilization_pct: 30.0,
+            is_over_budget: false,
+            budget_overrun_idr: 0,
+            total_revenue_idr: 80_000_000,
+            total_cost_idr: 50_000_000,
+            gross_profit_idr: 30_000_000,
+            margin_pct: 30.0,
+            target_margin_pct: 25.0,
+            margin_alert_threshold_pct: 5.0,
+            margin_alert: None,
+            forecast_margin_pct: 25.0,
+            forecast_variance_from_target_pct: 0.0,
+            projected_total_cost_idr: 60_000_000,
+            forecast_unavailable: false,
+            forecast_has_revenue_signal: true,
+            health_status: "healthy".into(),
+            warning: None,
+        }
+    }
+
     fn pm_response_with(margin_pct: f64) -> RoleDashboardResponse {
         let project_id = Uuid::nil();
         let mut resp = empty_response("project_manager");
         resp.project_manager = Some(ProjectManagerDashboard {
             active_projects: vec![ProjectHealthCard {
-                project_id: Some(project_id),
-                project_name: "Atlas".into(),
-                status: "Active".into(),
-                end_date: "2026-12-31".into(),
-                total_budget_idr: 100_000_000,
-                budget_spent_idr: 30_000_000,
-                budget_remaining_idr: 70_000_000,
-                budget_status: "healthy".into(),
-                total_revenue_idr: 80_000_000,
-                total_cost_idr: 50_000_000,
-                gross_profit_idr: 30_000_000,
                 margin_pct,
-                margin_alert: None,
-                warning: None,
+                ..pm_card_default(Some(project_id), "Atlas")
             }],
             margin_alerts: vec![],
             warnings: vec![],
@@ -2756,20 +3250,15 @@ mod tests {
             let mut resp = empty_response("project_manager");
             resp.project_manager = Some(ProjectManagerDashboard {
                 active_projects: vec![ProjectHealthCard {
-                    project_id: None,
-                    project_name: "Orphan Project".into(),
-                    status: "Active".into(),
-                    end_date: "2026-12-31".into(),
+                    margin_pct: margin,
                     total_budget_idr: 50_000_000,
                     budget_spent_idr: 10_000_000,
                     budget_remaining_idr: 40_000_000,
-                    budget_status: "healthy".into(),
+                    budget_utilization_pct: 20.0,
                     total_revenue_idr: 30_000_000,
                     total_cost_idr: 20_000_000,
                     gross_profit_idr: 10_000_000,
-                    margin_pct: margin,
-                    margin_alert: None,
-                    warning: None,
+                    ..pm_card_default(None, "Orphan Project")
                 }],
                 margin_alerts: vec![],
                 warnings: vec![],
@@ -2794,20 +3283,15 @@ mod tests {
         let mut next = empty_response("project_manager");
         next.project_manager = Some(ProjectManagerDashboard {
             active_projects: vec![ProjectHealthCard {
-                project_id: Some(Uuid::new_v4()),
-                project_name: "Atlas".into(),
-                status: "Active".into(),
-                end_date: "2026-12-31".into(),
                 total_budget_idr: 1,
                 budget_spent_idr: 0,
                 budget_remaining_idr: 1,
-                budget_status: "healthy".into(),
+                budget_utilization_pct: 0.0,
                 total_revenue_idr: 0,
                 total_cost_idr: 0,
                 gross_profit_idr: 0,
                 margin_pct: 0.0,
-                margin_alert: None,
-                warning: None,
+                ..pm_card_default(Some(Uuid::new_v4()), "Atlas")
             }],
             margin_alerts: vec![],
             warnings: vec![],
@@ -2885,5 +3369,495 @@ mod tests {
             "newly-present match_rate_pct must surface as changed, got {:?}",
             changed
         );
+    }
+
+    // ── Story 6.3 expansion: sort helpers + new PM change-detection keys ─
+
+    #[test]
+    fn pm_sort_by_margin_orders_lowest_first() {
+        let mut cards = vec![
+            ProjectHealthCard {
+                margin_pct: 35.0,
+                ..pm_card_default(Some(Uuid::new_v4()), "Beta")
+            },
+            ProjectHealthCard {
+                margin_pct: 5.0,
+                ..pm_card_default(Some(Uuid::new_v4()), "Critical")
+            },
+            ProjectHealthCard {
+                margin_pct: 20.0,
+                ..pm_card_default(Some(Uuid::new_v4()), "Alpha")
+            },
+        ];
+        sort_pm_cards(&mut cards, PmSortMode::Margin);
+        let names: Vec<_> = cards.iter().map(|c| c.project_name.as_str()).collect();
+        assert_eq!(
+            names,
+            vec!["Critical", "Alpha", "Beta"],
+            "Margin sort must place lowest margin first"
+        );
+    }
+
+    #[test]
+    fn pm_sort_by_budget_utilization_orders_over_budget_first() {
+        let mut cards = vec![
+            ProjectHealthCard {
+                budget_utilization_pct: 40.0,
+                is_over_budget: false,
+                budget_overrun_idr: 0,
+                total_budget_idr: 100,
+                ..pm_card_default(Some(Uuid::new_v4()), "Low")
+            },
+            ProjectHealthCard {
+                budget_utilization_pct: 150.0,
+                is_over_budget: true,
+                budget_overrun_idr: 50,
+                total_budget_idr: 100,
+                ..pm_card_default(Some(Uuid::new_v4()), "Overrun")
+            },
+            ProjectHealthCard {
+                budget_utilization_pct: 70.0,
+                is_over_budget: false,
+                budget_overrun_idr: 0,
+                total_budget_idr: 100,
+                ..pm_card_default(Some(Uuid::new_v4()), "Mid")
+            },
+            ProjectHealthCard {
+                budget_utilization_pct: 0.0,
+                is_over_budget: false,
+                budget_overrun_idr: 0,
+                total_budget_idr: 0,
+                ..pm_card_default(Some(Uuid::new_v4()), "Unconfigured")
+            },
+        ];
+        sort_pm_cards(&mut cards, PmSortMode::BudgetUtilization);
+        let names: Vec<_> = cards.iter().map(|c| c.project_name.as_str()).collect();
+        assert_eq!(
+            names,
+            vec!["Overrun", "Mid", "Low", "Unconfigured"],
+            "Budget Utilization sort must place over-budget first, unconfigured last"
+        );
+    }
+
+    #[test]
+    fn pm_sort_by_end_date_orders_soonest_first() {
+        let mut cards = vec![
+            ProjectHealthCard {
+                end_date: "2027-01-15".into(),
+                ..pm_card_default(Some(Uuid::new_v4()), "Late")
+            },
+            ProjectHealthCard {
+                end_date: "2026-06-01".into(),
+                ..pm_card_default(Some(Uuid::new_v4()), "Soon")
+            },
+            ProjectHealthCard {
+                end_date: "2026-12-31".into(),
+                ..pm_card_default(Some(Uuid::new_v4()), "Mid")
+            },
+        ];
+        sort_pm_cards(&mut cards, PmSortMode::EndDate);
+        let names: Vec<_> = cards.iter().map(|c| c.project_name.as_str()).collect();
+        assert_eq!(
+            names,
+            vec!["Soon", "Mid", "Late"],
+            "End date sort must place soonest end date first"
+        );
+    }
+
+    #[test]
+    fn pm_sort_uses_project_name_as_tiebreaker() {
+        let mut cards = vec![
+            ProjectHealthCard {
+                margin_pct: 10.0,
+                ..pm_card_default(Some(Uuid::new_v4()), "Zeta")
+            },
+            ProjectHealthCard {
+                margin_pct: 10.0,
+                ..pm_card_default(Some(Uuid::new_v4()), "Alpha")
+            },
+        ];
+        sort_pm_cards(&mut cards, PmSortMode::Margin);
+        assert_eq!(
+            cards
+                .iter()
+                .map(|c| c.project_name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["Alpha", "Zeta"],
+            "ties on margin must fall back to ascending project_name"
+        );
+    }
+
+    #[test]
+    fn pm_forecast_margin_change_produces_expected_key() {
+        let project_id = Uuid::new_v4();
+        let make = |forecast: f64| {
+            let mut resp = empty_response("project_manager");
+            resp.project_manager = Some(ProjectManagerDashboard {
+                active_projects: vec![ProjectHealthCard {
+                    forecast_margin_pct: forecast,
+                    ..pm_card_default(Some(project_id), "Atlas")
+                }],
+                margin_alerts: vec![],
+                warnings: vec![],
+            });
+            resp
+        };
+        let prev_map = dashboard_value_map(&make(25.0));
+        let next_map = dashboard_value_map(&make(8.0));
+        let changed = compute_changed_keys(&prev_map, &next_map);
+        let expected_key = format!("project_manager.project.{}.forecast_margin_pct", project_id);
+        assert!(
+            changed.contains(&expected_key),
+            "expected `{}` in {:?}",
+            expected_key,
+            changed
+        );
+    }
+
+    #[test]
+    fn pm_over_budget_transition_produces_expected_key() {
+        let project_id = Uuid::new_v4();
+        let make = |over: bool, overrun: i64, spent: i64, utilization: f64| {
+            let mut resp = empty_response("project_manager");
+            resp.project_manager = Some(ProjectManagerDashboard {
+                active_projects: vec![ProjectHealthCard {
+                    is_over_budget: over,
+                    budget_overrun_idr: overrun,
+                    budget_spent_idr: spent,
+                    budget_utilization_pct: utilization,
+                    health_status: if over {
+                        "critical".into()
+                    } else {
+                        "healthy".into()
+                    },
+                    ..pm_card_default(Some(project_id), "Atlas")
+                }],
+                margin_alerts: vec![],
+                warnings: vec![],
+            });
+            resp
+        };
+        let prev_map = dashboard_value_map(&make(false, 0, 30_000_000, 30.0));
+        let next_map = dashboard_value_map(&make(true, 5_000_000, 105_000_000, 105.0));
+        let changed = compute_changed_keys(&prev_map, &next_map);
+        let over_key = format!("project_manager.project.{}.is_over_budget", project_id);
+        let overrun_key = format!("project_manager.project.{}.budget_overrun_idr", project_id);
+        let health_key = format!("project_manager.project.{}.health_status", project_id);
+        assert!(
+            changed.contains(&over_key),
+            "expected `{}` in {:?}",
+            over_key,
+            changed
+        );
+        assert!(
+            changed.contains(&overrun_key),
+            "expected `{}` in {:?}",
+            overrun_key,
+            changed
+        );
+        assert!(
+            changed.contains(&health_key),
+            "expected `{}` in {:?}",
+            health_key,
+            changed
+        );
+    }
+
+    #[test]
+    fn pm_value_map_excludes_sensitive_keys_for_pm_section() {
+        let project_id = Uuid::new_v4();
+        let mut resp = empty_response("project_manager");
+        resp.project_manager = Some(ProjectManagerDashboard {
+            active_projects: vec![pm_card_default(Some(project_id), "Atlas")],
+            margin_alerts: vec![],
+            warnings: vec![],
+        });
+        let map = dashboard_value_map(&resp);
+        let serialized = format!("{:?}", map);
+        for forbidden in [
+            "encrypted_components",
+            "encrypted_daily_rate",
+            "ciphertext",
+            "key_version",
+            "encryption_algorithm",
+            "encryption_version",
+            "base_salary",
+            "daily_rate",
+        ] {
+            assert!(
+                !serialized.contains(forbidden),
+                "PM value map leaked sensitive token `{}` in {}",
+                forbidden,
+                serialized
+            );
+        }
+    }
+
+    // ── Story 6.3 expansion run 2 (Master Test Architect):
+    // visual-state helpers (badge/margin/forecast), pm_utilization_score
+    // invariants, remaining PM change-detection keys (health_status,
+    // projected_total_cost_idr, forecast_variance_from_target_pct,
+    // target_margin_pct, margin_alert_threshold_pct,
+    // forecast_has_revenue_signal), and sort_pm_cards edge cases.
+    // ─────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn budget_badge_class_returns_badge_negative_when_over_budget() {
+        // is_over_budget=true must always force negative styling, even when
+        // health_status is otherwise "healthy" (defensive: backend currently
+        // sets health_status=critical when over budget, but the UI helper
+        // must not depend on that coupling).
+        assert_eq!(budget_badge_class("healthy", true), "badge-negative");
+        assert_eq!(budget_badge_class("warning", true), "badge-negative");
+        assert_eq!(budget_badge_class("critical", true), "badge-negative");
+        assert_eq!(budget_badge_class("unconfigured", true), "badge-negative");
+    }
+
+    #[test]
+    fn budget_badge_class_maps_budget_status_tokens() {
+        assert_eq!(budget_badge_class("healthy", false), "badge-positive");
+        assert_eq!(budget_badge_class("warning", false), "badge-warning");
+        assert_eq!(budget_badge_class("critical", false), "badge-negative");
+        assert_eq!(budget_badge_class("unconfigured", false), "badge-neutral");
+        // Unknown severities must fall back to neutral, not silently render
+        // as positive/negative.
+        assert_eq!(budget_badge_class("garbage", false), "badge-neutral");
+    }
+
+    #[test]
+    fn budget_badge_label_returns_human_readable_labels() {
+        assert_eq!(budget_badge_label("healthy", true), "Over budget");
+        assert_eq!(budget_badge_label("healthy", false), "On track");
+        assert_eq!(budget_badge_label("warning", false), "Watch");
+        assert_eq!(budget_badge_label("critical", false), "At risk");
+        assert_eq!(budget_badge_label("unconfigured", false), "Unconfigured");
+        assert_eq!(budget_badge_label("anything-else", false), "Unconfigured");
+        assert_eq!(health_status_class("healthy"), "text-positive-default");
+        assert_eq!(health_status_class("warning"), "text-warning-default");
+        assert_eq!(health_status_class("critical"), "text-negative-default");
+        assert_eq!(health_status_class("unconfigured"), "text-huly-muted");
+        assert_eq!(health_status_label("healthy"), "Healthy");
+        assert_eq!(health_status_label("warning"), "Watch");
+        assert_eq!(health_status_label("critical"), "At risk");
+        assert_eq!(health_status_label("unconfigured"), "Unconfigured");
+    }
+
+    #[test]
+    fn margin_status_class_negative_when_margin_alert_present() {
+        // margin_alert_present must dominate other inputs.
+        let class = margin_status_class(40.0, 25.0, 5.0, true, false);
+        assert_eq!(class, "text-negative-default");
+    }
+
+    #[test]
+    fn margin_status_class_negative_when_below_target_beyond_threshold() {
+        // Target 30, threshold 5, actual 20 → gap of 10 > threshold → negative.
+        let class = margin_status_class(20.0, 30.0, 5.0, false, true);
+        assert_eq!(class, "text-negative-default");
+    }
+
+    #[test]
+    fn margin_status_class_warning_when_below_target_within_threshold() {
+        // Target 30, threshold 5, actual 27 → gap of 3 ≤ threshold → warning.
+        let class = margin_status_class(27.0, 30.0, 5.0, false, true);
+        assert_eq!(class, "text-warning-default");
+    }
+
+    #[test]
+    fn margin_status_class_positive_when_at_or_above_target() {
+        assert_eq!(
+            margin_status_class(30.0, 30.0, 5.0, false, true),
+            "text-positive-default"
+        );
+        assert_eq!(
+            margin_status_class(45.0, 30.0, 5.0, false, true),
+            "text-positive-default"
+        );
+        let class = margin_status_class(0.0, 30.0, 5.0, false, false);
+        assert_eq!(class, "text-huly-muted");
+    }
+
+    #[test]
+    fn forecast_status_class_muted_when_unavailable() {
+        // Forecast unavailable must visually deprioritize, regardless of
+        // variance noise from the placeholder card.
+        let class = forecast_status_class(-50.0, 5.0, true, true);
+        assert_eq!(class, "text-huly-muted");
+
+        let class = forecast_status_class(-50.0, 5.0, false, false);
+        assert_eq!(class, "text-huly-muted");
+    }
+
+    #[test]
+    fn forecast_status_class_negative_when_variance_below_threshold() {
+        // variance = -10, threshold = 5 → |variance| > threshold → negative.
+        let class = forecast_status_class(-10.0, 5.0, false, true);
+        assert_eq!(class, "text-negative-default");
+    }
+
+    #[test]
+    fn forecast_status_class_warning_when_variance_below_target_within_threshold() {
+        // variance = -3, threshold = 5 → still negative but not past threshold → warning.
+        let class = forecast_status_class(-3.0, 5.0, false, true);
+        assert_eq!(class, "text-warning-default");
+    }
+
+    #[test]
+    fn forecast_status_class_positive_when_variance_at_or_above_target() {
+        assert_eq!(
+            forecast_status_class(0.0, 5.0, false, true),
+            "text-positive-default"
+        );
+        assert_eq!(
+            forecast_status_class(8.0, 5.0, false, true),
+            "text-positive-default"
+        );
+    }
+
+    #[test]
+    fn pm_utilization_score_returns_sentinel_for_unconfigured_card() {
+        // total_budget_idr <= 0 must map to a sub-zero score so unconfigured
+        // cards sort to the bottom of the Budget Utilization mode.
+        let unconfigured = ProjectHealthCard {
+            total_budget_idr: 0,
+            budget_utilization_pct: 0.0,
+            is_over_budget: false,
+            budget_overrun_idr: 0,
+            ..pm_card_default(Some(Uuid::new_v4()), "Unconfigured")
+        };
+        assert_eq!(pm_utilization_score(&unconfigured), -1.0);
+    }
+
+    #[test]
+    fn pm_utilization_score_boosts_over_budget_card_above_in_budget_card_at_same_utilization() {
+        // Two cards at the same nominal utilization — the one flagged
+        // `is_over_budget` must rank strictly higher so the UI never hides a
+        // genuine overrun behind another card at the same %.
+        let in_budget = ProjectHealthCard {
+            total_budget_idr: 100,
+            budget_utilization_pct: 101.0,
+            is_over_budget: false,
+            budget_overrun_idr: 0,
+            ..pm_card_default(Some(Uuid::new_v4()), "InBudget")
+        };
+        let over_budget = ProjectHealthCard {
+            total_budget_idr: 100,
+            budget_utilization_pct: 101.0,
+            is_over_budget: true,
+            budget_overrun_idr: 1,
+            ..pm_card_default(Some(Uuid::new_v4()), "OverBudget")
+        };
+        assert!(
+            pm_utilization_score(&over_budget) > pm_utilization_score(&in_budget),
+            "over-budget card must outrank in-budget card at the same utilization"
+        );
+    }
+
+    #[test]
+    fn pm_health_status_change_produces_stable_key() {
+        // Polling tick where backend re-derives health_status from healthy →
+        // critical must surface as a stable change-detection key so the
+        // status flash binding fires.
+        let project_id = Uuid::new_v4();
+        let make = |status: &str| {
+            let mut resp = empty_response("project_manager");
+            resp.project_manager = Some(ProjectManagerDashboard {
+                active_projects: vec![ProjectHealthCard {
+                    health_status: status.into(),
+                    ..pm_card_default(Some(project_id), "Atlas")
+                }],
+                margin_alerts: vec![],
+                warnings: vec![],
+            });
+            resp
+        };
+        let prev_map = dashboard_value_map(&make("healthy"));
+        let next_map = dashboard_value_map(&make("critical"));
+        let changed = compute_changed_keys(&prev_map, &next_map);
+        let expected_key = format!("project_manager.project.{}.health_status", project_id);
+        assert!(
+            changed.contains(&expected_key),
+            "expected `{}` in {:?}",
+            expected_key,
+            changed
+        );
+    }
+
+    #[test]
+    fn pm_projected_total_cost_idr_change_produces_stable_key() {
+        let project_id = Uuid::new_v4();
+        let make = |projected: i64| {
+            let mut resp = empty_response("project_manager");
+            resp.project_manager = Some(ProjectManagerDashboard {
+                active_projects: vec![ProjectHealthCard {
+                    projected_total_cost_idr: projected,
+                    ..pm_card_default(Some(project_id), "Atlas")
+                }],
+                margin_alerts: vec![],
+                warnings: vec![],
+            });
+            resp
+        };
+        let prev_map = dashboard_value_map(&make(60_000_000));
+        let next_map = dashboard_value_map(&make(95_000_000));
+        let changed = compute_changed_keys(&prev_map, &next_map);
+        let expected_key = format!(
+            "project_manager.project.{}.projected_total_cost_idr",
+            project_id
+        );
+        assert!(
+            changed.contains(&expected_key),
+            "expected `{}` in {:?}",
+            expected_key,
+            changed
+        );
+    }
+
+    #[test]
+    fn pm_forecast_variance_from_target_pct_change_produces_stable_key() {
+        let project_id = Uuid::new_v4();
+        let make = |variance: f64, has_forecast_revenue: bool, target: f64, threshold: f64| {
+            let mut resp = empty_response("project_manager");
+            resp.project_manager = Some(ProjectManagerDashboard {
+                active_projects: vec![ProjectHealthCard {
+                    forecast_variance_from_target_pct: variance,
+                    forecast_has_revenue_signal: has_forecast_revenue,
+                    target_margin_pct: target,
+                    margin_alert_threshold_pct: threshold,
+                    ..pm_card_default(Some(project_id), "Atlas")
+                }],
+                margin_alerts: vec![],
+                warnings: vec![],
+            });
+            resp
+        };
+        let prev_map = dashboard_value_map(&make(0.0, true, 25.0, 5.0));
+        let next_map = dashboard_value_map(&make(-12.5, false, 30.0, 7.5));
+        let changed = compute_changed_keys(&prev_map, &next_map);
+        for field in [
+            "forecast_variance_from_target_pct",
+            "forecast_has_revenue_signal",
+            "target_margin_pct",
+            "margin_alert_threshold_pct",
+        ] {
+            let expected_key = format!("project_manager.project.{}.{}", project_id, field);
+            assert!(
+                changed.contains(&expected_key),
+                "expected `{}` in {:?}",
+                expected_key,
+                changed
+            );
+        }
+    }
+
+    #[test]
+    fn sort_pm_cards_handles_empty_slice_without_panic() {
+        // PM with zero active projects must still allow sort-mode toggling
+        // without panicking in any sort branch.
+        let mut empty: Vec<ProjectHealthCard> = Vec::new();
+        sort_pm_cards(&mut empty, PmSortMode::Margin);
+        sort_pm_cards(&mut empty, PmSortMode::BudgetUtilization);
+        sort_pm_cards(&mut empty, PmSortMode::EndDate);
+        assert!(empty.is_empty());
     }
 }

@@ -1388,3 +1388,546 @@ async fn admin_counts_exclude_non_active_projects(pool: PgPool) {
         count - baseline
     );
 }
+
+// ───────────────────────────────────────────────────────────────────────
+// Story 6.3 Project Health Dashboard expansion coverage.
+// ───────────────────────────────────────────────────────────────────────
+
+async fn set_project_budget_and_margin(
+    pool: &PgPool,
+    project_id: Uuid,
+    total_budget_idr: i64,
+    target_margin_pct: f64,
+    margin_alert_threshold_pct: f64,
+) {
+    sqlx::query(
+        "UPDATE projects
+         SET total_budget_idr = $1,
+             budget_hr_idr = $1,
+             target_margin_pct = $2,
+             margin_alert_threshold_pct = $3
+         WHERE id = $4",
+    )
+    .bind(total_budget_idr)
+    .bind(sqlx::types::BigDecimal::try_from(target_margin_pct).expect("target margin"))
+    .bind(sqlx::types::BigDecimal::try_from(margin_alert_threshold_pct).expect("alert threshold"))
+    .bind(project_id)
+    .execute(pool)
+    .await
+    .expect("project budget/margin updated");
+}
+
+async fn insert_project_expense(
+    pool: &PgPool,
+    project_id: Uuid,
+    user_id: Uuid,
+    category: &str,
+    amount_idr: i64,
+    description: &str,
+) {
+    sqlx::query(
+        "INSERT INTO project_expenses (project_id, category, description, amount_idr, expense_date, created_by)
+         VALUES ($1, $2, $3, $4, CURRENT_DATE, $5)",
+    )
+    .bind(project_id)
+    .bind(category)
+    .bind(description)
+    .bind(amount_idr)
+    .bind(user_id)
+    .execute(pool)
+    .await
+    .expect("project expense inserted");
+}
+
+// ── 6.3-INT-001 PM card surfaces new forecast + budget overrun fields ──
+#[sqlx::test(migrations = "../../migrations")]
+async fn project_manager_card_includes_forecast_and_overrun_fields(pool: PgPool) {
+    set_test_env();
+    let app = xynergy_backend::create_app(pool.clone());
+
+    let pm_email = test_email("pm-fields");
+    let pm_id = create_user_with_role(&pool, &pm_email, "project_manager").await;
+
+    let project_id = create_project_with_pm(&pool, "Healthy Project", pm_id).await;
+    set_project_budget_and_margin(&pool, project_id, 100_000_000, 30.0, 5.0).await;
+
+    let token = login_token(&app, &pm_email).await;
+    let (status, body) = get_dashboard(&app, Some(&token)).await;
+    assert_eq!(status, StatusCode::OK);
+
+    let projects = body["project_manager"]["active_projects"]
+        .as_array()
+        .expect("active_projects array");
+    assert!(!projects.is_empty(), "expected at least one PM card");
+
+    let card = &projects[0];
+    assert!(
+        card.get("budget_utilization_pct").is_some(),
+        "PM card must include budget_utilization_pct"
+    );
+    assert!(
+        card.get("is_over_budget").is_some(),
+        "PM card must include is_over_budget"
+    );
+    assert!(
+        card.get("budget_overrun_idr").is_some(),
+        "PM card must include budget_overrun_idr"
+    );
+    assert!(
+        card.get("forecast_margin_pct").is_some(),
+        "PM card must include forecast_margin_pct"
+    );
+    assert!(
+        card.get("projected_total_cost_idr").is_some(),
+        "PM card must include projected_total_cost_idr"
+    );
+    assert!(
+        card.get("forecast_variance_from_target_pct").is_some(),
+        "PM card must include forecast_variance_from_target_pct"
+    );
+    assert!(
+        card.get("health_status").is_some(),
+        "PM card must include health_status"
+    );
+    assert_eq!(
+        card["health_status"].as_str().unwrap_or(""),
+        "healthy",
+        "budgeted project with no revenue/spend signal must not be marked critical by placeholder forecast variance"
+    );
+}
+
+// ── 6.3-INT-002 Over-budget project surfaces is_over_budget + overrun + critical ──
+#[sqlx::test(migrations = "../../migrations")]
+async fn project_manager_card_marks_over_budget_critical(pool: PgPool) {
+    set_test_env();
+    let app = xynergy_backend::create_app(pool.clone());
+
+    let pm_email = test_email("pm-overrun");
+    let pm_id = create_user_with_role(&pool, &pm_email, "project_manager").await;
+
+    let project_id = create_project_with_pm(&pool, "Overrun Project", pm_id).await;
+    // Budget 10M, spend 25M via expenses → overrun = 15M.
+    set_project_budget_and_margin(&pool, project_id, 10_000_000, 30.0, 5.0).await;
+    insert_project_expense(&pool, project_id, pm_id, "hr", 25_000_000, "overrun hr").await;
+
+    let token = login_token(&app, &pm_email).await;
+    let (status, body) = get_dashboard(&app, Some(&token)).await;
+    assert_eq!(status, StatusCode::OK);
+
+    let projects = body["project_manager"]["active_projects"]
+        .as_array()
+        .expect("active_projects array");
+    let card = projects
+        .iter()
+        .find(|p| p["project_name"].as_str() == Some("Overrun Project"))
+        .expect("overrun project card present");
+
+    assert_eq!(
+        card["is_over_budget"].as_bool().unwrap_or(false),
+        true,
+        "overrun project must set is_over_budget = true"
+    );
+    let overrun = card["budget_overrun_idr"].as_i64().unwrap_or(0);
+    assert!(
+        overrun > 0,
+        "overrun project must report positive budget_overrun_idr, got {}",
+        overrun
+    );
+    assert_eq!(
+        card["budget_status"].as_str().unwrap_or(""),
+        "critical",
+        "overrun project budget_status must be 'critical'"
+    );
+    assert_eq!(
+        card["health_status"].as_str().unwrap_or(""),
+        "critical",
+        "overrun project health_status must be 'critical'"
+    );
+}
+
+// ── 6.3-INT-003 Below-target current margin still surfaces existing margin_alert ──
+#[sqlx::test(migrations = "../../migrations")]
+async fn project_manager_card_surfaces_margin_alert_when_below_target(pool: PgPool) {
+    set_test_env();
+    let app = xynergy_backend::create_app(pool.clone());
+
+    let pm_email = test_email("pm-margin-alert");
+    let pm_id = create_user_with_role(&pool, &pm_email, "project_manager").await;
+
+    let project_id = create_project_with_pm(&pool, "Margin Lag Project", pm_id).await;
+    // Target 50% margin, alert threshold 5%. Current revenue 0 won't trip the alert
+    // because the canonical service requires positive revenue. Add revenue and a
+    // disproportionately high cost so realised margin trails target by > threshold.
+    set_project_budget_and_margin(&pool, project_id, 100_000_000, 50.0, 5.0).await;
+    insert_project_revenue_for_year(&pool, project_id, 100_000_000).await;
+    insert_project_expense(&pool, project_id, pm_id, "hr", 80_000_000, "high cost").await;
+
+    let token = login_token(&app, &pm_email).await;
+    let (status, body) = get_dashboard(&app, Some(&token)).await;
+    assert_eq!(status, StatusCode::OK);
+
+    let projects = body["project_manager"]["active_projects"]
+        .as_array()
+        .expect("active_projects array");
+    let card = projects
+        .iter()
+        .find(|p| p["project_name"].as_str() == Some("Margin Lag Project"))
+        .expect("margin lag project card present");
+
+    let margin_alert = card["margin_alert"].as_str();
+    assert!(
+        margin_alert.is_some(),
+        "expected margin_alert to be set when margin trails target by > alert threshold, got null"
+    );
+    let alerts = body["project_manager"]["margin_alerts"]
+        .as_array()
+        .expect("margin_alerts array");
+    assert!(
+        !alerts.is_empty(),
+        "expected margin_alerts to include the lagging project"
+    );
+}
+
+// ── 6.3-INT-004 Forecast below target drives warning/critical health ──
+#[sqlx::test(migrations = "../../migrations")]
+async fn project_manager_card_forecast_below_target_drives_critical_health(pool: PgPool) {
+    set_test_env();
+    let app = xynergy_backend::create_app(pool.clone());
+
+    let pm_email = test_email("pm-forecast-critical");
+    let pm_id = create_user_with_role(&pool, &pm_email, "project_manager").await;
+
+    let project_id = create_project_with_pm(&pool, "Forecast Risk Project", pm_id).await;
+    set_project_budget_and_margin(&pool, project_id, 500_000_000, 30.0, 5.0).await;
+    insert_project_revenue_for_year(&pool, project_id, 100_000_000).await;
+    // Current spend is budget-healthy and current margin is well above target,
+    // but burn-rate projection over the remaining project timeline drives the
+    // forecast margin below target by more than the alert threshold.
+    insert_project_expense(&pool, project_id, pm_id, "hr", 1_000_000, "early burn").await;
+
+    let token = login_token(&app, &pm_email).await;
+    let (status, body) = get_dashboard(&app, Some(&token)).await;
+    assert_eq!(status, StatusCode::OK);
+
+    let projects = body["project_manager"]["active_projects"]
+        .as_array()
+        .expect("active_projects array");
+    let card = projects
+        .iter()
+        .find(|p| p["project_name"].as_str() == Some("Forecast Risk Project"))
+        .expect("forecast risk project card present");
+
+    assert_eq!(
+        card["budget_status"].as_str().unwrap_or(""),
+        "healthy",
+        "test setup should keep budget status healthy so forecast drives health"
+    );
+    assert!(
+        card["margin_alert"].is_null(),
+        "test setup should avoid current-margin alert so forecast drives health"
+    );
+    assert_eq!(
+        card["forecast_unavailable"].as_bool().unwrap_or(true),
+        false,
+        "forecast must be available for forecast health coverage"
+    );
+    assert_eq!(
+        card["forecast_has_revenue_signal"]
+            .as_bool()
+            .unwrap_or(false),
+        true,
+        "forecast health must use a real forecast revenue signal"
+    );
+    let variance = card["forecast_variance_from_target_pct"]
+        .as_f64()
+        .unwrap_or(0.0);
+    assert!(
+        variance < -5.0,
+        "forecast variance must trail target beyond threshold, got {}",
+        variance
+    );
+    assert_eq!(
+        card["health_status"].as_str().unwrap_or(""),
+        "critical",
+        "below-target forecast variance beyond threshold must drive critical health"
+    );
+}
+
+// ── 6.3-INT-005 PM card still bounded to PM_ACTIVE_PROJECT_LIMIT after forecast wiring ──
+#[sqlx::test(migrations = "../../migrations")]
+async fn project_manager_active_projects_remain_bounded_after_forecast_wiring(pool: PgPool) {
+    set_test_env();
+    let app = xynergy_backend::create_app(pool.clone());
+
+    let pm_email = test_email("pm-forecast-bound");
+    let pm_id = create_user_with_role(&pool, &pm_email, "project_manager").await;
+
+    for i in 0..15 {
+        create_project_with_pm(&pool, &format!("Forecast Project {:02}", i), pm_id).await;
+    }
+
+    let token = login_token(&app, &pm_email).await;
+    let (status, body) = get_dashboard(&app, Some(&token)).await;
+    assert_eq!(status, StatusCode::OK);
+
+    let projects = body["project_manager"]["active_projects"]
+        .as_array()
+        .expect("active_projects array");
+    assert_eq!(
+        projects.len(),
+        10,
+        "PM_ACTIVE_PROJECT_LIMIT=10 must continue to cap PM cards after forecast wiring"
+    );
+}
+
+// ── 6.3-INT-006 PM cards remain scoped to owned active non-ended projects ──
+#[sqlx::test(migrations = "../../migrations")]
+async fn project_manager_card_scope_unchanged_by_story_6_3(pool: PgPool) {
+    set_test_env();
+    let app = xynergy_backend::create_app(pool.clone());
+
+    let pm_email = test_email("pm-scope");
+    let pm_id = create_user_with_role(&pool, &pm_email, "project_manager").await;
+    let other_pm_id =
+        create_user_with_role(&pool, &test_email("pm-scope-other"), "project_manager").await;
+
+    let _owned = create_project_with_pm(&pool, "Owned Active", pm_id).await;
+    let _not_owned = create_project_with_pm(&pool, "Not Owned", other_pm_id).await;
+    let _completed_owned =
+        create_project_with_status(&pool, "Completed Owned", pm_id, "Completed").await;
+    let _ended_owned_active =
+        create_project_with_status_and_end_offset(&pool, "Ended Owned Active", pm_id, "Active", -5)
+            .await;
+
+    let token = login_token(&app, &pm_email).await;
+    let (status, body) = get_dashboard(&app, Some(&token)).await;
+    assert_eq!(status, StatusCode::OK);
+
+    let projects = body["project_manager"]["active_projects"]
+        .as_array()
+        .expect("active_projects array");
+    let names: Vec<&str> = projects
+        .iter()
+        .map(|p| p["project_name"].as_str().unwrap_or(""))
+        .collect();
+    assert!(names.contains(&"Owned Active"));
+    for forbidden in ["Not Owned", "Completed Owned", "Ended Owned Active"] {
+        assert!(
+            !names.contains(&forbidden),
+            "PM card scope must not include `{}`",
+            forbidden
+        );
+    }
+}
+
+async fn insert_project_revenue_for_year(pool: &PgPool, project_id: Uuid, total_amount_idr: i64) {
+    use chrono::Datelike as _;
+    let now = chrono::Utc::now().date_naive();
+    let revenue_month = chrono::NaiveDate::from_ymd_opt(now.year(), now.month(), 1)
+        .expect("first of current month");
+    sqlx::query(
+        "INSERT INTO project_revenues (project_id, revenue_month, amount_idr,
+                                       source_type, entry_date)
+         VALUES ($1, $2, $3, 'manual', CURRENT_DATE)
+         ON CONFLICT (project_id, revenue_month)
+         DO UPDATE SET amount_idr = EXCLUDED.amount_idr",
+    )
+    .bind(project_id)
+    .bind(revenue_month)
+    .bind(total_amount_idr)
+    .execute(pool)
+    .await
+    .expect("project revenue inserted");
+}
+
+// ───────────────────────────────────────────────────────────────────────
+// Story 6.3 expansion run 2 (Master Test Architect): branch coverage for
+// budget_status thresholds (`healthy`/`warning`/`unconfigured`) and the
+// `health_status="unconfigured"` derivation. These complement the existing
+// 6 Story 6.3 INT tests that already cover field presence, over-budget
+// critical, margin_alert, forecast-driven health, the PM_ACTIVE_PROJECT_LIMIT
+// bound, and scope.
+// ───────────────────────────────────────────────────────────────────────
+
+// ── 6.3-INT-007 No budget configured ⇒ budget_status='unconfigured' ──
+#[sqlx::test(migrations = "../../migrations")]
+async fn project_manager_card_unconfigured_budget_status_when_no_budget(pool: PgPool) {
+    set_test_env();
+    let app = xynergy_backend::create_app(pool.clone());
+
+    let pm_email = test_email("pm-unconfigured");
+    let pm_id = create_user_with_role(&pool, &pm_email, "project_manager").await;
+
+    // Leave projects.total_budget_idr at its zero default. The card must
+    // surface budget_status="unconfigured" without flashing healthy/critical.
+    let _project_id = create_project_with_pm(&pool, "Unconfigured Project", pm_id).await;
+
+    let token = login_token(&app, &pm_email).await;
+    let (status, body) = get_dashboard(&app, Some(&token)).await;
+    assert_eq!(status, StatusCode::OK);
+
+    let projects = body["project_manager"]["active_projects"]
+        .as_array()
+        .expect("active_projects array");
+    let card = projects
+        .iter()
+        .find(|p| p["project_name"].as_str() == Some("Unconfigured Project"))
+        .expect("unconfigured project card present");
+
+    assert_eq!(
+        card["budget_status"].as_str().unwrap_or(""),
+        "unconfigured",
+        "project with no budget must surface budget_status='unconfigured'"
+    );
+    assert_eq!(
+        card["is_over_budget"].as_bool().unwrap_or(true),
+        false,
+        "no budget must not be reported as over budget"
+    );
+    assert_eq!(
+        card["budget_overrun_idr"].as_i64().unwrap_or(-1),
+        0,
+        "no budget must not report a positive overrun"
+    );
+    let utilization = card["budget_utilization_pct"].as_f64().unwrap_or(-1.0);
+    assert!(
+        utilization.abs() < 0.001,
+        "no budget must surface budget_utilization_pct=0.0, got {}",
+        utilization
+    );
+}
+
+// ── 6.3-INT-008 50–80% spend ⇒ budget_status='warning' ──
+#[sqlx::test(migrations = "../../migrations")]
+async fn project_manager_card_warning_budget_status_between_50_and_80_pct(pool: PgPool) {
+    set_test_env();
+    let app = xynergy_backend::create_app(pool.clone());
+
+    let pm_email = test_email("pm-budget-warning");
+    let pm_id = create_user_with_role(&pool, &pm_email, "project_manager").await;
+
+    let project_id = create_project_with_pm(&pool, "Warning Project", pm_id).await;
+    set_project_budget_and_margin(&pool, project_id, 100_000_000, 30.0, 5.0).await;
+    // 65% spend → between 50% and 80% → "warning" branch.
+    insert_project_expense(&pool, project_id, pm_id, "hr", 65_000_000, "ramp-up cost").await;
+
+    let token = login_token(&app, &pm_email).await;
+    let (status, body) = get_dashboard(&app, Some(&token)).await;
+    assert_eq!(status, StatusCode::OK);
+
+    let projects = body["project_manager"]["active_projects"]
+        .as_array()
+        .expect("active_projects array");
+    let card = projects
+        .iter()
+        .find(|p| p["project_name"].as_str() == Some("Warning Project"))
+        .expect("warning project card present");
+
+    assert_eq!(
+        card["budget_status"].as_str().unwrap_or(""),
+        "warning",
+        "50–80% utilization must produce budget_status='warning'"
+    );
+    assert_eq!(
+        card["health_status"].as_str().unwrap_or(""),
+        "warning",
+        "warning budget utilization must exercise the health_status warning branch"
+    );
+    assert_eq!(
+        card["is_over_budget"].as_bool().unwrap_or(true),
+        false,
+        "warning utilization must not flag is_over_budget=true"
+    );
+    let utilization = card["budget_utilization_pct"].as_f64().unwrap_or(0.0);
+    assert!(
+        (50.0..80.0).contains(&utilization),
+        "budget_utilization_pct must reflect 50–80% range, got {}",
+        utilization
+    );
+}
+
+// ── 6.3-INT-009 <50% spend ⇒ budget_status='healthy' + utilization value ──
+#[sqlx::test(migrations = "../../migrations")]
+async fn project_manager_card_healthy_budget_status_below_50_pct(pool: PgPool) {
+    set_test_env();
+    let app = xynergy_backend::create_app(pool.clone());
+
+    let pm_email = test_email("pm-budget-healthy");
+    let pm_id = create_user_with_role(&pool, &pm_email, "project_manager").await;
+
+    let project_id = create_project_with_pm(&pool, "Healthy Spend Project", pm_id).await;
+    set_project_budget_and_margin(&pool, project_id, 100_000_000, 30.0, 5.0).await;
+    // 30% spend → "healthy" branch.
+    insert_project_expense(&pool, project_id, pm_id, "hr", 30_000_000, "early stage").await;
+
+    let token = login_token(&app, &pm_email).await;
+    let (status, body) = get_dashboard(&app, Some(&token)).await;
+    assert_eq!(status, StatusCode::OK);
+
+    let projects = body["project_manager"]["active_projects"]
+        .as_array()
+        .expect("active_projects array");
+    let card = projects
+        .iter()
+        .find(|p| p["project_name"].as_str() == Some("Healthy Spend Project"))
+        .expect("healthy spend project card present");
+
+    assert_eq!(
+        card["budget_status"].as_str().unwrap_or(""),
+        "healthy",
+        "<50% utilization must produce budget_status='healthy'"
+    );
+    assert_eq!(
+        card["health_status"].as_str().unwrap_or(""),
+        "healthy",
+        "healthy budget utilization without revenue signal must stay healthy, not critical"
+    );
+    let utilization = card["budget_utilization_pct"].as_f64().unwrap_or(0.0);
+    assert!(
+        (29.0..31.0).contains(&utilization),
+        "30% spend must surface budget_utilization_pct≈30, got {}",
+        utilization
+    );
+    assert_eq!(
+        card["budget_overrun_idr"].as_i64().unwrap_or(-1),
+        0,
+        "healthy spend must report zero overrun"
+    );
+}
+
+// ── 6.3-INT-010 health_status='unconfigured' when no budget and no alert ──
+#[sqlx::test(migrations = "../../migrations")]
+async fn project_manager_card_health_status_unconfigured_when_no_budget_and_no_alert(pool: PgPool) {
+    set_test_env();
+    let app = xynergy_backend::create_app(pool.clone());
+
+    let pm_email = test_email("pm-health-unconfigured");
+    let pm_id = create_user_with_role(&pool, &pm_email, "project_manager").await;
+
+    // No budget, no revenue → no margin alert is possible. The PM card
+    // health_status derivation must return "unconfigured", not "healthy",
+    // so the UI shows neutral styling rather than green confidence.
+    let _project_id = create_project_with_pm(&pool, "Empty State Project", pm_id).await;
+
+    let token = login_token(&app, &pm_email).await;
+    let (status, body) = get_dashboard(&app, Some(&token)).await;
+    assert_eq!(status, StatusCode::OK);
+
+    let projects = body["project_manager"]["active_projects"]
+        .as_array()
+        .expect("active_projects array");
+    let card = projects
+        .iter()
+        .find(|p| p["project_name"].as_str() == Some("Empty State Project"))
+        .expect("empty state project card present");
+
+    assert_eq!(
+        card["health_status"].as_str().unwrap_or(""),
+        "unconfigured",
+        "no-budget + no-alert card must surface health_status='unconfigured'"
+    );
+    assert!(
+        card["margin_alert"].is_null(),
+        "no-revenue card must not trigger a margin_alert"
+    );
+}

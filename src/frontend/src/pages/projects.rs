@@ -10,6 +10,7 @@ use leptos::either::{Either, EitherOf3};
 use leptos::html;
 use leptos::prelude::*;
 use leptos_router::hooks::*;
+use leptos_router::NavigateOptions;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -371,6 +372,40 @@ pub fn Projects() -> impl IntoView {
     let (pnl_project_id, set_pnl_project_id) = signal(Option::<Uuid>::None);
     let (pnl_year, set_pnl_year) = signal(chrono::Utc::now().year());
     let (pnl_reload_nonce, set_pnl_reload_nonce) = signal(0u64);
+
+    // Deep-link from PM dashboard cards: `/projects?view=pnl&project_id=<uuid>`
+    // opens the P&L panel for that project once on mount. The Projects page
+    // must still work normally at `/projects` with no query params.
+    {
+        let query_params = use_query_map();
+        let deep_link_applied_project = StoredValue::new(Option::<Uuid>::None);
+        Effect::new(move |_| {
+            let (view_param, project_id_param) = query_params.with(|params| {
+                (
+                    params.get("view").unwrap_or_default(),
+                    params.get("project_id").unwrap_or_default(),
+                )
+            });
+
+            if view_param != "pnl" {
+                set_pnl_project_id.set(None);
+                deep_link_applied_project.set_value(None);
+                return;
+            }
+
+            let Ok(parsed_id) = Uuid::parse_str(&project_id_param) else {
+                set_pnl_project_id.set(None);
+                deep_link_applied_project.set_value(None);
+                return;
+            };
+
+            if deep_link_applied_project.get_value() != Some(parsed_id) {
+                set_pnl_project_id.set(Some(parsed_id));
+                set_pnl_year.set(chrono::Utc::now().year());
+                deep_link_applied_project.set_value(Some(parsed_id));
+            }
+        });
+    }
     let pnl_target_ref: NodeRef<html::Input> = NodeRef::new();
     let pnl_alert_ref: NodeRef<html::Input> = NodeRef::new();
     let (pnl_hover_month, set_pnl_hover_month) = signal(Option::<u32>::None);
@@ -392,16 +427,18 @@ pub fn Projects() -> impl IntoView {
         }
     });
 
+    let forecast_poll_interval = StoredValue::new_local(Option::<Interval>::None);
     Effect::new(move |_| {
         if show_forecast.get() && pnl_project_id.get().is_some() {
             let interval = Interval::new(30_000, move || {
                 set_pnl_reload_nonce.update(|value| *value += 1);
             });
-            // Store interval to prevent it from being dropped immediately.
-            // Using StoredValue::new_local since Interval is !Send+!Sync on WASM.
-            let _keep = StoredValue::new_local(Some(interval));
+            forecast_poll_interval.set_value(Some(interval));
+        } else {
+            forecast_poll_interval.set_value(None);
         }
     });
+    on_cleanup(move || forecast_poll_interval.set_value(None));
 
     let forecast_data = Signal::derive(move || {
         forecast_resource
@@ -1328,12 +1365,7 @@ pub fn Projects() -> impl IntoView {
                                                         >
                                                             "Forecast"
                                                         </button>
-                                                        <button
-                                                            class="text-huly-ghost hover:text-huly-content"
-                                                            on:click=move |_| set_pnl_project_id.set(None)
-                                                        >
-                                                            "Close"
-                                                        </button>
+                                                        <ClosePnlPanelButton set_pnl_project_id=set_pnl_project_id />
                                                     </div>
                                                 </div>
 
@@ -1779,6 +1811,26 @@ pub fn Projects() -> impl IntoView {
             </div>
 
         </div>
+    }
+}
+
+#[component]
+fn ClosePnlPanelButton(set_pnl_project_id: WriteSignal<Option<Uuid>>) -> impl IntoView {
+    let navigate = use_navigate();
+
+    view! {
+        <button
+            class="text-huly-ghost hover:text-huly-content"
+            on:click=move |_| {
+                set_pnl_project_id.set(None);
+                navigate("/projects", NavigateOptions {
+                    replace: true,
+                    ..Default::default()
+                });
+            }
+        >
+            "Close"
+        </button>
     }
 }
 

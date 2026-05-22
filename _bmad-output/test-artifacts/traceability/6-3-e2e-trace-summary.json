@@ -1,0 +1,247 @@
+{
+  "schema_version": "0.1.0",
+  "snapshot_at": "2026-05-22T00:00:00Z",
+  "repo": "xynergy",
+  "collection_mode": "contract_static_plus_local_execution_plus_manual_browser",
+  "collection_status": "COLLECTED",
+  "inventory_basis": "acceptance_criteria",
+  "gate_basis": "priority_thresholds_plus_required_verification",
+  "target": {
+    "type": "story",
+    "id": "6.3",
+    "label": "Project Health Dashboard"
+  },
+  "decision_mode": "automated_plus_manual_browser",
+  "evaluator": "Putu",
+  "confidence": "high_for_story_gate_with_manual_browser",
+  "gate_status": "PASS_WITH_ADVISORY",
+  "gate_criteria": {
+    "p0_coverage_required": "100%",
+    "p0_static_logic_coverage_actual": "100%",
+    "p0_runtime_verification_status": "completed",
+    "p0_status": "PASS_WITH_ADVISORY",
+    "p1_coverage_target": "90%",
+    "p1_coverage_minimum": "80%",
+    "p1_static_logic_coverage_actual": "100%",
+    "p1_runtime_verification_status": "completed",
+    "p1_status": "PASS_WITH_ADVISORY",
+    "overall_coverage_minimum": "80%",
+    "overall_static_logic_coverage_actual": "100%",
+    "overall_status": "PASS_WITH_ADVISORY",
+    "frontend_unit_execution_status": "executed_after_review_patch (51/51)",
+    "backend_integration_execution_status": "executed_live_database (37/37)",
+    "forecast_regression_status": "executed_live_database (project_pl_forecast_tests 11/11; project_pl_tests 10/10)",
+    "manual_browser_status": "completed",
+    "wasm_compile_status": "clean"
+  },
+  "coverage": {
+    "inventory": {
+      "static_logic_covered": 4,
+      "total_acceptance_criteria": 4,
+      "static_logic_pct": 100,
+      "runtime_verified": 4,
+      "runtime_pending_or_blocked": 0
+    },
+    "priority_breakdown": {
+      "P0": { "total": 2, "static_logic_covered": 2, "runtime_verified": 2 },
+      "P1": { "total": 2, "static_logic_covered": 2, "runtime_verified": 2 },
+      "P2": { "total": 0, "static_logic_covered": 0, "runtime_verified": 0 },
+      "P3": { "total": 0, "static_logic_covered": 0, "runtime_verified": 0 }
+    },
+    "by_level": {
+      "e2e":       { "tests": 0,  "criteria_covered": 0, "execution": "no_repeatable_harness" },
+      "api":       { "tests": 10, "criteria_covered": 3, "execution": "passed_live_database" },
+      "component": { "tests": 0,  "criteria_covered": 0, "execution": "no_component_harness" },
+      "unit":      { "tests": 24, "criteria_covered": 4, "execution": "passed_native" },
+      "manual":    { "checks": 8, "criteria_covered": 4, "execution": "passed_browser" }
+    }
+  },
+  "tests": {
+    "files": 2,
+    "cases": 34,
+    "skipped_cases": 0,
+    "fixme_cases": 0,
+    "pending_verification_items": 0
+  },
+  "risk_summary": {
+    "critical_open": 0,
+    "high_open_verification": 0,
+    "medium_advisory": 3,
+    "low_open": 0
+  },
+  "heuristics": {
+    "endpoint_gaps": "none_live_dashboard_tests_passed",
+    "auth_negative_path_status": "present_via_story_6_1_regression_and_live_dashboard_tests",
+    "error_path_status": "partial_forecast_service_failure_seam_advisory",
+    "data_isolation_status": "passed_live_sqlx_tests",
+    "list_bound_status": "passed_live_sqlx_tests",
+    "sensitive_field_guard_status": "present",
+    "ui_journey_status": "manual_browser_passed_no_repeatable_harness",
+    "ui_state_status": "manual_browser_passed_no_component_harness",
+    "sort_helper_status": "present_unit_passed_manual_browser_passed",
+    "visual_state_helper_status": "present_unit_passed_manual_browser_passed",
+    "deep_link_routing_status": "manual_browser_passed"
+  },
+  "manual_browser_verification": {
+    "status": "completed",
+    "verified_at": "2026-05-22",
+    "environment": "local Postgres + xynergy-server at http://127.0.0.1:3000 + in-app browser",
+    "fixture": "pm.verify@xynergy.com local PM verification user",
+    "coverage": [
+      "Project Manager dashboard renders project health cards with current + forecast margin",
+      "Over-budget project shows red status and accessible warning label",
+      "Below-target margin shows warning/negative state and margin alert text",
+      "Sort buttons (Margin / Budget Utilization / End Date) reorder PM cards correctly and expose aria-pressed selected state",
+      "Click PM card View P&L action opens /projects?view=pnl&project_id=<uuid> P&L panel",
+      "Closing the P&L panel navigates back to /projects and clears stale query params",
+      "Manual Refresh updates the dashboard timestamp",
+      "30-second polling picks up a changed PM card value and applies dashboard-change-flash"
+    ]
+  },
+  "ac_to_tests": [
+    {
+      "ac": 1,
+      "title": "PM cards show Name, Budget Status (green/yellow/red), Current Margin, Forecast Margin",
+      "priority": "P0",
+      "coverage": "COVERED_WITH_MANUAL_BROWSER",
+      "tests": [
+        "project_manager_card_includes_forecast_and_overrun_fields",
+        "project_manager_card_marks_over_budget_critical",
+        "project_manager_card_forecast_below_target_drives_critical_health",
+        "project_manager_card_unconfigured_budget_status_when_no_budget",
+        "project_manager_card_warning_budget_status_between_50_and_80_pct",
+        "project_manager_card_healthy_budget_status_below_50_pct",
+        "project_manager_card_health_status_unconfigured_when_no_budget_and_no_alert",
+        "budget_badge_class_returns_badge_negative_when_over_budget",
+        "budget_badge_class_maps_budget_status_tokens",
+        "budget_badge_label_returns_human_readable_labels",
+        "manual_browser_pm_card_render"
+      ]
+    },
+    {
+      "ac": 2,
+      "title": "Over-budget project shows red status indicator + warning icon",
+      "priority": "P0",
+      "coverage": "COVERED_WITH_MANUAL_BROWSER",
+      "tests": [
+        "project_manager_card_marks_over_budget_critical",
+        "pm_over_budget_transition_produces_expected_key",
+        "budget_badge_class_returns_badge_negative_when_over_budget",
+        "budget_badge_label_returns_human_readable_labels",
+        "manual_browser_over_budget_warning_label"
+      ]
+    },
+    {
+      "ac": 3,
+      "title": "Below-target margin shows orange/red display + clickable P&L deep-link",
+      "priority": "P1",
+      "coverage": "COVERED_WITH_MANUAL_BROWSER",
+      "tests": [
+        "project_manager_card_surfaces_margin_alert_when_below_target",
+        "project_manager_card_forecast_below_target_drives_critical_health",
+        "pm_forecast_margin_change_produces_expected_key",
+        "margin_status_class_negative_when_margin_alert_present",
+        "margin_status_class_negative_when_below_target_beyond_threshold",
+        "margin_status_class_warning_when_below_target_within_threshold",
+        "margin_status_class_positive_when_at_or_above_target",
+        "forecast_status_class_muted_when_unavailable",
+        "forecast_status_class_negative_when_variance_below_threshold",
+        "forecast_status_class_warning_when_variance_below_target_within_threshold",
+        "forecast_status_class_positive_when_variance_at_or_above_target",
+        "manual_browser_pl_deep_link"
+      ]
+    },
+    {
+      "ac": 4,
+      "title": "Sort PM cards by Margin / Budget Utilization / End Date",
+      "priority": "P1",
+      "coverage": "COVERED_WITH_MANUAL_BROWSER",
+      "tests": [
+        "pm_sort_by_margin_orders_lowest_first",
+        "pm_sort_by_budget_utilization_orders_over_budget_first",
+        "pm_sort_by_end_date_orders_soonest_first",
+        "pm_sort_uses_project_name_as_tiebreaker",
+        "pm_utilization_score_returns_sentinel_for_unconfigured_card",
+        "pm_utilization_score_boosts_over_budget_card_above_in_budget_card_at_same_utilization",
+        "sort_pm_cards_handles_empty_slice_without_panic",
+        "manual_browser_sort_controls"
+      ]
+    }
+  ],
+  "supporting_tests": {
+    "regression_pm_scope": [
+      "project_manager_active_projects_remain_bounded_after_forecast_wiring",
+      "project_manager_card_scope_unchanged_by_story_6_3"
+    ],
+    "regression_change_detection": [
+      "pm_value_map_excludes_sensitive_keys_for_pm_section",
+      "pm_health_status_change_produces_stable_key",
+      "pm_projected_total_cost_idr_change_produces_stable_key",
+      "pm_forecast_variance_from_target_pct_change_produces_stable_key"
+    ],
+    "regression_auth_security_inherited_from_6_1": [
+      "unauthenticated_dashboard_returns_401",
+      "invalid_bearer_token_returns_401",
+      "unsupported_role_returns_403",
+      "dept_head_without_department_returns_403",
+      "project_manager_only_sees_owned_projects",
+      "project_manager_excludes_non_active_projects",
+      "project_manager_active_projects_bounded_to_ten"
+    ]
+  },
+  "non_ac_regression": {
+    "story_scoped": [],
+    "compiled_suites": {
+      "dashboard_tests_backend": 37,
+      "frontend_dashboard_unit_tests": 51,
+      "project_pl_forecast_tests": 11,
+      "project_pl_tests": 10
+    },
+    "executed_suites": {
+      "dashboard_tests_backend": 37,
+      "frontend_dashboard_unit_tests": 51,
+      "project_pl_forecast_tests": 11,
+      "project_pl_tests": 10
+    },
+    "failed_setup_suites": {}
+  },
+  "totals": {
+    "story_scoped_tests": 34,
+    "regression_tests": 75,
+    "total_tests_considered": 109
+  },
+  "blockers": [],
+  "advisory_gaps": [
+    "No automated DOM/router coverage for PM card warning icon, sort button accessibility, changed-value flash, or P&L deep-link click path.",
+    "Backend forecast-service failure degradation is not exercised deterministically because no test seam injects an error from get_project_pl_forecast.",
+    "No Leptos component test runner, Playwright/Cypress harness, or wasm-bindgen-test harness exists in the repo."
+  ],
+  "oracle": {
+    "resolution_mode": "formal_requirements",
+    "confidence": "high_for_story_gate_with_manual_browser",
+    "sources": [
+      "_bmad-output/implementation-artifacts/6-3-project-health-dashboard.md",
+      "_bmad-output/planning-artifacts/epics.md",
+      "_bmad-output/planning-artifacts/prd.md",
+      "_bmad-output/planning-artifacts/ux-design-specification.md",
+      "_bmad-output/test-artifacts/automation-summary.md"
+    ],
+    "external_pointer_status": "not_used",
+    "synthetic": false
+  },
+  "recommendations": [
+    {
+      "priority": "MEDIUM",
+      "action": "Introduce a frontend test harness (Playwright + cargo-leptos serve, or wasm-bindgen-test) so PM deep-link click flow, sort-control accessibility, and CSS flash can be automated.",
+      "requirements": ["AC#3", "AC#4"]
+    },
+    {
+      "priority": "MEDIUM",
+      "action": "Add a test seam for forecast-service failure so inline zeroed forecast fields plus the bounded per-card warning can be deterministically exercised.",
+      "requirements": ["AC#1", "AC#3"]
+    }
+  ],
+  "links": {
+    "trace_report_path": "_bmad-output/test-artifacts/traceability/6-3-project-health-dashboard-traceability.md"
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "schema_version": "0.1.0",
+  "evaluated_at": "2026-05-22T00:00:00Z",
+  "repo": "xynergy",
+  "target": {
+    "type": "story",
+    "id": "6.3",
+    "label": "Project Health Dashboard"
+  },
+  "collection_status": "COLLECTED",
+  "gate_basis": "priority_thresholds_plus_required_verification",
+  "gate_status": "PASS_WITH_ADVISORY",
+  "rationale": "PASS_WITH_ADVISORY: static mapping, frontend native unit tests, frontend WASM compile, backend lib tests, live backend dashboard_tests, forecast/P&L regression suites, and manual browser verification are green. Remaining advisory gaps are lack of repeatable browser/component automation and no deterministic forecast-service error injection seam.",
+  "p0_status": "PASS_WITH_ADVISORY",
+  "p1_status": "PASS_WITH_ADVISORY",
+  "overall_status": "PASS_WITH_ADVISORY",
+  "manual_browser_verification_status": "completed",
+  "backend_integration_live_execution_status": "passed_37_of_37",
+  "forecast_regression_status": "passed_live_database",
+  "critical_open": 0,
+  "open_verification_gaps": [],
+  "verified_green": [
+    "SQLX_OFFLINE=true cargo test -p xynergy-frontend --lib (51/51 passed)",
+    "SQLX_OFFLINE=true cargo check -p xynergy-frontend --target wasm32-unknown-unknown",
+    "SQLX_OFFLINE=true cargo test -p xynergy-backend --lib (60/60 passed)",
+    "SQLX_OFFLINE=true cargo test -p xynergy-backend --test dashboard_tests --no-run",
+    "DATABASE_URL=postgres://xynergy:xynergy@localhost:5432/xynergy cargo test -p xynergy-backend --test dashboard_tests (37/37 passed)",
+    "DATABASE_URL=postgres://xynergy:xynergy@localhost:5432/xynergy cargo test -p xynergy-backend --test project_pl_forecast_tests (11/11 passed)",
+    "DATABASE_URL=postgres://xynergy:xynergy@localhost:5432/xynergy cargo test -p xynergy-backend --test project_pl_tests (10/10 passed)",
+    "Manual browser verification completed on local xynergy-server: PM cards, over-budget warning label, sort controls, P&L deep-link, close-query cleanup, manual Refresh, and polling flash"
+  ],
+  "advisory_gaps": [
+    "No repeatable DOM/router automation exists for PM card warning icon, sort button accessibility, changed-value flash, or P&L deep-link click path.",
+    "Backend forecast-service failure degradation is not exercised deterministically because no test seam injects an error from get_project_pl_forecast.",
+    "No Leptos component test runner, Playwright/Cypress harness, or wasm-bindgen-test harness exists in the repo."
+  ],
+  "links": {
+    "trace_report_path": "_bmad-output/test-artifacts/traceability/6-3-project-health-dashboard-traceability.md",
+    "e2e_trace_summary_path": "_bmad-output/test-artifacts/traceability/6-3-e2e-trace-summary.json"
+  }
+}

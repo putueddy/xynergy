@@ -24,7 +24,7 @@ use crate::services::ctc_completeness::{
     CompletenessReport,
 };
 use crate::services::ctc_validation_report::{generate_validation_report, ValidationReportFilters};
-use crate::services::project_pl_service::get_project_pl_dashboard;
+use crate::services::project_pl_service::{get_project_pl_dashboard, get_project_pl_forecast};
 use crate::services::rls_context::begin_rls_transaction;
 use crate::services::team_service::{
     get_capacity_report_in_transaction, get_team_members_in_transaction,
@@ -169,6 +169,9 @@ pub struct ProjectHealthCard {
     pub budget_spent_idr: i64,
     pub budget_remaining_idr: i64,
     pub budget_status: String,
+    pub budget_utilization_pct: f64,
+    pub is_over_budget: bool,
+    pub budget_overrun_idr: i64,
     pub total_revenue_idr: i64,
     pub total_cost_idr: i64,
     pub gross_profit_idr: i64,
@@ -176,6 +179,12 @@ pub struct ProjectHealthCard {
     pub target_margin_pct: f64,
     pub margin_alert_threshold_pct: f64,
     pub margin_alert: Option<String>,
+    pub forecast_margin_pct: f64,
+    pub forecast_variance_from_target_pct: f64,
+    pub projected_total_cost_idr: i64,
+    pub forecast_unavailable: bool,
+    pub forecast_has_revenue_signal: bool,
+    pub health_status: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub warning: Option<String>,
 }
@@ -829,7 +838,14 @@ async fn build_project_manager_dashboard(
             .try_get("total_budget_idr")
             .map_err(|e| AppError::Database(e.to_string()))?;
 
-        let pl = match get_project_pl_dashboard(pool, project_id, year).await {
+        // Fetch current P&L and forecast in parallel for this single project.
+        // Bounded by PM_ACTIVE_PROJECT_LIMIT; each project has at most two
+        // inflight service reads while its card is being assembled.
+        let pl_future = get_project_pl_dashboard(pool, project_id, year);
+        let forecast_future = get_project_pl_forecast(pool, project_id, year, Some(today));
+        let (pl_result, forecast_result) = tokio::join!(pl_future, forecast_future);
+
+        let pl = match pl_result {
             Ok(pl) => pl,
             Err(e) => {
                 tracing::warn!(
@@ -841,29 +857,66 @@ async fn build_project_manager_dashboard(
                     "P&L data is temporarily unavailable for {}.",
                     project_name
                 ));
-                cards.push(ProjectHealthCard {
+                cards.push(safe_unavailable_card(
                     project_id,
                     project_name,
                     status,
                     end_date,
                     total_budget_idr,
-                    budget_spent_idr: 0,
-                    budget_remaining_idr: total_budget_idr,
-                    budget_status: project_budget_status(total_budget_idr, 0),
-                    total_revenue_idr: 0,
-                    total_cost_idr: 0,
-                    gross_profit_idr: 0,
-                    margin_pct: 0.0,
-                    target_margin_pct: 0.0,
-                    margin_alert_threshold_pct: 0.0,
-                    margin_alert: None,
-                    warning: Some("P&L data is temporarily unavailable.".to_string()),
-                });
+                ));
                 continue;
             }
         };
+
         let budget_spent_idr = pl.total_cost_idr;
         let budget_remaining_idr = total_budget_idr - budget_spent_idr;
+        let budget_utilization_pct =
+            compute_budget_utilization_pct(total_budget_idr, budget_spent_idr);
+        let is_over_budget = total_budget_idr > 0 && budget_spent_idr > total_budget_idr;
+        let budget_overrun_idr = if is_over_budget {
+            budget_spent_idr - total_budget_idr
+        } else {
+            0
+        };
+        let budget_status = project_budget_status(total_budget_idr, budget_spent_idr);
+
+        // Forecast data is optional: a forecast failure must not blank the card.
+        let (
+            forecast_margin_pct,
+            forecast_variance_from_target_pct,
+            projected_total_cost_idr,
+            forecast_unavailable,
+            forecast_has_revenue_signal,
+            forecast_warning,
+        ) = match forecast_result {
+            Ok(forecast) => (
+                forecast.forecast_margin_pct,
+                forecast.variance_from_target_pct,
+                forecast.projected_total_cost_idr,
+                false,
+                forecast.current_revenue_idr > 0,
+                None,
+            ),
+            Err(e) => {
+                tracing::warn!(
+                    project_id = %project_id,
+                    "dashboard project forecast unavailable: {}",
+                    e
+                );
+                warnings.push(format!(
+                    "Forecast data is temporarily unavailable for {}.",
+                    project_name
+                ));
+                (
+                    0.0,
+                    0.0,
+                    pl.total_cost_idr,
+                    true,
+                    false,
+                    Some("Forecast data is temporarily unavailable.".to_string()),
+                )
+            }
+        };
 
         if let Some(message) = pl.margin_alert.clone() {
             alerts.push(MarginAlert {
@@ -875,6 +928,17 @@ async fn build_project_manager_dashboard(
             });
         }
 
+        let health_status = derive_health_status(
+            total_budget_idr,
+            is_over_budget,
+            &budget_status,
+            pl.margin_alert.is_some(),
+            forecast_warning.is_some(),
+            forecast_has_revenue_signal,
+            forecast_variance_from_target_pct,
+            pl.margin_alert_threshold_pct,
+        );
+
         cards.push(ProjectHealthCard {
             project_id,
             project_name,
@@ -883,7 +947,10 @@ async fn build_project_manager_dashboard(
             total_budget_idr,
             budget_spent_idr,
             budget_remaining_idr,
-            budget_status: project_budget_status(total_budget_idr, budget_spent_idr),
+            budget_status,
+            budget_utilization_pct,
+            is_over_budget,
+            budget_overrun_idr,
             total_revenue_idr: pl.total_revenue_idr,
             total_cost_idr: pl.total_cost_idr,
             gross_profit_idr: pl.gross_profit_idr,
@@ -891,7 +958,13 @@ async fn build_project_manager_dashboard(
             target_margin_pct: pl.target_margin_pct,
             margin_alert_threshold_pct: pl.margin_alert_threshold_pct,
             margin_alert: pl.margin_alert,
-            warning: None,
+            forecast_margin_pct,
+            forecast_variance_from_target_pct,
+            projected_total_cost_idr,
+            forecast_unavailable,
+            forecast_has_revenue_signal,
+            health_status,
+            warning: forecast_warning,
         });
     }
 
@@ -900,6 +973,50 @@ async fn build_project_manager_dashboard(
         margin_alerts: alerts,
         warnings,
     })
+}
+
+fn safe_unavailable_card(
+    project_id: Uuid,
+    project_name: String,
+    status: String,
+    end_date: NaiveDate,
+    total_budget_idr: i64,
+) -> ProjectHealthCard {
+    ProjectHealthCard {
+        project_id,
+        project_name,
+        status,
+        end_date,
+        total_budget_idr,
+        budget_spent_idr: 0,
+        budget_remaining_idr: total_budget_idr,
+        budget_status: "unconfigured".to_string(),
+        budget_utilization_pct: 0.0,
+        is_over_budget: false,
+        budget_overrun_idr: 0,
+        total_revenue_idr: 0,
+        total_cost_idr: 0,
+        gross_profit_idr: 0,
+        margin_pct: 0.0,
+        target_margin_pct: 0.0,
+        margin_alert_threshold_pct: 0.0,
+        margin_alert: None,
+        forecast_margin_pct: 0.0,
+        forecast_variance_from_target_pct: 0.0,
+        projected_total_cost_idr: 0,
+        forecast_unavailable: true,
+        forecast_has_revenue_signal: false,
+        health_status: "unconfigured".to_string(),
+        warning: Some("P&L data is temporarily unavailable.".to_string()),
+    }
+}
+
+fn compute_budget_utilization_pct(total_budget_idr: i64, spent_idr: i64) -> f64 {
+    if total_budget_idr <= 0 {
+        0.0
+    } else {
+        (spent_idr as f64 / total_budget_idr as f64) * 100.0
+    }
 }
 
 fn project_budget_status(total_budget_idr: i64, spent_idr: i64) -> String {
@@ -915,6 +1032,44 @@ fn project_budget_status(total_budget_idr: i64, spent_idr: i64) -> String {
     } else {
         "critical".to_string()
     }
+}
+
+/// Derive a stable health severity from canonical P&L + forecast signals.
+///
+/// `critical` when over budget, near-budget, current margin tripped the alert,
+/// or forecast margin is below target by more than the configured threshold.
+/// `warning` when budget utilization is mid-range or forecast lags target by
+/// any positive amount. `healthy` otherwise. `unconfigured` when no budget.
+fn derive_health_status(
+    total_budget_idr: i64,
+    is_over_budget: bool,
+    budget_status: &str,
+    margin_alert_present: bool,
+    forecast_unavailable: bool,
+    forecast_has_revenue_signal: bool,
+    forecast_variance_from_target_pct: f64,
+    margin_alert_threshold_pct: f64,
+) -> String {
+    let forecast_has_margin_signal = !forecast_unavailable && forecast_has_revenue_signal;
+    if total_budget_idr <= 0 && !margin_alert_present && !forecast_has_margin_signal {
+        return "unconfigured".to_string();
+    }
+    if is_over_budget
+        || margin_alert_present
+        || budget_status == "critical"
+        || (forecast_has_margin_signal
+            && forecast_variance_from_target_pct < 0.0
+            && forecast_variance_from_target_pct.abs() > margin_alert_threshold_pct)
+    {
+        return "critical".to_string();
+    }
+    if budget_status == "warning"
+        || (forecast_unavailable && total_budget_idr > 0)
+        || (forecast_has_margin_signal && forecast_variance_from_target_pct < 0.0)
+    {
+        return "warning".to_string();
+    }
+    "healthy".to_string()
 }
 
 // ─────────────────────────────────────────────────────────────────────────
